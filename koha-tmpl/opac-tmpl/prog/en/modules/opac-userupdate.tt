@@ -100,7 +100,15 @@
 
 </form>
 [% ELSE %]
-<p style="clear:left;padding:1em 0">To make changes to your record please contact the library.</p>
+  [% IF ( USE_F1 ) %]
+  	[% IF ( STAGING ) %]
+      <p style="clear:left;padding:1em 0">You must make changes in Fellowship One. To do so, you can click <a href="https://[% CHURCH_CODE %].staging.infellowship.com" target="_blank">here</a> to open Fellowship One in a new tab or window.</p>
+    [% ELSE %]
+      <p style="clear:left;padding:1em 0">You must make changes in Fellowship One. To do so, you can click <a href="https://[% CHURCH_CODE %].infellowship.com" target="_blank">here</a> to open Fellowship One in a new tab or window.</p>
+    [% END %]
+  [% ELSE %]
+    <p style="clear:left;padding:1em 0">To make changes to your record please contact the library.</p>
+  [% END %]
 <div class="yui-u first">
 <fieldset class="rows">
 <legend>Contact Information</legend>

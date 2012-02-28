@@ -33,6 +33,7 @@ use C4::Members;
 use C4::Members::Attributes;
 use C4::Branch;
 
+my $use_f1 = C4::Context->preference('f1Authentications');
 my $query = new CGI;
 
 my ( $template, $borrowernumber, $cookie ) = get_template_and_user(

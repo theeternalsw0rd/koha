@@ -4719,6 +4719,22 @@ if (C4::Context->preference("Version") < TransformToNum($DBversion)) {
     SetVersion ($DBversion);
 }
 
+$DBversion = "3.07.00.018";
+if (C4::Context->preference("Version") < TransformToNum($DBversion)) {
+    $dbh->do("ALTER TABLE `borrowers` ADD COLUMN `externalid` varchar(16)");
+    $dbh->do("ALTER TABLE `borrowers` ADD UNIQUE(externalid)");
+    $dbh->do("INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1Authentication', '0', 'Enable or disable authentication via Fellowship One', '', 'YesNo');");
+    $dbh->do("INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1Staging', '1', 'Enable or disable using Fellowship One staging area for testing', '', 'YesNo');");
+    $dbh->do("INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1ChurchCode', '', 'Your Fellowship One Church Code as used in the Portal login', '', 'Free');");
+    $dbh->do("INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1ClientKey', '', 'Client Key is acquired from Fellowship One\\'s API key', '', 'Free');");
+    $dbh->do("INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1ClientSecret', '', 'Client Secret is acquired from Fellowship One\\'s API key', '', 'Free');");
+    $dbh->do("INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1DefaultBranchAttribute', 'Koha Default Branch', 'Fellowship One attribute name for default branch assingment (default of \\'Koha Default Branch\\')', '', 'Free');");
+    $dbh->do("INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1PatronTypeAttribute', 'Koha Patron Type', 'Fellowship One attribute name for patron type assingment (default of \\'Koha Patron Type\\')', '', 'Free');");
+    $dbh->do("INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1FlagsAttribute', 'Koha Flags', 'Fellowship One attribute name for permission flags assingment (default of \\'Koha Flags\\')', '', 'Free');");
+    print "Upgrade to $DBversion done (added Fellowship One integration)\n";
+    SetVersion ($DBversion);
+}
+
 =head1 FUNCTIONS
 
 =head2 DropAllForeignKeys($table)

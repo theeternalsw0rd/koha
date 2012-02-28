@@ -33,7 +33,7 @@ use POSIX qw/strftime/;
 use List::MoreUtils qw/ any /;
 
 # use utf8;
-use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $debug $ldap $cas $caslogout);
+use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $debug $ldap $f1 $cas $caslogout);
 
 BEGIN {
     sub psgi_env { any { /^psgi\./ } keys %ENV }
@@ -49,12 +49,17 @@ BEGIN {
     @EXPORT_OK   = qw(&check_api_auth &get_session &check_cookie_auth &checkpw &get_all_subpermissions &get_user_subpermissions);
     %EXPORT_TAGS = ( EditPermissions => [qw(get_all_subpermissions get_user_subpermissions)] );
     $ldap        = C4::Context->config('useldapserver') || 0;
+    $f1          = C4::Context->preference('f1Authentication');
     $cas         = C4::Context->preference('casAuthentication');
     $caslogout   = C4::Context->preference('casLogout');
     require C4::Auth_with_cas;             # no import
     if ($ldap) {
 	require C4::Auth_with_ldap;
 	import C4::Auth_with_ldap qw(checkpw_ldap);
+    }
+    if ($f1) {
+	require C4::Auth_with_f1;
+	import C4::Auth_with_f1 qw(checkpw_f1);
     }
     if ($cas) {
         import  C4::Auth_with_cas qw(check_api_auth_cas checkpw_cas login_cas logout_cas login_cas_url);
@@ -1431,6 +1436,12 @@ sub checkpw {
     if ($ldap) {
         $debug and print "## checkpw - checking LDAP\n";
         my ($retval,$retcard,$retuserid) = checkpw_ldap(@_);    # EXTERNAL AUTH
+        ($retval) and return ($retval,$retcard,$retuserid);
+    }
+
+    if ($f1) {
+        $debug and print "## checkpw - checking Fellowship One\n";
+        my ($retval,$retcard,$retuserid) = checkpw_f1($userid, $password);    # EXTERNAL AUTH
         ($retval) and return ($retval,$retcard,$retuserid);
     }
 

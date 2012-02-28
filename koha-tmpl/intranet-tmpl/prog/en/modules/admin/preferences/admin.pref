@@ -94,4 +94,30 @@ Administration:
             - of CAS when logging out of Koha.
         -
             - The CAS Authentication Server can be found at
-            - pref: casServerUrl           
+            - pref: casServerUrl
+    Fellowship One Authentication:
+        -
+            - pref: f1Authentication
+              default: 0
+              choices:
+                  yes: Use
+                  no: "Don't use"
+            - Fellowship One for login authentication.
+        -
+            - The Church Code for Fellowship One is
+            - pref: f1ChurchCode
+        -
+            - The Client Key for Fellowship One is
+            - pref: f1ClientKey
+        -
+            - The Client Secret for Fellowship One is
+            - pref: f1ClientSecret
+        -
+            - The Attribute name from Fellowship One for default branch is
+            - pref: f1DefaultBranchAttribute
+        -
+            - The Attribute name from Fellowship One for patron type is
+            - pref: f1PatronTypeAttribute
+        -
+            - The Attribute name from Fellowship One for permission flags is
+            - pref: f1FlagsAttribute

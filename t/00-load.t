@@ -16,6 +16,7 @@ find({
 	    $m =~ s{^.*/C4/}{C4/};	
 	    $m =~ s{/}{::}g;
 	    return if $m =~ /Auth_with_ldap/; # Dont test this, it will fail on use
+	    return if $m =~ /Auth_with_f1/; # Dont test this, it will fail on use
 	    return if $m =~ /Cache/; # Cache modules are a WIP, add the tests back when we are using them more
 	    return if $m =~ /SIP/; # SIP modules will not load clean
 	    return if $m =~ /C4::VirtualShelves$/; # Requires a DB

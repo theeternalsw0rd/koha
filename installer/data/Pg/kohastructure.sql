@@ -462,6 +462,7 @@ CREATE INDEX biblioitems_isbn_idx ON biblioitems (isbn);
 CREATE TABLE borrowers (
 borrowernumber BIGSERIAL UNIQUE,
 cardnumber varchar(16) UNIQUE default NULL,
+externalid varchar(16) UNIQUE default NULL,
 surname text NOT NULL,
 firstname text,
 title text,
