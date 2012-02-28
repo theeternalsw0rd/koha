@@ -201,7 +201,7 @@ ol li {
 /* End hide from IE-mac */
 
 #sitetitle {
-/*	background-image : url("../../img/koha-logo-black.png");
+/*	background-image : url("../../img/logo.png");
 	background-position : 5px 2px;
 	background-repeat : no-repeat;
 	float : left;
@@ -1387,7 +1387,7 @@ h1#logo {
 	width:180px;
 }
 h1#logo {
-	background:transparent url(../../img/koha-logo-medium.gif) no-repeat scroll 0%;
+	background:transparent url(../../img/logo.png) no-repeat scroll 0%;
 	margin:0.75em .3em 0.75em .7em;
 }
 

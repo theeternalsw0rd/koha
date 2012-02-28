@@ -41,6 +41,9 @@ $.tablesorter.addParser({
 });
 
 $(document).ready(function() {
+	$('#finish').submit(function() {
+		window.print();
+	});
     [% IF ( patronid ) %] sco_init(1);
     [% ELSIF ( timedout ) %] sco_init(1);
     [% END %]
@@ -64,8 +67,8 @@ $(document).ready(function() {
 <body onload="dofocus();">
 
 <div id="doc" class="yui-t7">
-
-<div id="masthead"><h1>[% LibraryName %] Self Checkout System</h1></div>
+<img src="/opac-tmpl/prog/images/logo-sco.png" />
+<!--<div id="masthead"><h1>[% LibraryName %] Self Checkout System</h1></div>-->
 <div id="bd">
     <div class="yui-g">
 
@@ -188,7 +191,7 @@ Sorry, This Self-Checkout Station has lost authentication.  Please contact the a
 	<input type="hidden" name="valid_session" value="1" />
 	<input type="submit" value="Submit" class="submit" /></fieldset>
 	</form>
-	<div><form method="post" action="/cgi-bin/koha/sco/sco-main.pl?op=logout" ><input type="submit" value="Finish" class="finish" /></form></div>
+	<div><form method="post" action="/cgi-bin/koha/sco/sco-main.pl?op=logout" id="finish"><input type="submit" value="Finish" class="finish" /></form></div>
 	</div> <!-- sco_entry --> <!-- newcheckout -->
 
 	<div id="borrowerdetails">
@@ -203,10 +206,10 @@ Sorry, This Self-Checkout Station has lost authentication.  Please contact the a
 	[% FOREACH ISSUE IN ISSUES %]
 	[% UNLESS ( loop.odd ) %]<tr class="highlight">[% ELSE %]<tr>[% END %]
     <!-- FIXME: yet another jacket image breakpoint -->
+	[% IF ( ISSUE.overdue ) %]<td class="overdue">[% ISSUE.date_due_display %]</td>[% ELSE %]<td class="due">[% ISSUE.date_due_display %]</td>[% END %]
 	<td>[% UNLESS ( ISSUE.noitemlinks ) %]<a href="/cgi-bin/koha/opac-detail.pl?bib=[% ISSUE.biblionumber %]">[% ISSUE.title |html %]</a>[% ELSE %]<strong>[% ISSUE.title |html %]</strong>[% END %]<span class="item-details">
-	[% ISSUE.author %]</span> ([% ISSUE.barcode %])</td>
-	<td>[% ISSUE.itemcallnumber %]</td>
-	[% IF ( ISSUE.overdue ) %]<td class="overdue">[% ISSUE.date_due_display %]</td>[% ELSE %]<td>[% ISSUE.date_due_display %]</td>[% END %]
+	[% ISSUE.author %]</span><!-- ([% ISSUE.barcode %])--></td>
+	<td class="callnumber">[% ISSUE.itemcallnumber %]</td>
 	<td>
     <form action="/cgi-bin/koha/sco/sco-main.pl" method="post">
     <input type="hidden" name="op" value="checkout" />
@@ -217,7 +220,7 @@ Sorry, This Self-Checkout Station has lost authentication.  Please contact the a
           [% IF ( ISSUE.AllowSelfCheckReturns ) %]
           <input type="button" value="Return Item" name="confirm" class="return" onclick="this.form.op.value='returnbook';this.form.submit();"  />
           [% ELSE %]
-          <span>No renewals allowed</span>
+          <span class="norenewal">No renewals allowed</span>
           [% END %]
         [% ELSE %]
             [% UNLESS ( ISSUE.renew ) %]<input type="button" value="Renew Item"  name="confirm" class="renew" onclick="this.form.confirmed.value='1';this.form.submit();" />

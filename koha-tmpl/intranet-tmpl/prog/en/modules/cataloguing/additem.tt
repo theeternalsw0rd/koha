@@ -4,6 +4,15 @@
 <script type="text/javascript">
 //<![CDATA[
 $(document).ready(function(){
+		$.ajax({
+			url : "/cutter_map.php?biblionumber=[% biblionumber %]",
+			success : function (cutternumber) {
+				var callnumber = $("input[id*=tag_952_subfield_o]").val().replace('/', '');
+				if(!(callnumber.indexOf(cutternumber)>=0)) {
+					$("input[id*=tag_952_subfield_o]").val(callnumber + " " + cutternumber);
+				}
+			}
+		});
 		$("fieldset.rows input").keydown(function(e){ return checkEnter(e); });
 		/* Inline edit/delete links */
 		var biblionumber = $("input[name='biblionumber']").attr("value");

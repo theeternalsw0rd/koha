@@ -1,6 +1,6 @@
 @import url("../../en/lib/yui/reset-fonts-grids.css");
 @import url("../../en/lib/yui/skin.css");
-
+@media screen {
 a {
 	font-weight : bold;
 }
@@ -237,4 +237,26 @@ span.koha_url {
 a.koha_url {
     text-decoration: none;
     color: #666666;
+}
+}
+@media print {
+#loanTable td {
+	padding-left: 0.125in !important;
+	display:block !important;
+	width: 100% !important;
+}
+.item-details {
+	display:block !important;
+	padding-left: 0.25in !important;
+}
+.item-details:before {
+	content: "by ";
+}
+.due { 
+	float:left !important;
+	font-weight:bold !important;
+}
+.due:before{ content: "Due: "; }
+* { font-size: 0.2in !important; }
+#masthead, .sco_head, #newcheckout, #loanTable caption, #loanTable thead, #loanTable .norenewal, #loanTable .callnumber { display:none !important}
 }

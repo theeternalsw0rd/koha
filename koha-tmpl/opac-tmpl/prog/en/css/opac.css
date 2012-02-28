@@ -172,12 +172,13 @@ h1#library {
 
 
 h1#libraryname {
-	background:transparent url(../../images/koha-logo.gif) no-repeat scroll 0%;
+	background:transparent url(../../images/logo.png) no-repeat scroll 0%;
 	border: 0;
 	float : left !important;
 	margin:0;
 	padding:0;
-	width:120px;
+	width:175px;
+	height: 50px;
 }
 
 h1#libraryname a {
@@ -189,7 +190,7 @@ h1#libraryname a {
 	overflow:hidden;
 	padding:40px 0 0;
 	text-decoration:none;
-	width:120px;
+	width:175px;
 }
 
 h1,h2,h3,h4,h5,h6 {
@@ -1275,13 +1276,12 @@ width: 120px;
 }
 
 #fluid {
-margin-left: 124px;
-margin-top : .4em;
-padding-left : 1em;
+float: left;
+margin-top : 0.4em;
+width: 100%;
 }
 
 #fluid-offset {
-float : right;
 width: 100%;
 }
 
