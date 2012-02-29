@@ -102,14 +102,14 @@ Administration:
               choices:
                   yes: Use
                   no: "Don't use"
-            - Fellowship One for login authentication.
+            - Fellowship One for login authentication (Fellowship One accounts must be editted in Fellowship One's database).
         -
             - pref: f1Staging
               default: 1
               choices:
-                  yes: Use
-                  no: "Don't use"
-            - Fellowship One staging area.
+                  yes: "Staging API"
+                  no: "Production API"
+            - Fellowship One API type.
         -
             - The Church Code for Fellowship One is
             - pref: f1ChurchCode
@@ -120,11 +120,11 @@ Administration:
             - The Client Secret for Fellowship One is
             - pref: f1ClientSecret
         -
-            - The Attribute name from Fellowship One for default branch is
+            - The Attribute group from Fellowship One containing the branches is
             - pref: f1DefaultBranchAttribute
         -
-            - The Attribute name from Fellowship One for patron type is
+            - The Attribute group from Fellowship One containing the patron types is
             - pref: f1PatronTypeAttribute
         -
-            - The Attribute name from Fellowship One for permission flags is
+            - The Attribute group from Fellowship One containing the staff permission flags is
             - pref: f1FlagsAttribute
