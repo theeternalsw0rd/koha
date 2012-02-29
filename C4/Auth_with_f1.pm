@@ -137,7 +137,7 @@ sub oauth_login {
 }
 
 sub get_hash_from_f1 {
-	my $externalid = shift or return;
+	my $f1_id = shift or return;
 	my $userid = shift or return;
 	my $password = md5_base64(shift) or return;
 	my $response = undef;
@@ -147,7 +147,7 @@ sub get_hash_from_f1 {
 	my $year = undef;
 	my $privilege = undef;
 	my %data = (
-		externalid => $externalid,
+		f1_id => $f1_id,
 		firstname => undef,
 		surname => undef,
 		userid => $userid,
@@ -171,7 +171,7 @@ sub get_hash_from_f1 {
 		flags => ''
 	);
 	$logindata->{'request_method'} = 'GET';
-	$logindata->{'request_url'} = $prefhost . '/v1/People/Search.json?id=' . $externalid . '&include=addresses,communications,attributes';
+	$logindata->{'request_url'} = $prefhost . '/v1/People/Search.json?id=' . $f1_id . '&include=addresses,communications,attributes';
 	$response = decode_json(oauth_request("ProtectedResource")->{'_content'});
 	for my $people(@{$response->{'results'}->{'person'}}) {
 		$data{'firstname'} = $people->{'firstName'};
@@ -243,17 +243,17 @@ sub get_hash_from_f1 {
 sub checkpw_f1 {
     my ($userid, $password) = @_;
 	
-	my $externalid = oauth_login($userid, $password);
+	my $f1_id = oauth_login($userid, $password);
 	
-	if($externalid eq undef) {
+	if($f1_id eq undef) {
 		warn "Fellowship One authentication failed";
 		return 0;
 	}
 
 	# authentication has worked, but more stuff to do.
     my (%borrower);
-	my ($borrowernumber,$cardnumber) = exists_local($externalid);
-	%borrower = get_hash_from_f1($externalid, $userid, $password);
+	my ($borrowernumber,$cardnumber) = exists_local($f1_id);
+	%borrower = get_hash_from_f1($f1_id, $userid, $password);
 
 	if ($borrowernumber) {
 		my $c2 = &update_local($userid,$password,$borrowernumber,\%borrower) || '';
@@ -290,7 +290,7 @@ sub exists_local($) {
 	my $dbh = C4::Context->dbh;
 	my $select = "SELECT borrowernumber,cardnumber FROM borrowers ";
 
-	my $sth = $dbh->prepare("$select WHERE externalid=?");	# was cardnumber=?
+	my $sth = $dbh->prepare("$select WHERE f1_id=?");	# was cardnumber=?
 	$sth->execute($arg);
 	$debug and printf STDERR "Userid '$arg' exists_local? %s\n", $sth->rows;
 	($sth->rows == 1) and return $sth->fetchrow;
