@@ -269,7 +269,7 @@ my $target_map = {
   './Koha'                      => 'PERL_MODULE_DIR',
   './koha-tmpl/intranet-tmpl'   => {target => 'INTRANET_TMPL_DIR', trimdir => -1},
   './koha-tmpl/opac-tmpl'       => {target => 'OPAC_TMPL_DIR', trimdir => -1},
-  './koha-tmpl/cutter_map.php'  => {target => 'INTRANET_TMPL_DIR', trimdir => -1},
+  './koha-tmpl/cutter_map.php'  => {target => 'INTRANET_WWW_DIR', trimdir => -1},
   './kohaversion.pl'            => 'INTRANET_CGI_DIR', 
   './labels'                    => 'INTRANET_CGI_DIR',
   './mainpage.pl'               => 'INTRANET_CGI_DIR',
