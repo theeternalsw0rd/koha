@@ -104,6 +104,13 @@ Administration:
                   no: "Don't use"
             - Fellowship One for login authentication.
         -
+            - pref: f1Staging
+              default: 1
+              choices:
+                  yes: Use
+                  no: "Don't use"
+            - Fellowship One staging area.
+        -
             - The Church Code for Fellowship One is
             - pref: f1ChurchCode
         -
