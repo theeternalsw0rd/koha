@@ -196,7 +196,7 @@ DROP TABLE IF EXISTS `borrowers`;
 CREATE TABLE `borrowers` ( -- this table includes information about your patrons/borrowers/members
   `borrowernumber` int(11) NOT NULL auto_increment, -- primary key, Koha assigned ID number for patrons/borrowers
   `cardnumber` varchar(16) default NULL, -- unique key, library assigned ID number for patrons/borrowers
-  `externalid` varchar(16) default NULL, -- unique key, externally assigned ID for external database systems
+  `f1_id` varchar(16) default NULL, -- unique key, externally assigned ID for external database systems
   `surname` mediumtext NOT NULL, -- patron/borrower's last name (surname)
   `firstname` text, -- patron/borrower's first name
   `title` mediumtext, -- patron/borrower's title, for example: Mr. or Mrs.

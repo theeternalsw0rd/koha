@@ -4721,8 +4721,8 @@ if (C4::Context->preference("Version") < TransformToNum($DBversion)) {
 
 $DBversion = "3.07.00.018";
 if (C4::Context->preference("Version") < TransformToNum($DBversion)) {
-    $dbh->do("ALTER TABLE `borrowers` ADD COLUMN `externalid` varchar(16)");
-    $dbh->do("ALTER TABLE `borrowers` ADD UNIQUE(externalid)");
+    $dbh->do("ALTER TABLE `borrowers` ADD COLUMN `f1_id` varchar(16)");
+    $dbh->do("ALTER TABLE `borrowers` ADD UNIQUE(f1_id)");
     $dbh->do("INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1Authentication', '0', 'Enable or disable authentication via Fellowship One', '', 'YesNo');");
     $dbh->do("INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1Staging', '1', 'Enable or disable using Fellowship One staging area for testing', '', 'YesNo');");
     $dbh->do("INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1ChurchCode', '', 'Your Fellowship One Church Code as used in the Portal login', '', 'Free');");
