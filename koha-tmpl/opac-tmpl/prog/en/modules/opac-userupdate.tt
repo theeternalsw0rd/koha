@@ -6,14 +6,14 @@
    <div id="bd">
 [% INCLUDE 'masthead.inc' %]
 
-	<div id="yui-main">
-	<div class="yui-b"><div class="yui-g" id="userupdate">
+  <div id="yui-main">
+  <div class="yui-b"><div class="yui-g" id="userupdate">
 
 <div id="userupdatecontainer" class="container">
 [% FOREACH BORROWER_INF IN BORROWER_INFO %]
 <h3><a href="/cgi-bin/koha/opac-user.pl">[% INCLUDE 'patron-title.inc' ifirstname = BORROWER_INF.firstname surname = BORROWER_INF.surname othernames = BORROWER_INF.othernames cardnumber = BORROWER_INF.cardnumber %]'s account</a> <img src="[% themelang %]../../images/caret.gif" width="16" height="16" alt="&gt;" border="0" /> Your Personal Details</h3>
 
-[% IF ( OPACPatronDetails ) %]
+[% IF ( OPACPatronDetails ) && ( !( BORROWER_INF.f1_id.length > 0 ) || !( usef1 ) ) %]
 <form action="/cgi-bin/koha/opac-userupdate.pl" method="get">
 <div class="yui-u first">
 <input type="hidden" name="modify" value="yes" />
@@ -27,9 +27,9 @@
 <fieldset class="brief"><legend>Contact Information</legend>
 <ol>
 <li><label for="address">Address:</label>
-	<input id="streetnumber" size ="7" type="text" value="[% BORROWER_INF.streetnumber %]"  name="streetnumber" /> 
-	<input type="text" name="address" value="[% BORROWER_INF.address %]" id="address" />
-	<input type="text" name="address2" value="[% BORROWER_INF.address2 %]" id="address2" /></li>
+  <input id="streetnumber" size ="7" type="text" value="[% BORROWER_INF.streetnumber %]"  name="streetnumber" /> 
+  <input type="text" name="address" value="[% BORROWER_INF.address %]" id="address" />
+  <input type="text" name="address2" value="[% BORROWER_INF.address2 %]" id="address2" /></li>
 <li><label for="city">City:</label> <input id="city" type="text" value="[% BORROWER_INF.city %]"  name="city" /></li>
 <li><label for="state">State:</label> <input id="state" type="text" value="[% BORROWER_INF.state %]"  name="state" /></li>
 <li><label for="zipcode">Zip Code: </label><input type="text" id="zipcode" value="[% BORROWER_INF.zipcode %]" name="zipcode" /></li>
@@ -74,12 +74,12 @@
 <fieldset class="brief">
 <legend>Library Use:</legend>
 <ol>
-	<li><label for="cardnumber">Card number:</label><input type="text" id="cardnumber" disabled="disabled" readonly="readonly" value="[% BORROWER_INF.cardnumber %]" /></li>
+  <li><label for="cardnumber">Card number:</label><input type="text" id="cardnumber" disabled="disabled" readonly="readonly" value="[% BORROWER_INF.cardnumber %]" /></li>
     <li><label for="branchname">Home library:</label><input type="text" id="branchname" disabled="disabled" readonly="readonly" value="[% BORROWER_INF.branchname %]" /></li>
-	<li><label for="borrowernumber">Patron Number:</label><input type="text" id="borrowernumber" disabled="disabled" readonly="readonly" value="[% BORROWER_INF.borrowernumber %]" /></li>
-	<li><label for="categorycode">Patron Category:</label><input type="text" id="categorycode" disabled="disabled" readonly="readonly" value="[% BORROWER_INF.description %] ([% BORROWER_INF.categorycode %])" /></li>
-	<li><label for="dateenrolled">Joined: </label><input type="text" id="dateenrolled" disabled="disabled" readonly="readonly" value="[% BORROWER_INF.dateenrolled %]" /></li>
-	<li><label for="dateexpiry">Expires: </label><input type="text" id="dateexpiry" disabled="disabled" readonly="readonly" value="[% BORROWER_INF.dateexpiry %]" /></li>
+  <li><label for="borrowernumber">Patron Number:</label><input type="text" id="borrowernumber" disabled="disabled" readonly="readonly" value="[% BORROWER_INF.borrowernumber %]" /></li>
+  <li><label for="categorycode">Patron Category:</label><input type="text" id="categorycode" disabled="disabled" readonly="readonly" value="[% BORROWER_INF.description %] ([% BORROWER_INF.categorycode %])" /></li>
+  <li><label for="dateenrolled">Joined: </label><input type="text" id="dateenrolled" disabled="disabled" readonly="readonly" value="[% BORROWER_INF.dateenrolled %]" /></li>
+  <li><label for="dateexpiry">Expires: </label><input type="text" id="dateexpiry" disabled="disabled" readonly="readonly" value="[% BORROWER_INF.dateexpiry %]" /></li>
    [% IF ( BORROWER_INF.ExtendedPatronAttributes ) %]
     [% FOREACH patron_attribute IN BORROWER_INF.patron_attributes %]
         <li><label>[% patron_attribute.description %]</label>
@@ -100,8 +100,8 @@
 
 </form>
 [% ELSE %]
-  [% IF ( USE_F1 ) %]
-  	[% IF ( STAGING ) %]
+  [% IF ( usef1 ) && ( BORROWER_INF.f1_id.length > 0 ) %]
+    [% IF ( f1staging ) %]
       <p style="clear:left;padding:1em 0">You must make changes in Fellowship One. To do so, you can click <a href="https://[% CHURCH_CODE %].staging.infellowship.com" target="_blank">here</a> to open Fellowship One in a new tab or window.</p>
     [% ELSE %]
       <p style="clear:left;padding:1em 0">You must make changes in Fellowship One. To do so, you can click <a href="https://[% CHURCH_CODE %].infellowship.com" target="_blank">here</a> to open Fellowship One in a new tab or window.</p>

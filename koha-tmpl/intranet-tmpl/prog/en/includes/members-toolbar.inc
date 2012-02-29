@@ -101,7 +101,8 @@ function update_child() {
 
 	</script>
 	<ul class="toolbar">
-	[% IF ( category_type ) %]
+	[% IF ( usef1 ) && ( f1_id.length > 0 ) %]
+	    [% IF ( category_type ) %]
             [% IF ( guarantor ) %]
                 <li><a id="editpatron" href="/cgi-bin/koha/members/memberentry.pl?op=modify&amp;borrowernumber=[% borrowernumber %]&amp;guarantorid=[% guarantorborrowernumber %]&amp;category_type=[% category_type %]">
             [% ELSE %]
@@ -114,11 +115,12 @@ function update_child() {
                 <li><a id="editpatron" href="/cgi-bin/koha/members/memberentry.pl?op=modify&amp;borrowernumber=[% borrowernumber %]&amp;category_type=A">Edit</a></li>
             [% END %]
         [% END %]
-	[% IF ( adultborrower AND activeBorrowerRelationship ) %]<li><a id="addchild" href="/cgi-bin/koha/members/memberentry.pl?op=add&amp;guarantorid=[% borrowernumber %]&amp;category_type=C">Add child</a></li>[% END %]
-	[% IF CAN_user_staffaccess %]<li><a id="changepassword" href="/cgi-bin/koha/members/member-password.pl?member=[% borrowernumber %]">Change Password</a></li> [% END %]
+	  [% IF ( adultborrower AND activeBorrowerRelationship ) %]<li><a id="addchild" href="/cgi-bin/koha/members/memberentry.pl?op=add&amp;guarantorid=[% borrowernumber %]&amp;category_type=C">Add child</a></li>[% END %]
+	  [% IF CAN_user_staffaccess %]<li><a id="changepassword" href="/cgi-bin/koha/members/member-password.pl?member=[% borrowernumber %]">Change Password</a></li> [% END %]
 	<li><a id="duplicate" href="/cgi-bin/koha/members/memberentry.pl?op=duplicate&amp;borrowernumber=[% borrowernumber %]&amp;category_type=[% category_type %]">Duplicate</a></li>
+	[% END %]
     <li id="printmenuc"><a id="printpage" href="/cgi-bin/koha/members/moremember.pl?borrowernumber=[% borrowernumber %]&amp;print=page">Print Page</a></li>
 	<li><a id="printslip" href="/cgi-bin/koha/members/moremember.pl?borrowernumber=[% borrowernumber %]&amp;print=slip">Print Slip</a></li>
 	<li id="searchtoholdc"><a id="searchtohold" href="#">Search to hold</a></li>
-	<li id="moremenuc"><a id="renewpatron" href="/cgi-bin/koha/members/moremember.pl?reregistration=y&amp;borrowernumber=[% borrowernumber %]">Renew Account</a></li>[% IF ( CAN_user_permissions ) %]<li><a id="patronflags" href="/cgi-bin/koha/members/member-flags.pl?member=[% borrowernumber %]">Set Permissions</a></li>[% END %]<li><a id="deletepatron" href="javascript:confirm_deletion();">Delete</a></li>
+	<li id="moremenuc"><a id="renewpatron" href="/cgi-bin/koha/members/moremember.pl?reregistration=y&amp;borrowernumber=[% borrowernumber %]">Renew Account</a></li>[% IF ( usef1 ) && ( f1_id.length > 0 ) %][% IF ( CAN_user_permissions ) %]<li><a id="patronflags" href="/cgi-bin/koha/members/member-flags.pl?member=[% borrowernumber %]">Set Permissions</a></li>[% END %][% END %]<li><a id="deletepatron" href="javascript:confirm_deletion();">Delete</a></li>
 </ul></div>

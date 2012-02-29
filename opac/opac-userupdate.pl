@@ -33,7 +33,8 @@ use C4::Members;
 use C4::Members::Attributes;
 use C4::Branch;
 
-my $use_f1 = C4::Context->preference('f1Authentications');
+my $usef1 = C4::Context->preference('f1Authentications');
+my $f1staging = C4::Context->preference('f1Staging');
 my $query = new CGI;
 
 my ( $template, $borrowernumber, $cookie ) = get_template_and_user(
@@ -176,7 +177,9 @@ $bordat[0] = $borr;
 
 $template->param( 
     BORROWER_INFO => \@bordat,
-    userupdateview => 1,
+    usef1 => $use_f1,
+    f1staging => $f1staging,
+    userupdateview => 1
 );
 
 output_html_with_http_headers $query, $cookie, $template->output;

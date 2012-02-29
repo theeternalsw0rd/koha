@@ -459,6 +459,8 @@ $template->param(
     CANDELETEUSER    => $candeleteuser,
     roaddetails     => $roaddetails,
     borrowernumber  => $borrowernumber,
+    f1_id            => $data->{'f1_id'},
+    usef1           => C4::Context->preference("f1Authentication"),
     othernames      => $data->{'othernames'},
     categoryname    => $data->{'description'},
     reregistration  => $reregistration,
