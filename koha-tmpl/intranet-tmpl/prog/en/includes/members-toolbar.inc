@@ -57,10 +57,12 @@ function update_child() {
 	        { text: _("Quick Slip"), onclick: {fn: function(){printx_window("qslip")}} }
 	    ];
 
-		var moremenu = [
+		var moremenu = [[% IF !( usef1 ) || !( f1_id > 0 ) %]
 			{ text: _("Renew Patron"),  onclick: { fn: confirm_reregistration } },
 			{ text: _("Set Permissions"), url: "/cgi-bin/koha/members/member-flags.pl?member=[% borrowernumber %]"[% UNLESS ( CAN_user_permissions ) %], disabled: true[% END %]},
 			{ text: _("Delete"), onclick: { fn: confirm_deletion}[% UNLESS ( CANDELETEUSER ) %], disabled: true[% END %] },
+			[% END %][% IF ( usef1 ) && ( f1_id > 0) %]
+			{ text: _("Delete (patron may still exist in Fellowship One)"), onclick: { fn: confirm_deletion}[% UNLESS ( CANDELETEUSER ) %], disabled: true[% END %] },[% END %]
 			{ text: _("Update Child to Adult Patron") , onclick: { fn: update_child }[% UNLESS ( is_child ) %], disabled: true[% END %]}
 		];
 
@@ -89,9 +91,9 @@ function update_child() {
 	    });
 
 	    [% IF ( adultborrower ) %]new YAHOO.widget.Button("addchild");[% END %]
-	    new YAHOO.widget.Button("editpatron");
+	    [% IF !( usef1 ) || !( f1_id > 0 ) %]new YAHOO.widget.Button("editpatron");[% END %]
 	    new YAHOO.widget.Button("addnote");
-            [% IF CAN_user_staffaccess %]new YAHOO.widget.Button("changepassword");  [% END %]
+            [% IF !( usef1 ) || !( f1_id > 0 ) %][% IF CAN_user_staffaccess %]new YAHOO.widget.Button("changepassword");  [% END %][% END %]
 	    new YAHOO.widget.Button("duplicate");
 	    new YAHOO.widget.Button("printslip");
 		new YAHOO.widget.Button("printpage");
@@ -101,7 +103,7 @@ function update_child() {
 
 	</script>
 	<ul class="toolbar">
-	[% IF ( usef1 ) && !( f1_id > 0 ) %]
+	[% IF !( usef1 ) || !( f1_id > 0 ) %]
 	    [% IF ( category_type ) %]
             [% IF ( guarantor ) %]
                 <li><a id="editpatron" href="/cgi-bin/koha/members/memberentry.pl?op=modify&amp;borrowernumber=[% borrowernumber %]&amp;guarantorid=[% guarantorborrowernumber %]&amp;category_type=[% category_type %]">
@@ -122,5 +124,14 @@ function update_child() {
     <li id="printmenuc"><a id="printpage" href="/cgi-bin/koha/members/moremember.pl?borrowernumber=[% borrowernumber %]&amp;print=page">Print Page</a></li>
 	<li><a id="printslip" href="/cgi-bin/koha/members/moremember.pl?borrowernumber=[% borrowernumber %]&amp;print=slip">Print Slip</a></li>
 	<li id="searchtoholdc"><a id="searchtohold" href="#">Search to hold</a></li>
-	<li id="moremenuc"><a id="renewpatron" href="/cgi-bin/koha/members/moremember.pl?reregistration=y&amp;borrowernumber=[% borrowernumber %]">Renew Account</a></li>[% IF ( usef1 ) && ( f1_id.length > 0 ) %][% IF ( CAN_user_permissions ) %]<li><a id="patronflags" href="/cgi-bin/koha/members/member-flags.pl?member=[% borrowernumber %]">Set Permissions</a></li>[% END %][% END %]<li><a id="deletepatron" href="javascript:confirm_deletion();">Delete</a></li>
+	[% IF !( usef1 ) || !( f1_id > 0 ) %]
+	  <li id="moremenuc"><a id="renewpatron" href="/cgi-bin/koha/members/moremember.pl?reregistration=y&amp;borrowernumber=[% borrowernumber %]">Renew Account</a></li>
+	  [% IF ( CAN_user_permissions ) %]
+	    <li><a id="patronflags" href="/cgi-bin/koha/members/member-flags.pl?member=[% borrowernumber %]">Set Permissions</a></li>
+	  [% END %]
+	  <li><a id="deletepatron" href="javascript:confirm_deletion();">Delete</a></li>
+	[% END %]
+	[% IF ( usef1 ) && ( f1_id > 0 ) %]
+	  <span id="moremenuc"><li><a id="deletepatron" href="javascript:confirm_deletion();">Delete</a></li></span>
+	[% END %]
 </ul></div>
