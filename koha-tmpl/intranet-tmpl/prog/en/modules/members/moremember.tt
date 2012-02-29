@@ -235,12 +235,14 @@ function validate1(date) {
     [% END %]
 </ol>
 </div>
+    [% IF !( usef1 ) || !( f1_id > 0 ) %]
       <div class="action">
         [% IF ( guarantorborrowernumber ) %]
         <a href="memberentry.pl?op=modify&amp;borrowernumber=[% borrowernumber %]&amp;step=1&amp;guarantorid=[% guarantorborrowernumber %]">Edit</a>
         [% ELSE %]
         <a href="memberentry.pl?op=modify&amp;borrowernumber=[% borrowernumber %]&amp;step=1">Edit</a>
         [% END %]</div>
+    [% END %]
 
 </div>
 
@@ -302,7 +304,9 @@ function validate1(date) {
     [% END %]
 </table>
 </div>
+[% IF !( usef1 ) || !( f1_id > 0 ) %]
 <div class="action"><a href="memberentry.pl?op=modify&amp;borrowernumber=[% borrowernumber %]&amp;step=4">Edit</a></div>
+[% END %]
 [% END %]
 [% END %]
 
@@ -315,7 +319,9 @@ function validate1(date) {
      </li></ol></div>
  [% END %]
 </div>
+[% IF !( usef1 ) || !( f1_id > 0 ) %]
 <div class="action"><a href="memberentry.pl?op=modify&amp;borrowernumber=[% borrowernumber %]&amp;step=5">Edit</a></div>
+[% END %]
 [% END %]
 
 </div>
@@ -359,7 +365,9 @@ function validate1(date) {
 	</ol>
 	</div>
  </div>
+[% IF !( usef1 ) || !( f1_id > 0 ) %]
     <div class="action"><a href="memberentry.pl?op=modify&amp;borrowernumber=[% borrowernumber %]&amp;step=3">Edit</a></div>
+[% END %]
  
     [% UNLESS ( I ) %]
  <div id="patron-alternate-address" style="padding-top: 1em;">
@@ -373,7 +381,9 @@ function validate1(date) {
       [% IF ( B_phone ) %]<li><span class="label">Phone: </span>[% B_phone %]</li>[% END %]
       [% IF ( B_email ) %]<li><span class="label">Email: </span><a href="mailto:[% B_email %]">[% email %]</a></li>[% END %]</ol></div>
 </div>
+[% IF !( usef1 ) || !( f1_id > 0 ) %]
 <div class="action"><a href="memberentry.pl?op=modify&amp;borrowernumber=[% borrowernumber %]&amp;step=6">Edit</a></div>
+[% END %]
     [% END %]
 
  <div id="patron-alternative-contact" style="padding-top: 1em;">
@@ -389,7 +399,9 @@ function validate1(date) {
     [% IF ( altcontactphone ) %]<li><span class="label">Phone: </span>[% altcontactphone %]</li>[% END %]
     </ol></div>
 </div>
+[% IF !( usef1 ) || !( f1_id > 0 ) %]
 <div class="action"><a href="memberentry.pl?op=modify&amp;borrowernumber=[% borrowernumber %]&amp;step=2">Edit</a></div>
+[% END %]
 
 </div>
 </div>
