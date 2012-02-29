@@ -13,7 +13,7 @@
 [% FOREACH BORROWER_INF IN BORROWER_INFO %]
 <h3><a href="/cgi-bin/koha/opac-user.pl">[% INCLUDE 'patron-title.inc' ifirstname = BORROWER_INF.firstname surname = BORROWER_INF.surname othernames = BORROWER_INF.othernames cardnumber = BORROWER_INF.cardnumber %]'s account</a> <img src="[% themelang %]../../images/caret.gif" width="16" height="16" alt="&gt;" border="0" /> Your Personal Details</h3>
 
-[% IF ( OPACPatronDetails ) && ( !( BORROWER_INF.f1_id.length > 0 ) || !( usef1 ) ) %]
+[% IF ( OPACPatronDetails ) && ( !( BORROWER_INF.f1_id > 0 ) || !( usef1 ) ) %]
 <form action="/cgi-bin/koha/opac-userupdate.pl" method="get">
 <div class="yui-u first">
 <input type="hidden" name="modify" value="yes" />
@@ -100,7 +100,7 @@
 
 </form>
 [% ELSE %]
-  [% IF ( usef1 ) && ( BORROWER_INF.f1_id.length > 0 ) %]
+  [% IF ( usef1 ) && ( BORROWER_INF.f1_id > 0 ) %]
     [% IF ( f1staging ) %]
       <p style="clear:left;padding:1em 0">You must make changes in Fellowship One. To do so, you can click <a href="https://[% CHURCH_CODE %].staging.infellowship.com" target="_blank">here</a> to open Fellowship One in a new tab or window.</p>
     [% ELSE %]

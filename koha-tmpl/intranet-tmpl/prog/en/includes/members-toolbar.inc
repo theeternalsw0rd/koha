@@ -101,7 +101,7 @@ function update_child() {
 
 	</script>
 	<ul class="toolbar">
-	[% IF ( usef1 ) && ( f1_id.length > 0 ) %]
+	[% IF ( usef1 ) && !( f1_id > 0 ) %]
 	    [% IF ( category_type ) %]
             [% IF ( guarantor ) %]
                 <li><a id="editpatron" href="/cgi-bin/koha/members/memberentry.pl?op=modify&amp;borrowernumber=[% borrowernumber %]&amp;guarantorid=[% guarantorborrowernumber %]&amp;category_type=[% category_type %]">
