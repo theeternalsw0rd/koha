@@ -5,8 +5,14 @@ body {
 }
 
 /* Line break after each field */
-.field{
-	display: block;
+.field {
+    -moz-transform: rotate(90deg);
+    -moz-transform-origin: 4% 40%;
+    display: block;
+    margin-left: 15mm;
+    margin-top: 27mm;
+    padding: 10px;
+    font-size: 12pt;
 }
 
 /* Line break after each space in the itemcallnumber field */
@@ -25,3 +31,4 @@ body {
 	top: 25px;
 	left: 500px;
 }
+
