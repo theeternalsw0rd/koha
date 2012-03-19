@@ -30,7 +30,6 @@ INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES
 INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1ClientSecret', '', 'Client Secret is acquired from Fellowship One\'s API key', '', 'Free');
 INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1DefaultBranchAttribute', 'Koha Default Branch', 'Fellowship One attribute name for default branch assingment (default of \'Koha Default Branch\')', '', 'Free');
 INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1PatronTypeAttribute', 'Koha Patron Type', 'Fellowship One attribute name for patron type assingment (default of \'Koha Patron Type\')', '', 'Free');
-INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('f1FlagsAttribute', 'Koha Flags', 'Fellowship One attribute name for permission flags assingment (default of \'Koha Flags\')', '', 'Free');
 INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('casAuthentication', '0', 'Enable or disable CAS authentication', '', 'YesNo');
 INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('casLogout', '0', 'Does a logout from Koha should also log the user out of CAS?', '', 'YesNo');
 INSERT INTO `systempreferences` (variable,value,explanation,options,type) VALUES('casServerUrl', 'https://localhost:8443/cas', 'URL of the cas server', '', 'Free');

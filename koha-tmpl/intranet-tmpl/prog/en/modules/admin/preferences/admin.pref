@@ -125,6 +125,3 @@ Administration:
         -
             - The Attribute group from Fellowship One containing the patron types is
             - pref: f1PatronTypeAttribute
-        -
-            - The Attribute group from Fellowship One containing the staff permission flags is
-            - pref: f1FlagsAttribute
