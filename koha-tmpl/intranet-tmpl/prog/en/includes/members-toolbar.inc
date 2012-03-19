@@ -62,6 +62,7 @@ function update_child() {
 			{ text: _("Set Permissions"), url: "/cgi-bin/koha/members/member-flags.pl?member=[% borrowernumber %]"[% UNLESS ( CAN_user_permissions ) %], disabled: true[% END %]},
 			{ text: _("Delete"), onclick: { fn: confirm_deletion}[% UNLESS ( CANDELETEUSER ) %], disabled: true[% END %] },
 			[% END %][% IF ( usef1 ) && ( f1_id > 0) %]
+			{ text: _("Set Permissions"), url: "/cgi-bin/koha/members/member-flags.pl?member=[% borrowernumber %]"[% UNLESS ( CAN_user_permissions ) %], disabled: true[% END %]},
 			{ text: _("Delete (patron may still exist in Fellowship One)"), onclick: { fn: confirm_deletion}[% UNLESS ( CANDELETEUSER ) %], disabled: true[% END %] },[% END %]
 			{ text: _("Update Child to Adult Patron") , onclick: { fn: update_child }[% UNLESS ( is_child ) %], disabled: true[% END %]}
 		];
@@ -132,6 +133,11 @@ function update_child() {
 	  <li><a id="deletepatron" href="javascript:confirm_deletion();">Delete</a></li>
 	[% END %]
 	[% IF ( usef1 ) && ( f1_id > 0 ) %]
-	  <span id="moremenuc"><li><a id="deletepatron" href="javascript:confirm_deletion();">Delete</a></li></span>
+	  <span id="moremenuc">
+	  [% IF ( CAN_user_permissions ) %]
+	    <li><a id="patronflags" href="/cgi-bin/koha/members/member-flags.pl?member=[% borrowernumber %]">Set Permissions</a></li>
+	  [% END %]
+            <li><a id="deletepatron" href="javascript:confirm_deletion();">Delete</a></li>
+          </span>
 	[% END %]
 </ul></div>
