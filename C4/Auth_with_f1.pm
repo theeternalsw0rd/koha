@@ -167,7 +167,8 @@ sub get_hash_from_f1 {
 		dateofbirth => undef,
 		dateenrolled => undef,
 		dateexpiry => undef,
-		branchcode => undef
+		branchcode => undef,
+		flags => ''
 	);
 	$logindata->{'request_method'} = 'GET';
 	$logindata->{'request_url'} = $prefhost . '/v1/People/Search.json?id=' . $f1_id . '&include=addresses,communications,attributes';
@@ -202,6 +203,15 @@ sub get_hash_from_f1 {
 		for my $attributes(@{$people->{'attributes'}->{'attribute'}}) {
 			if($attributes->{'attributeGroup'}->{'name'} eq C4::Context->preference('f1PatronTypeAttribute')) {
 				$data{'categorycode'} = $attributes->{'attributeGroup'}->{'attribute'}->{'name'};
+=begin comment
+				if($data{'categorycode'} eq 'LS') {
+					$data{'flags'} = '1670'; #permission flags
+				}
+=end comment
+=cut
+			}
+			if($attributes->{'attributeGroup'}->{'name'} eq C4::Context->preference('f1FlagsAttribute')) {
+				$data{'flags'} = $attributes->{'attributeGroup'}->{'attribute'}->{'name'};
 			}
 			if($attributes->{'attributeGroup'}->{'name'} eq C4::Context->preference('f1DefaultBranchAttribute')) {
 				$data{'branchcode'} = $attributes->{'attributeGroup'}->{'attribute'}->{'name'};
@@ -352,10 +362,13 @@ C4::Auth - Authenticates Koha users
 
 	To use it, you need configure f1Authentication in the Administration area of Global System Preferences.
     
-    On Fellowship One, you will need to create the following Attribute Groups: 'Koha Patron Type' and 'Koha Default Branch' (or name
-    them yourself and change the defaults in the Global System Preferences). You will put the categorycode values from the categories
-    table from the database as the Individual Attributes for the 'Koha Patron Type' group.  Likewise the branchcode values from the
-    branches table will be used in the 'Koha Default Branch' group.
-
-    Staff permissions are managed on the local database, so a new staff person must be set up in Fellowship One and login to the patron
-    area once. Then their permissions can be set on the local user as pulled from Fellowship One.
+    On Fellowship One, you will need to create the following Attribute Groups: 'Koha Patron Type', 'Koha Default Branch',
+    and 'Koha Flags' (or name them yourself and change the defaults in the Global System Preferences). You will put the categorycode
+    values from the categories table from the database as the Individual Attributes for the 'Koha Patron Type' group.  Likewise the
+    branchcode values from the branches table will be used in the 'Koha Default Branch' group. For the 'Koha Flags' will contain the
+    permissions flags that you want to be able to use.  To find out these flags, you will need to apply the permissions to a local
+    user first and look up the flags field for that user in the borrowers table.
+    
+    You can also do the 'Koha Flags' by applying some logic when looking up the patron type (this requires each permission level to have
+    a matching patron type).  Some example code for doing this is provided in the comment beginning on line 205 of this file.  If going
+    this route, remove the 'Koha Flags' if block for a marginal improvement (it will still work if you don't do this).
