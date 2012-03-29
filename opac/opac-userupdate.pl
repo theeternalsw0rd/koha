@@ -177,7 +177,7 @@ $bordat[0] = $borr;
 
 $template->param( 
     BORROWER_INFO => \@bordat,
-    usef1 => $use_f1,
+    usef1 => $usef1,
     f1staging => $f1staging,
     userupdateview => 1
 );
