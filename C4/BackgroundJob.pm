@@ -28,7 +28,7 @@ use vars qw($VERSION);
 
 BEGIN {
 	# set the version for version checking
-	$VERSION = 3.00;
+    $VERSION = 3.07.00.049;
 }
 
 =head1 NAME
@@ -231,7 +231,7 @@ if the job status is not 'completed'.
 
 sub results {
     my $self = shift;
-    return undef unless $self->{'status'} eq 'completed';
+    return unless $self->{'status'} eq 'completed';
     return $self->{'results'};
 }
 
@@ -253,7 +253,7 @@ sub fetch {
     my $session = get_session($sessionID);
     my $prefix = "job_$jobID";
     unless (defined $session->param($prefix)) {
-        return undef;
+        return;
     }
     my $self = $session->param($prefix);
     bless $self, $class;

@@ -25,7 +25,7 @@
 </li>
 	<li>Finally choose the file type and file name
 <ul>
-	<li>Choose to export your data in marc or marcxml format</li>
+    <li>Choose to export your data in marc or marcxml format</li>
 	<li>Choose the name you want your file to save as</li>
 </ul>
 </li>
@@ -34,6 +34,6 @@
 </li>
 </ul>
 
-<p><strong>See the full documentation for Marc Export in the <a href="http://manual.koha-community.org/3.6/en/exportbibs.html">manual</a> (online).</strong></p>
+<p><strong>See the full documentation for Marc Export in the <a href="http://manual.koha-community.org/3.8/en/exportbibs.html">manual</a> (online).</strong></p>
 
 [% INCLUDE 'help-bottom.inc' %]

@@ -8,6 +8,7 @@ use strict;
 use warnings;
 use English;
 use Exporter;
+use Readonly;
 
 use Sys::Syslog qw(syslog);
 use POSIX qw(strftime);
@@ -20,7 +21,7 @@ use Sip::Checksum qw(checksum);
 use vars qw($VERSION @ISA @EXPORT_OK %EXPORT_TAGS);
 
 BEGIN {
-	$VERSION = 1.00;
+    $VERSION = 3.07.00.049;
 	@ISA = qw(Exporter);
 
 	@EXPORT_OK = qw(y_or_n timestamp add_field maybe_add add_count
@@ -38,7 +39,16 @@ BEGIN {
 
 our $error_detection = 0;
 our $protocol_version = 1;
-our $field_delimiter = '|'; 	# Protocol Default
+our $field_delimiter = '|'; # Protocol Default
+# The message terminator for a SIP message is '\r' in the standard doc
+# However most sip devices in the wild send a CR LF pair
+# This is required by Telnet if that is your carrier mechanism
+# On raw connections it may also be required because the buffer is
+# only flushed on linefeed and its absence causes enough delay for
+# client machines to go into an error state
+# The below works for almost all machines if however you have one
+# which does not like the additional linefeed change value to $CR
+Readonly my $msg_terminator => $CRLF;
 
 # We need to keep a copy of the last message we sent to the SC,
 # in case there's a transmission error and the SC sends us a
@@ -50,7 +60,9 @@ our $last_response = '';
 
 sub timestamp {
     my $time = $_[0] || time();
-    if ($time=~m/^(\d{4})\-(\d{2})\-(\d{2})/) {
+    if ( ref $time eq 'DateTime') {
+        return $time->strftime(SIP_DATETIME);
+    } elsif ($time=~m/^(\d{4})\-(\d{2})\-(\d{2})/) {
         # passing a db returned date as is + bogus time
         return sprintf( '%04d%02d%02d    235900', $1, $2, $3);
     }
@@ -156,7 +168,6 @@ sub read_SIP_packet {
     # local $/ = "\r";      # don't need any of these here.  use whatever the prevailing $/ is.
     local $/ = "\015";    # proper SPEC: (octal) \015 = (hex) x0D = (dec) 13 = (ascii) carriage return
     {    # adapted from http://perldoc.perl.org/5.8.8/functions/readline.html
-        for ( my $tries = 1 ; $tries <= 3 ; $tries++ ) {
             undef $!;
             $record = readline($fh);
             if ( defined($record) ) {
@@ -171,14 +182,7 @@ sub read_SIP_packet {
                 while ( chomp($record) ) { 1; }
 
                 $record and last;    # success
-            } else {
-                if ($!) {
-                    syslog( "LOG_DEBUG", "read_SIP_packet (try #$tries) ERROR: $! $@" );
-                    # die "read_SIP_packet ERROR: $!";
-                    warn "read_SIP_packet ERROR: $! $@";
-                }
             }
-        }
     }
     if ($record) {
         my $len2 = length($record);
@@ -232,10 +236,10 @@ sub write_msg {
 
     if ($file) {
         $file->autoflush(1);
-        print $file "$msg\r";
+        print $file $msg, $msg_terminator;
     } else {
         STDOUT->autoflush(1);
-        print $msg, "\r";
+        print $msg, $msg_terminator;
         syslog("LOG_INFO", "OUTPUT MSG: '$msg'");
     }
 

@@ -5,10 +5,10 @@
 			if($(this).attr("checked")){
 				var rowid = $(this).attr("id");
 				newid = Number(rowid.replace("none","")) 
-			  	$("#sms"+newid).attr("checked","");
-			  	$("#email"+newid).attr("checked","");
-			  	$("#digest"+newid).attr("checked","");
-			  	$("#rss"+newid).attr("checked","");
+          $("#sms"+newid).removeAttr("checked");
+          $("#email"+newid).removeAttr("checked");
+          $("#digest"+newid).removeAttr("checked");
+          $("#rss"+newid).removeAttr("checked");
 			}
 		});
 	});
@@ -21,18 +21,19 @@
     <tr><th></th>
         <th>Days in advance</th>
         [% IF ( SMSSendDriver ) %]<th>SMS</th>[% END %]
+        [% IF ( TalkingTechItivaPhone ) %]<th>Phone</th>[% END %]
         <th>Email</th><th>Digests only?</th>
         <!-- <th>RSS</th> -->
         [% UNLESS ( messaging_form_inactive ) %]<th>Do not notify</th>[% END %]
     </tr>
     [% FOREACH messaging_preference IN messaging_preferences %]
     <tr>
-      <td>[% IF ( messaging_preference.Item_Due ) %]Item Due
-          [% ELSIF ( messaging_preference.Advance_Notice ) %]Advance Notice
-          [% ELSIF ( messaging_preference.Upcoming_Events ) %]Upcoming Events
-          [% ELSIF ( messaging_preference.Hold_Filled ) %]Hold Filled
-          [% ELSIF ( messaging_preference.Item_Check_in ) %]Item Check-in
-          [% ELSIF ( messaging_preference.Item_Checkout ) %]Item Checkout
+      <td>[% IF ( messaging_preference.Item_Due ) %]Item due
+          [% ELSIF ( messaging_preference.Advance_Notice ) %]Advance notice
+          [% ELSIF ( messaging_preference.Upcoming_Events ) %]Upcoming events
+          [% ELSIF ( messaging_preference.Hold_Filled ) %]Hold filled
+          [% ELSIF ( messaging_preference.Item_Check_in ) %]Item check-in
+          [% ELSIF ( messaging_preference.Item_Checkout ) %]Item checkout
           [% ELSE %]Unknown [% END %]</td>
       [% IF ( messaging_preference.takes_days ) %]
       <td>
@@ -70,18 +71,46 @@
                  <input type="checkbox"
                  id="sms[% messaging_preference.message_attribute_id %]"
                  name="[% messaging_preference.message_attribute_id %]"
-                 value="sms" checked="checked" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').attr('checked','');" />
+                 value="sms" checked="checked" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').removeAttr('checked');" />
               [% ELSE %]
                  <input type="checkbox"
                  id="sms[% messaging_preference.message_attribute_id %]"
                  name="[% messaging_preference.message_attribute_id %]"
-                 value="sms" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').attr('checked','');" />
+                 value="sms" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').removeAttr('checked');" />
               [% END %]
           [% END %]
       </td>[% END %]
       [% ELSE %]
       <td>-</td>
       [% END %]
+
+      [% IF ( TalkingTechItivaPhone ) %]<td>
+          [% IF ( messaging_form_inactive ) %]
+              [% IF ( messaging_preference.transports_phone ) %]
+                 <input type="checkbox"
+                 id="phone[% messaging_preference.message_attribute_id %]"
+                 name="[% messaging_preference.message_attribute_id %]"
+                 value="phone" checked="checked" disabled="disabled" />
+              [% ELSE %]
+                 <input type="checkbox"
+                 id="phone[% messaging_preference.message_attribute_id %]"
+                 name="[% messaging_preference.message_attribute_id %]"
+                 value="phone" disabled="disabled" />
+              [% END %]
+          [% ELSE %]
+              [% IF ( messaging_preference.transports_phone ) %]
+                 <input type="checkbox"
+                 id="phone[% messaging_preference.message_attribute_id %]"
+                 name="[% messaging_preference.message_attribute_id %]"
+                 value="phone" checked="checked" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').attr('checked','');" />
+              [% ELSE %]
+                 <input type="checkbox"
+                 id="phone[% messaging_preference.message_attribute_id %]"
+                 name="[% messaging_preference.message_attribute_id %]"
+                 value="phone" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').attr('checked','');" />
+              [% END %]
+          [% END %]
+      </td>[% END %]
 
       [% IF ( messaging_preference.transport_email ) %]
       <td>
@@ -102,12 +131,12 @@
             <input type="checkbox"
                  id="email[% messaging_preference.message_attribute_id %]"
                  name="[% messaging_preference.message_attribute_id %]"
-                 value="email" checked="checked" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').attr('checked','');" />
+                 value="email" checked="checked" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').removeAttr('checked');" />
               [% ELSE %]
             <input type="checkbox"
                  id="email[% messaging_preference.message_attribute_id %]"
                  name="[% messaging_preference.message_attribute_id %]"
-                 value="email" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').attr('checked','');" />
+                 value="email" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').removeAttr('checked');" />
               [% END %]
           [% END %]
       </td>
@@ -134,12 +163,12 @@
                 <input type="checkbox"
                      id="digest[% messaging_preference.message_attribute_id %]"
                      value="[% messaging_preference.message_attribute_id %]"
-                     name="digest" checked="checked" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').attr('checked','');" />
+                     name="digest" checked="checked" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').removeAttr('checked');" />
               [% ELSE %]
                 <input type="checkbox"
                      id="digest[% messaging_preference.message_attribute_id %]"
                      value="[% messaging_preference.message_attribute_id %]"
-                     name="digest" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').attr('checked','');" />
+                     name="digest" onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').removeAttr('checked');" />
               [% END %]
           [% END %]
       </td>
@@ -158,7 +187,7 @@
             <input type="checkbox"
                  id="rss[% messaging_preference.message_attribute_id %]"
                  name="[% messaging_preference.message_attribute_id %]"
-                 value="rss"   [% messaging_preference.transport_rss %] onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').attr('checked','');" />
+                 value="rss"   [% messaging_preference.transport_rss %] onclick = "$('#none'+'[% messaging_preference.message_attribute_id %]').removeAttr('checked');" />
           [% END %]
       </td>
       [% ELSE %]

@@ -33,7 +33,7 @@ use C4::ItemCirculationAlertPreference;
 use C4::Output;
 
 # shortcut for long package name
-my $preferences = 'C4::ItemCirculationAlertPreference';
+our $preferences = 'C4::ItemCirculationAlertPreference';
 
 # utf8 filter
 sub utf8 {
@@ -65,7 +65,7 @@ sub show {
             query           => $input,
             type            => "intranet",
             authnotrequired => 0,
-            flagsrequired   => { parameters => 1 },
+            flagsrequired   => { parameters => 'parameters_remaining_permissions' },
             debug           => defined($input->param('debug')),
         }
     );

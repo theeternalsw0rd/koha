@@ -50,9 +50,10 @@ use warnings;
 use CGI;
 use C4::Context;
 use C4::Auth;
+use C4::Branch;
 use C4::Output;
 use C4::Acquisition qw/GetBasket NewBasket GetContracts ModBasketHeader/;
-use C4::Bookseller qw/GetBookSellerFromId/;
+use C4::Bookseller qw/GetBookSellerFromId GetBookSeller/;
 
 
 my $input = new CGI;
@@ -68,9 +69,9 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
 );
 
 #parameters:
-my $booksellerid;
-$booksellerid = $input->param('booksellerid');
+my $booksellerid = $input->param('booksellerid');
 my $basketno = $input->param('basketno');
+my $branches = GetBranches;
 my $basket;
 my $op = $input ->param('op');
 my $is_an_edit= $input ->param('is_an_edit');
@@ -101,23 +102,56 @@ if ( $op eq 'add_form' ) {
         $template->param(contractloop => \@contractloop,
                          basketcontractnumber => $basket->{'contractnumber'});
     }
+    my @booksellers = C4::Bookseller::GetBookSeller();
     $template->param( add_form => 1,
                     basketname => $basket->{'basketname'},
                     basketnote => $basket->{'note'},
                     basketbooksellernote => $basket->{'booksellernote'},
                     booksellername => $bookseller->{'name'},
                     booksellerid => $booksellerid,
-                    basketno => $basketno
-    	);
+                    basketno => $basketno,
+                    booksellers => \@booksellers,
+                    deliveryplace => $basket->{deliveryplace},
+                    billingplace => $basket->{billingplace},
+    );
+
+    my $billingplace = $basket->{'billingplace'} || C4::Context->userenv->{"branch"};
+    my $deliveryplace = $basket->{'deliveryplace'} || C4::Context->userenv->{"branch"};
+
+    # Build the combobox to select the billing place
+    my @billingplaceloop;
+
+    my $branches = C4::Branch::GetBranchesLoop( $billingplace );
+    $template->param( billingplaceloop => $branches );
+    $branches = C4::Branch::GetBranchesLoop( $deliveryplace );
+    $template->param( deliveryplaceloop => $branches );
+
 #End Edit
 } elsif ( $op eq 'add_validate' ) {
 #we are confirming the changes, save the basket
-    my $basketno;
     if ( $is_an_edit ) {
-        $basketno = $input->param('basketno');
-        ModBasketHeader($input->param('basketno'),$input->param('basketname'),$input->param('basketnote'),$input->param('basketbooksellernote'),$input->param('basketcontractnumber'));
+        ModBasketHeader(
+            $basketno,
+            $input->param('basketname'),
+            $input->param('basketnote'),
+            $input->param('basketbooksellernote'),
+            $input->param('basketcontractnumber') || undef,
+            $input->param('basketbooksellerid'),
+            $input->param('deliveryplace'),
+            $input->param('billingplace'),
+        );
     } else { #New basket
-        $basketno = NewBasket($booksellerid, $loggedinuser, $input->param('basketname'), $input->param('basketnote'), $input->param('basketbooksellernote'), $input->param('basketcontractnumber'));
+        $basketno = NewBasket(
+            $booksellerid,
+            $loggedinuser,
+            $input->param('basketname'),
+            $input->param('basketnote'),
+            $input->param('basketbooksellernote'),
+            $input->param('basketcontractnumber') || undef,
+            undef,
+            $input->param('deliveryplace'),
+            $input->param('billingplace'),
+        );
     }
     print $input->redirect('basket.pl?basketno='.$basketno);
     exit 0;

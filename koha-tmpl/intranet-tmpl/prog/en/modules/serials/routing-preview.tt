@@ -1,5 +1,5 @@
 [% INCLUDE 'doc-head-open.inc' %]
-<title>Koha &rsaquo; Serials &rsaquo; Preview Routing List</title>
+<title>Koha &rsaquo; Serials &rsaquo; Preview routing list</title>
 [% INCLUDE 'doc-head-close.inc' %]
 <script type="text/javascript">
 <!--
@@ -12,7 +12,7 @@ function print_slip(subscriptionid,issue){
 //-->
 </script>
 </head>
-<body>
+<body id="ser_routing-preview" class="ser">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'serials-search.inc' %]
 

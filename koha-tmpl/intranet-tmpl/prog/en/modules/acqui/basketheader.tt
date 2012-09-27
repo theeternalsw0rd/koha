@@ -13,8 +13,8 @@
 // to check if the data are correctly entered.
 function Check(ff) {
     var ok=0;
-    var _alertString="Form not submitted because of the following problem(s)\n";
-    _alertString +="-------------------------------------------------------------------\n\n";
+    var _alertString="Form not submitted because of the following problem(s)";
+    _alertString +="\n-------------------------------------------------------------------\n\n";
     if (!(isNotNull(ff.basketname,0))){
         ok=1;
         _alertString += "- name missing\n";
@@ -84,7 +84,7 @@ li.list2 {
 </style>
 
 </head>
-<body>
+<body id="acq_basketheader" class="acq">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'acquisitions-search.inc' %]
 
@@ -124,6 +124,40 @@ li.list2 {
                 <li>
                     <label for="basketname" class="required">Basket name</label> &nbsp;
                         <input type="text" name="basketname" id="basketname" size="40" maxlength="80" value="[% basketname %]" />
+                </li>
+                 <li>
+                    <label for="billingplace">Billing Place:</label>
+                    <select name="billingplace" id="billingplace">
+                        <option value="">--</option>
+                        [% FOREACH billingplace IN billingplaceloop %]
+                            <option value="[% billingplace.value %]"[% IF ( billingplace.selected ) %] selected="selected"[% END %]>
+                                [% billingplace.branchname %]
+                            </option>
+                        [% END %]
+                    </select>
+                </li>
+                <li>
+                    <label for="deliveryplace">Delivery  Place:</label>
+                    <select name="deliveryplace" id="deliveryplace">
+                        <option value="">--</option>
+                        [% FOREACH deliveryplace IN deliveryplaceloop %]
+                            <option value="[% deliveryplace.value %]"[% IF ( deliveryplace.selected ) %] selected="selected"[% END %]>
+                                [% deliveryplace.branchname %]
+                            </option>
+                        [% END %]
+                    </select>
+                </li>
+                <li>
+                    <label for="basketbooksellerid">Vendor</label> &nbsp;
+                    <select name="basketbooksellerid" id="basketbooksellerid">
+                    [% FOREACH b IN booksellers %]
+                        [% IF booksellerid == b.id %]
+                           <option value="[% b.id %]" selected="selected">[% b.name %]</option>
+                        [% ELSE %]
+                           <option value="[% b.id %]">[% b.name %]</option>
+                        [% END %]
+                    [% END %]
+            </select>
                 </li>
                 <li>
                     <label for="basketnote">Internal note</label> &nbsp;

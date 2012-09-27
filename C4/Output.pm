@@ -37,20 +37,24 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 
 BEGIN {
     # set the version for version checking
-    $VERSION = 3.03;
+    $VERSION = 3.07.00.049;
     require Exporter;
-    @ISA    = qw(Exporter);
-	@EXPORT_OK = qw(&is_ajax ajax_fail); # More stuff should go here instead
-	%EXPORT_TAGS = ( all =>[qw(&pagination_bar
-							   &output_with_http_headers &output_html_with_http_headers)],
-					ajax =>[qw(&output_with_http_headers is_ajax)],
-					html =>[qw(&output_with_http_headers &output_html_with_http_headers)]
-				);
-    push @EXPORT, qw(
-        &output_html_with_http_headers &output_with_http_headers FormatData FormatNumber pagination_bar
-    );
-}
 
+ @ISA    = qw(Exporter);
+    @EXPORT_OK = qw(&is_ajax ajax_fail); # More stuff should go here instead
+    %EXPORT_TAGS = ( all =>[qw(setlanguagecookie pagination_bar
+                                &output_with_http_headers &output_ajax_with_http_headers &output_html_with_http_headers)],
+                    ajax =>[qw(&output_with_http_headers &output_ajax_with_http_headers is_ajax)],
+                    html =>[qw(&output_with_http_headers &output_html_with_http_headers)]
+                );
+    push @EXPORT, qw(
+        setlanguagecookie getlanguagecookie pagination_bar
+    );
+    push @EXPORT, qw(
+        &output_html_with_http_headers &output_ajax_with_http_headers &output_with_http_headers FormatData FormatNumber
+    );
+
+}
 
 =head1 NAME
 
@@ -121,7 +125,7 @@ This function returns HTML, without any language dependency.
 =cut
 
 sub pagination_bar {
-	my $base_url = (@_ ? shift : $ENV{SCRIPT_NAME} . $ENV{QUERY_STRING}) or return undef;
+	my $base_url = (@_ ? shift : $ENV{SCRIPT_NAME} . $ENV{QUERY_STRING}) or return;
     my $nb_pages       = (@_) ? shift : 1;
     my $current_page   = (@_) ? shift : undef;	# delay default until later
     my $startfrom_name = (@_) ? shift : 'page';
@@ -263,7 +267,7 @@ $status is an HTTP status message, like '403 Authentication Required'. It defaul
 
 =cut
 
-sub output_with_http_headers($$$$;$) {
+sub output_with_http_headers {
     my ( $query, $cookie, $data, $content_type, $status ) = @_;
     $status ||= '200 OK';
 
@@ -301,12 +305,24 @@ sub output_with_http_headers($$$$;$) {
     print $query->header($options), $data;
 }
 
-sub output_html_with_http_headers ($$$;$) {
+sub output_html_with_http_headers {
     my ( $query, $cookie, $data, $status ) = @_;
     output_with_http_headers( $query, $cookie, $data, 'html', $status );
 }
 
-sub is_ajax () {
+
+sub output_ajax_with_http_headers {
+    my ( $query, $js ) = @_;
+    print $query->header(
+        -type            => 'text/javascript',
+        -charset         => 'UTF-8',
+        -Pragma          => 'no-cache',
+        -'Cache-Control' => 'no-cache',
+        -expires         => '-1d',
+    ), $js;
+}
+
+sub is_ajax {
     my $x_req = $ENV{HTTP_X_REQUESTED_WITH};
     return ( $x_req and $x_req =~ /XMLHttpRequest/i ) ? 1 : 0;
 }

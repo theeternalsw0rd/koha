@@ -1,8 +1,42 @@
 [% INCLUDE 'doc-head-open.inc' %]
 <title>Koha &rsaquo; Reports [% IF ( do_it ) %]&rsaquo; Catalog statistics &rsaquo; Results[% ELSE %]&rsaquo; Catalog statistics[% END %]</title>
 [% INCLUDE 'doc-head-close.inc' %]
+[% INCLUDE 'calendar.inc' %]
+<script type="text/javascript">
+//<![CDATA[
+        $(document).ready(function() {
+        // http://jqueryui.com/demos/datepicker/#date-range
+        var dates = $( "#from, #to" ).datepicker({
+            changeMonth: true,
+            numberOfMonths: 1,
+            onSelect: function( selectedDate ) {
+                var option = this.id == "from" ? "minDate" : "maxDate",
+                    instance = $( this ).data( "datepicker" );
+                    date = $.datepicker.parseDate(
+                        instance.settings.dateFormat ||
+                        $.datepicker._defaults.dateFormat,
+                        selectedDate, instance.settings );
+                dates.not( this ).datepicker( "option", option, date );
+            }
+        });
+        var datesRO = $( "#fromRO, #toRO" ).datepicker({
+            changeMonth: true,
+            numberOfMonths: 1,
+            onSelect: function( selectedDate ) {
+                var option = this.id == "fromRO" ? "minDate" : "maxDate",
+                    instance = $( this ).data( "datepicker" );
+                    date = $.datepicker.parseDate(
+                        instance.settings.dateFormat ||
+                        $.datepicker._defaults.dateFormat,
+                        selectedDate, instance.settings );
+                datesRO.not( this ).datepicker( "option", option, date );
+            }
+        });
+        });
+//]]>
+</script>
 </head>
-<body>
+<body id="rep_catalogue_stats" class="rep">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'cat-search.inc' %]
 
@@ -80,7 +114,7 @@
 		<tbody>
 			[% IF ( haslccn ) %]
 					<tr>
-					<td>LoC Classification</td>
+                    <td>LoC classification</td>
 					<td><input type="radio" name="Line" value="lccn" /></td>
 					<td><input type="radio" name="Column" value="lccn" /></td>
 					<td> <label for="locFrom">From</label> <input type="text" name="Filter" id="locFrom" /> <label for="locTo">To</label> <input type="text" name="Filter" id="locTo" /></td>
@@ -102,10 +136,10 @@
 			[% END %]
 			[% IF ( hascote ) %]
 			  <tr>
-					<td>Koha Full Call Number</td>
+                    <td>Koha full call number</td>
 					<td><input type="radio" name="Line" value="items.itemcallnumber" /></td>
 					<td><input type="radio" name="Column" value="items.itemcallnumber" /></td>
-					<td><label for="callnoFrom">From</label> <input type="text" name="Filter" id="callnoFrom" /> <label for="callnoTo">To</label> <input type="text" name="Filter" id="callnoTo" /></td>
+                    <td><label for="from">From</label> <input type="text" name="Filter" id="from" /> <label for="to">To</label> <input type="text" name="Filter" id="to" /></td>
 				</tr>
 			 <tr>
 					<td>&nbsp;</td>
@@ -125,7 +159,7 @@
 				<tr><td colspan="4"><input type="hidden" name="Filter" /> <input type="hidden" name="Filter" /></td></tr>
 			[% END %]
 			 <tr>
-				<td>Item Type</td>
+                <td>Item type</td>
 				<td><input type="radio" name="Line" value="[% item_itype %]" /></td>
 				<td><input type="radio" name="Column" value="[% item_itype %]" /></td>
 				<td><select name="Filter" id="[% item_itype %]">
@@ -145,13 +179,13 @@
 				<td><input type="text" name="Filter" /></td>
 			</tr>
 			<tr>
-				<td>Publication Year</td>
+                <td>Publication year</td>
 				<td><input type="radio" name="Line" value="publicationyear" /></td>
 				<td><input type="radio" name="Column" value="publicationyear" /></td>
-				<td><label for="pubyearFrom">From</label> <input type="text" name="Filter" id="pubyearFrom" /> <label for="pubyearTo">To</label> <input type="text" name="Filter" id="pubyearTo" /></td>
+                <td><label for="fromRO">From</label> <input type="text" name="Filter" id="fromRO" /> <label for="toRO">To</label> <input type="text" name="Filter" id="toRO" /></td>
 			</tr>
 			<tr>
-				<td>Home Library</td>
+                <td>Home library</td>
 				<td><input type="radio" name="Line" value="items.homebranch" /></td>
 				<td><input type="radio" name="Column" value="items.homebranch" /></td>
 				<td><select name="Filter" id="branch">
@@ -163,7 +197,7 @@
 				</td>
 			</tr>
 			<tr>
-				<td>Shelving Location</td>
+                <td>Shelving location</td>
 				<td><input type="radio" name="Line" value="items.location" /></td>
 				<td><input type="radio" name="Column" value="items.location" /></td>
 				<td><select name="Filter" id="location">

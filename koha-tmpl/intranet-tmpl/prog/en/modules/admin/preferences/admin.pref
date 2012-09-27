@@ -5,7 +5,7 @@ Administration:
             - Use
             - pref: KohaAdminEmailAddress
               class: email
-            - "as the email address for the administrator of Koha. (This is the default From: address for emails unless there is one for the particular branch, and is referred to when an internal error occurs.)"
+            - "as the email address for the administrator of Koha. (This is the default From: address for emails unless there is one for the particular library, and is referred to when an internal error occurs.)"
         -
             - Show
             - pref: DebugLevel
@@ -52,7 +52,7 @@ Administration:
             - Automatically log out users after
             - pref: timeout
               class: integer
-            - milliseconds of inactivity.
+            - seconds of inactivity. Adding d will specify it in days, e.g. 1d is timeout of one day.
         -
             - pref: AutoLocation
               default: 0
@@ -125,3 +125,20 @@ Administration:
         -
             - The Attribute group from Fellowship One containing the patron types is
             - pref: f1PatronTypeAttribute
+        -
+            - Use
+            - pref: AllowPkiAuth
+              default: None
+              choices:
+                  None: "no"
+                  Common Name: the Common Name
+                  emailAddress: the emailAddress
+            - field for SSL client certificate authentication
+    Search Engine:
+        -
+            - pref: SearchEngine
+              default: Zebra
+              choices:
+                Solr: Solr
+                Zebra: Zebra
+            - is the search engine used.

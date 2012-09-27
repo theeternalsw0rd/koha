@@ -7,11 +7,35 @@ function Dopop(link) {
 	newin=window.open(link,'popup','width=500,height=400,toolbar=false,scrollbars=yes,resizeable=yes');
 }
 
+$.datepicker.setDefaults({
+        showOn: "both",
+        changeMonth: true,
+        changeYear: true,
+        buttonImage: '/opac-tmpl/lib/famfamfam/silk/calendar.png',
+        buttonImageOnly: true,
+        showButtonPanel: true
+    });
+
 $(document).ready(function(){
 	$(".close").click(function(){
 		window.close();
 	});
 	$(".focus").focus();
+    $( ".datepicker" ).datepicker();
+    // http://jqueryui.com/demos/datepicker/#date-range
+    var dates = $( ".datepickerfrom, .datepickerto" ).datepicker({
+        changeMonth: true,
+        numberOfMonths: 1,
+        onSelect: function( selectedDate ) {
+            var option = this.id == "from" ? "minDate" : "maxDate",
+                instance = $( this ).data( "datepicker" );
+                date = $.datepicker.parseDate(
+                    instance.settings.dateFormat ||
+                    $.datepicker._defaults.dateFormat,
+                    selectedDate, instance.settings );
+            dates.not( this ).datepicker( "option", option, date );
+        }
+    });
 	// clear the basket when user logs out
 	$("#logout").click(function(){
 		var nameCookie = "bib_list";
@@ -58,8 +82,9 @@ YAHOO.util.Event.onContentReady("changelanguage", function () {
 			
 // Build lists menu
 YAHOO.util.Event.onContentReady("listsmenu", function () {
+	YAHOO.widget.Menu.prototype.onRender = function () { };
     $("#listsmenu").css("display","block").css("visibility","hidden");
-	$("#listsmenulink").attr("href","#").find("span:eq(0)").append("<img src=\"/opac-tmpl/prog/images/list.gif\" width=\"5\" height=\"6\" alt=\"\" border=\"0\" />");
+	$("#listsmenulink").attr("href","#");
 	var listMenu = new YAHOO.widget.Menu("listsmenu");
 		listMenu.render();
 		listMenu.cfg.setProperty("context", ["listsmenulink", "tr", "br"]);

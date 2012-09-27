@@ -42,6 +42,7 @@ use C4::Circulation;
 use C4::Dates qw/format_date/;
 use C4::Members;
 use C4::Search;		# enabled_staff_search_views
+use Koha::DateUtils;
 
 my $dbh = C4::Context->dbh;
 my $sth;
@@ -68,7 +69,7 @@ my $default = C4::Context->userenv->{branch};
 my @values;
 my %label_of;
 
-foreach my $branchcode (sort keys %{$branches} ) {
+foreach my $branchcode ( sort { $branches->{$a}->{branchname} cmp $branches->{$b}->{branchname} } keys %$branches ) {
     push @values, $branchcode;
     $label_of{$branchcode} = $branches->{$branchcode}->{branchname};
 }
@@ -109,6 +110,11 @@ if ( $action eq 'move' ) {
   my $borrowernumber = $input->param('borrowernumber');
   my $biblionumber   = $input->param('biblionumber');
   ToggleLowestPriority( $borrowernumber, $biblionumber );
+} elsif ( $action eq 'toggleSuspend' ) {
+  my $borrowernumber = $input->param('borrowernumber');
+  my $biblionumber   = $input->param('biblionumber');
+  my $suspend_until  = $input->param('suspend_until');
+  ToggleSuspend( $borrowernumber, $biblionumber, $suspend_until );
 }
 
 if ($findborrower) {
@@ -367,7 +373,7 @@ foreach my $biblionumber (@biblionumbers) {
             # change the background color
             my $issues= GetItemIssue($itemnumber);
             if ( $issues->{'date_due'} ) {
-                $item->{date_due} = format_date($issues->{'date_due'});
+                $item->{date_due} = format_sqldatetime($issues->{date_due});
                 $item->{backgroundcolor} = 'onloan';
             }
 
@@ -567,7 +573,8 @@ foreach my $biblionumber (@biblionumbers) {
         $reserve{'lowestPriority'}    = $res->{'lowestPriority'};
         $reserve{'branchloop'} = GetBranchesLoop($res->{'branchcode'});
         $reserve{'optionloop'} = \@optionloop;
-
+        $reserve{'suspend'} = $res->{'suspend'};
+        $reserve{'suspend_until'} = $res->{'suspend_until'};
         push( @reserveloop, \%reserve );
     }
 
@@ -625,6 +632,11 @@ if ($multihold) {
 if ( C4::Context->preference( 'AllowHoldDateInFuture' ) ) {
     $template->param( reserve_in_future => 1 );
 }
+
+$template->param(
+    SuspendHoldsIntranet => C4::Context->preference('SuspendHoldsIntranet'),
+    AutoResumeSuspendedHolds => C4::Context->preference('AutoResumeSuspendedHolds'),
+);
 
 # printout the page
 output_html_with_http_headers $input, $cookie, $template->output;

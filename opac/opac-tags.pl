@@ -38,11 +38,12 @@ use CGI::Cookie; # need to check cookies before having CGI parse the POST reques
 use C4::Auth qw(:DEFAULT check_cookie_auth);
 use C4::Context;
 use C4::Debug;
-use C4::Output 3.02 qw(:html :ajax pagination_bar);
-use C4::Dates qw(format_date);
+use C4::Output qw(:html :ajax pagination_bar);
 use C4::Scrubber;
 use C4::Biblio;
 use C4::Tags qw(add_tag get_approval_rows get_tag_rows remove_tag);
+
+use Data::Dumper;
 
 my %newtags = ();
 my @deltags = ();
@@ -53,7 +54,7 @@ my $perBibResults = {};
 # Indexes of @errors that do not apply to a particular biblionumber.
 my @globalErrorIndexes = ();
 
-sub ajax_auth_cgi ($) {     # returns CGI object
+sub ajax_auth_cgi {     # returns CGI object
 	my $needed_flags = shift;
 	my %cookies = fetch CGI::Cookie;
 	my $input = CGI->new;
@@ -232,7 +233,6 @@ if ($loggedinuser) {
 		my $date = $_->{date_created} || '';
 		$date =~ /\s+(\d{2}\:\d{2}\:\d{2})/;
 		$_->{time_created_display} = $1;
-		$_->{date_created_display} = format_date($_->{date_created});
 	}
 }
 

@@ -1,0 +1,64 @@
+#!/usr/bin/perl
+
+# Copyright 2011 Chris Cormack <chris@bigballofwax.co.nz>
+#
+# This file is part of Koha.
+#
+# Koha is free software; you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or (at your option) any later
+# version.
+#
+# Koha is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with Koha; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+
+use strict;
+use warnings;
+
+use C4::Reports::Guided;
+use JSON;
+use CGI;
+
+use Koha::Cache;
+
+my $query  = CGI->new();
+my $report_id = $query->param('id');
+my $report_name = $query->param('name');
+
+my $report_rec = get_saved_report( $report_name ? { 'name' => $report_name } : { 'id' => $report_id } );
+die "Sorry this report is not public\n" unless $report_rec->{public};
+
+
+my $cache_active = Koha::Cache->is_cache_active;
+my ($cache_key, $cache, $json_text);
+if ($cache_active) {
+    $cache_key = "opac:report:".($report_name ? "name:$report_name" : "id:$report_id");
+    $cache = Koha::Cache->new();
+    $json_text = $cache->get_from_cache($cache_key);
+}
+
+unless ($json_text) {
+    my $offset = 0;
+    my $limit  = C4::Context->preference("SvcMaxReportRows") || 10;
+    my ( $sth, $errors ) = execute_query( $report_rec->{savedsql}, $offset, $limit );
+    if ($sth) {
+        my $lines     = $sth->fetchall_arrayref;
+        $json_text = to_json($lines);
+
+        if ($cache_active) {
+            $cache->set_in_cache( $cache_key, $json_text, $report_rec->{cache_expiry} );
+        }
+    }
+    else {
+        $json_text = to_json($errors);
+    }
+}
+
+print $query->header;
+print $json_text;

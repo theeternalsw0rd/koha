@@ -82,7 +82,7 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user({
 $template->param( frameworkcode => $frameworkcode, );
 
 if ( $op ne "do_search" ) {
-    my $sth = $dbh->prepare("select id,host,name,checked from z3950servers  order by host");
+    my $sth = $dbh->prepare("SELECT id,host,name,checked FROM z3950servers ORDER BY rank, name");
     $sth->execute();
     my $serverloop = $sth->fetchall_arrayref( {} );
     $template->param(
@@ -115,12 +115,16 @@ else {
     my @oResult;
     my @errconn;
     my $s = 0;
-    my $query;
+    my $query = '';
     my $nterms;
-    if ($isbn || $issn) {
-        $term=$isbn if ($isbn);
-        $term=$issn if ($issn);
-        $query .= " \@or \@attr 1=8 \"$term\" \@attr 1=7 \"$term\" ";
+    if ($isbn) {
+        $term=$isbn;
+        $query .= " \@attr 1=7 \@attr 5=1 \"$term\" ";
+        $nterms++;
+    }
+    if ($issn) {
+        $term=$issn;
+        $query .= " \@attr 1=8 \@attr 5=1 \"$term\" ";
         $nterms++;
     }
     if ($title) {
@@ -168,7 +172,7 @@ for my $i (1..$nterms-1) {
 warn "query ".$query  if $DEBUG;
 
     foreach my $servid (@id) {
-        my $sth = $dbh->prepare("select * from z3950servers where id=?");
+        my $sth = $dbh->prepare("SELECT * FROM z3950servers WHERE id=? ORDER BY rank, name");
         $sth->execute($servid);
         while ( $server = $sth->fetchrow_hashref ) {
             warn "serverinfo ".join(':',%$server) if $DEBUG;
@@ -179,6 +183,7 @@ warn "query ".$query  if $DEBUG;
             $option1->option('user',         $server->{userid}  ) if $server->{userid};
             $option1->option('password',     $server->{password}) if $server->{password};
             $option1->option('preferredRecordSyntax', $server->{syntax});
+            $option1->option( 'timeout', $server->{timeout} ) if ($server->{timeout});
             $oConnection[$s] = create ZOOM::Connection($option1)
               || $DEBUG
               && warn( "" . $oConnection[$s]->errmsg() );
@@ -222,7 +227,7 @@ warn "query ".$query  if $DEBUG;
           $oConnection[$k]->error_x();
         if ($error) {
             if ($error =~ m/^(10000|10007)$/ ) {
-                push(@errconn, {'server' => $serverhost[$k]});
+                push(@errconn, {'server' => $serverhost[$k], 'error' => $error});
             }
             $DEBUG and warn "$k $serverhost[$k] error $query: $errmsg ($error) $addinfo\n";
         }

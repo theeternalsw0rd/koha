@@ -2,6 +2,7 @@
 
 # This file is part of Koha.
 #
+# Copyright 2004 Biblibre
 # Parts copyright 2011 Catalyst IT Ltd.
 #
 # Koha is free software; you can redistribute it and/or modify it under the
@@ -13,10 +14,9 @@
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License along with
-# Koha; if not, write to the Free Software Foundation, Inc., 59 Temple Place,
-# Suite 330, Boston, MA  02111-1307 USA
-
+# You should have received a copy of the GNU General Public License along
+# with Koha; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 =head1 NAME
 
@@ -61,14 +61,20 @@ use C4::Debug;
 my $input = new CGI;
 my $title                   = $input->param( 'title');
 my $author                  = $input->param('author');
-my $isbn          	    = $input->param('isbn');
+my $isbn                    = $input->param('isbn');
 my $name                    = $input->param( 'name' );
+my $ean                     = $input->param('ean');
 my $basket                  = $input->param( 'basket' );
+my $basketgroupname             = $input->param('basketgroupname');
 my $booksellerinvoicenumber = $input->param( 'booksellerinvoicenumber' );
-my $from_placed_on          = $input->param('from');
-$from_placed_on             = C4::Dates->new($from_placed_on) if $from_placed_on;
-my $to_placed_on            = $input->param('to');
-$to_placed_on               = C4::Dates->new($to_placed_on) if $to_placed_on;
+my $do_search               = $input->param('do_search') || 0;
+my $from_placed_on          = C4::Dates->new($input->param('from'));
+my $to_placed_on            = C4::Dates->new($input->param('to'));
+if ( not $input->param('from') ) {
+    # FIXME Dirty but we can't sent a Date::Calc to C4::Dates ?
+    # We would use a function like Add_Delta_YM(-1, 0, 0);
+    $$from_placed_on{dmy_arrayref}[5] -= 1;
+}
 
 my $dbh = C4::Context->dbh;
 my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
@@ -92,18 +98,18 @@ if ( $d = $input->param('iso') ) {
 
 my ( $order_loop, $total_qty, $total_price, $total_qtyreceived );
 # If we're supplied any value then we do a search. Otherwise we don't.
-my $do_search = $title || $author || $isbn || $name || $basket || $booksellerinvoicenumber ||
-    $from_placed_on || $to_placed_on;
 if ($do_search) {
     ( $order_loop, $total_qty, $total_price, $total_qtyreceived ) = GetHistory(
         title => $title,
         author => $author,
-	isbn   => $isbn,
+        isbn   => $isbn,
+        ean   => $ean,
         name => $name,
         from_placed_on => $from_iso,
         to_placed_on => $to_iso,
         basket => $basket,
         booksellerinvoicenumber => $booksellerinvoicenumber,
+        basketgroupname => $basketgroupname,
     );
 }
 
@@ -119,14 +125,17 @@ $template->param(
     title                   => $title,
     author                  => $author,
     isbn		    => $isbn,
+    ean                     => $ean,
     name                    => $name,
     basket                  => $basket,
     booksellerinvoicenumber => $booksellerinvoicenumber,
+    basketgroupname         => $basketgroupname,
     from_placed_on          => $from_date,
     to_placed_on            => $to_date,
     DHTMLcalendar_dateformat=> C4::Dates->DHTMLcalendar(),
-	dateformat              => C4::Dates->new()->format(),
+    dateformat              => C4::Dates->new()->format(),
     debug                   => $debug || $input->param('debug') || 0,
+    uc(C4::Context->preference("marcflavour")) => 1
 );
 
 output_html_with_http_headers $input, $cookie, $template->output;

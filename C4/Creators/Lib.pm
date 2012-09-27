@@ -26,7 +26,7 @@ use C4::Context;
 use C4::Debug;
 
 BEGIN {
-    use version; our $VERSION = qv('1.0.0_1');
+    use version; our $VERSION = qv('3.07.00.049');
     use base qw(Exporter);
     our @EXPORT = qw(get_all_templates
                      get_all_layouts
@@ -90,7 +90,7 @@ my $barcode_types = [
     {type => 'CODE39MOD',       name => 'Code 39 + Modulo43',   desc => 'Translates the characters 0-9, A-Z, \'-\', \'*\', \'+\', \'$\', \'%\', \'/\', \'.\' and \' \' to a barcode pattern. Encodes Mod 43 checksum.',         selected => 0},
     {type => 'CODE39MOD10',     name => 'Code 39 + Modulo10',   desc => 'Translates the characters 0-9, A-Z, \'-\', \'*\', \'+\', \'$\', \'%\', \'/\', \'.\' and \' \' to a barcode pattern. Encodes Mod 10 checksum.',         selected => 0},
     {type => 'COOP2OF5',        name => 'COOP2of5',             desc => 'Creates COOP2of5 barcodes from a string consisting of the numeric characters 0-9',                                                                     selected => 0},
-#    {type => 'EAN13',           name => 'EAN13',                desc => 'Creates EAN13 barcodes from a string of 12 or 13 digits. The check number (the 13:th digit) is calculated if not supplied.',                           selected => 0},
+    {type => 'EAN13',           name => 'EAN13',                desc => 'Creates EAN13 barcodes from a string of 12 or 13 digits. The check number (the 13:th digit) is calculated if not supplied.',                           selected => 0},
 #    {type => 'EAN8',            name => 'EAN8',                 desc => 'Translates a string of 7 or 8 digits to EAN8 barcodes. The check number (the 8:th digit) is calculated if not supplied.',                              selected => 0},
 #    {type => 'IATA2of5',        name => 'IATA2of5',             desc => 'Creates IATA2of5 barcodes from a string consisting of the numeric characters 0-9',                                                                     selected => 0},
     {type => 'INDUSTRIAL2OF5',  name => 'Industrial2of5',       desc => 'Creates Industrial2of5 barcodes from a string consisting of the numeric characters 0-9',                                                               selected => 0},
@@ -263,8 +263,9 @@ NOTE: Do not pass in the keyword 'WHERE.'
 sub get_batch_summary {
     my %params = @_;
     my @batches = ();
-    my $query = "SELECT DISTINCT batch_id FROM creator_batches WHERE creator=?";
-    $query .= ($params{'filter'} ? " AND $params{'filter'};" : ';');
+    my $query = "SELECT batch_id,count(batch_id) as _item_count FROM creator_batches WHERE creator=?";
+    $query .= ($params{'filter'} ? " AND $params{'filter'}" : '');
+    $query .= " GROUP BY batch_id";
     my $sth = C4::Context->dbh->prepare($query);
 #    $sth->{'TraceLevel'} = 3;
     $sth->execute($params{'creator'});
@@ -272,17 +273,7 @@ sub get_batch_summary {
         warn sprintf('Database returned the following error on attempted SELECT: %s', $sth->errstr);
         return -1;
     }
-    ADD_BATCHES:
     while (my $batch = $sth->fetchrow_hashref) {
-        my $query = "SELECT count(batch_id) FROM creator_batches WHERE batch_id=? AND creator=?;";
-        my $sth1 = C4::Context->dbh->prepare($query);
-        $sth1->execute($batch->{'batch_id'}, $params{'creator'});
-        if ($sth1->err) {
-            warn sprintf('Database returned the following error on attempted SELECT count: %s', $sth1->errstr);
-            return -1;
-        }
-        my $count = $sth1->fetchrow_arrayref;
-        $batch->{'_item_count'} = @$count[0];
         push(@batches, $batch);
     }
     return \@batches;

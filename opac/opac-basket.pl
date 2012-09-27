@@ -11,9 +11,9 @@
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License along with
-# Koha; if not, write to the Free Software Foundation, Inc., 59 Temple Place,
-# Suite 330, Boston, MA  02111-1307 USA
+# You should have received a copy of the GNU General Public License along
+# with Koha; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 
 use strict;
@@ -21,7 +21,9 @@ use warnings;
 use CGI;
 use C4::Koha;
 use C4::Biblio;
+use C4::Branch;
 use C4::Items;
+use C4::Circulation;
 use C4::Auth;
 use C4::Output;
 
@@ -68,7 +70,7 @@ foreach my $biblionumber ( @bibs ) {
     my $marcsubjctsarray = GetMarcSubjects( $record, $marcflavour );
     my $marcseriesarray  = GetMarcSeries  ($record,$marcflavour);
     my $marcurlsarray    = GetMarcUrls    ($record,$marcflavour);
-    my @items            = &GetItemsLocationInfo( $biblionumber );
+    my @items            = &GetItemsInfo( $biblionumber );
     my $subtitle         = GetRecordValue('subtitle', $record, GetFrameworkCode($biblionumber));
 
     my $hasauthors = 0;
@@ -88,6 +90,15 @@ foreach my $biblionumber ( @bibs ) {
         $dat->{'even'} = 1;
     }
 
+my $branches = GetBranches();
+    for my $itm (@items) {
+        my ( $transfertwhen, $transfertfrom, $transfertto ) = GetTransfers($itm->{itemnumber});
+        if ( defined( $transfertwhen ) && $transfertwhen ne '' ) {
+             $itm->{transfertwhen} = $transfertwhen;
+             $itm->{transfertfrom} = $branches->{$transfertfrom}{branchname};
+             $itm->{transfertto}   = $branches->{$transfertto}{branchname};
+        }
+    }
     $num++;
     $dat->{biblionumber} = $biblionumber;
     $dat->{ITEM_RESULTS}   = \@items;

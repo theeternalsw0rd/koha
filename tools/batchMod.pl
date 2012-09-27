@@ -39,10 +39,13 @@ my $input = new CGI;
 my $dbh = C4::Context->dbh;
 my $error        = $input->param('error');
 my @itemnumbers  = $input->param('itemnumber');
+my $biblionumber = $input->param('biblionumber');
 my $op           = $input->param('op');
 my $del          = $input->param('del');
+my $del_records  = $input->param('del_records');
 my $completedJobID = $input->param('completedJobID');
 my $runinbackground = $input->param('runinbackground');
+my $src          = $input->param('src');
 
 
 my $template_name;
@@ -76,8 +79,9 @@ my $items_display_hashref;
 my $frameworkcode="";
 my $tagslib = &GetMarcStructure(1,$frameworkcode);
 
-my $deleted_items = 0;     # Numbers of deleted items
-my $not_deleted_items = 0; # Numbers of items that could not be deleted
+my $deleted_items = 0;     # Number of deleted items
+my $deleted_records = 0;   # Number of deleted records ( with no items attached )
+my $not_deleted_items = 0; # Number of items that could not be deleted
 my @not_deleted;           # List of the itemnumbers that could not be deleted
 
 my %cookies = parse CGI::Cookie($cookie);
@@ -124,12 +128,10 @@ if ($op eq "action") {
 	# Job size is the number of items we have to process
 	my $job_size = scalar(@itemnumbers);
 	my $job = undef;
-	my $callback = sub {};
 
 	# If we asked for background processing
 	if ($runinbackground) {
 	    $job = put_in_background($job_size);
-	    $callback = progress_callback($job, $dbh);
 	}
 
 	#initializing values for updates
@@ -156,7 +158,7 @@ if ($op eq "action") {
 	foreach my $itemnumber(@itemnumbers){
 
 		$job->progress($i) if $runinbackground;
-		my $itemdata=GetItem($itemnumber);
+		my $itemdata = GetItem($itemnumber);
 		if ($input->param("del")){
 			my $return = DelItemCheck(C4::Context->dbh, $itemdata->{'biblionumber'}, $itemdata->{'itemnumber'});
 			if ($return == 1) {
@@ -171,15 +173,24 @@ if ($op eq "action") {
 				  $return => 1
 				};
 			}
+
+			# If there are no items left, delete the biblio
+			if ( $del_records ) {
+                            my $itemscount = GetItemsCount($itemdata->{'biblionumber'});
+                            if ( $itemscount == 0 ) {
+			        my $error = DelBiblio($itemdata->{'biblionumber'});
+			        $deleted_records++ unless ( $error );
+                            }
+                        }
 		} else {
 		    if ($values_to_modify || $values_to_blank) {
 			my $localmarcitem = Item2Marc($itemdata);
 			UpdateMarcWith( $marcitem, $localmarcitem );
 			eval{
-                if ( my $item = ModItemFromMarc( $localmarcitem, $itemdata->{biblionumber}, $itemnumber ) ) {
-                    LostItem($itemnumber, 'MARK RETURNED', 'CHARGE FEE') if $item->{itemlost};
-                }
-            };
+                            if ( my $item = ModItemFromMarc( $localmarcitem, $itemdata->{biblionumber}, $itemnumber ) ) {
+                                LostItem($itemnumber, 'MARK RETURNED', 'CHARGE FEE') if $item->{itemlost};
+                            }
+                        };
 		    }
 		}
 		$i++;
@@ -218,6 +229,12 @@ if ($op eq "show"){
             @itemnumbers = @contentlist;
         }
     } else {
+        if (defined $biblionumber){
+            my @all_items = GetItemsInfo( $biblionumber );
+            foreach my $itm (@all_items) {
+                push @itemnumbers, $itm->{itemnumber};
+            }
+        }
         if ( my $list=$input->param('barcodelist')){
             push my @barcodelist, split(/\s\n/, $list);
 
@@ -433,6 +450,8 @@ if ($op eq "action") {
     $template->param(
 	not_deleted_items => $not_deleted_items,
 	deleted_items => $deleted_items,
+	delete_records => $del_records,
+	deleted_records => $deleted_records,
 	not_deleted_loop => \@not_deleted 
     );
 }
@@ -440,6 +459,7 @@ if ($op eq "action") {
 foreach my $error (@errors) {
     $template->param($error => 1);
 }
+$template->param(src => $src);
 output_html_with_http_headers $input, $cookie, $template->output;
 exit;
 
@@ -615,13 +635,5 @@ sub put_in_background {
     return $job;
 }
 
-sub progress_callback {
-    my $job = shift;
-    my $dbh = shift;
-    return sub {
-        my $progress = shift;
-        $job->progress($progress);
-    }
-}
 
 

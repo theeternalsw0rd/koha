@@ -19,7 +19,7 @@
 
 use warnings;
 use strict;
-use Test::More tests => 1;
+use Test::More tests => 2;
 use File::Find;
 use Cwd;
 use C4::TTParser;
@@ -56,6 +56,11 @@ ok( !@files_with_directive_in_tag, "TT syntax: not using TT directive within HTM
               } @files_with_directive_in_tag )
        );
 
+my $testtoken = 0;
+my $ttparser = C4::TTParser->new();
+$ttparser->unshift_token($testtoken);
+my $testtokenagain = C4::TTParser::next_token();
+is( $testtoken, $testtokenagain, "Token received same as original put on stack");
 
 
 =head1 NAME

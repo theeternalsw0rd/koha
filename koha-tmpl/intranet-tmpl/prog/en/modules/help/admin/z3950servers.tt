@@ -10,7 +10,7 @@
 
 <h2>Add a Z39.50 Target</h2>
 <ul>
-	<li>From the main Z39.50 page, click 'New Z39.50 Server'
+   <li>From the main Z39.50 page, click 'New Z39.50 Server'
 <ul>
 	<li>Userid and Password are only required for servers that are password protected</li>
 </ul>
@@ -38,6 +38,6 @@
 	<li>VANCOUVER PUBLIC LIBRARY z3950.vpl.ca:210 Horizon</li>
 </ul>
 
-<p><strong>See the full documentation for Z39.50 Servers in the <a href="http://manual.koha-community.org/3.6/en/additionaladmin.html#z3950admin">manual</a> (online).</strong></p>
+<p><strong>See the full documentation for Z39.50 Servers in the <a href="http://manual.koha-community.org/3.8/en/additionaladmin.html#z3950admin">manual</a> (online).</strong></p>
 
 [% INCLUDE 'help-bottom.inc' %]

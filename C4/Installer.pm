@@ -20,9 +20,9 @@ package C4::Installer;
 use strict;
 #use warnings; FIXME - Bug 2505
 
-our $VERSION = 3.00;
+our $VERSION = 3.07.00.049;
 use C4::Context;
-use C4::Installer::PerlModules 1.000000;
+use C4::Installer::PerlModules;
 
 =head1 NAME
 
@@ -154,8 +154,8 @@ sub marc_framework_sql_list {
         my @frameworklist;
         map {
             my $name = substr( $_, 0, -4 );
-            open FILE, "<:utf8","$dir/$requirelevel/$name.txt";
-            my $lines = <FILE>;
+            open my $fh, "<:encoding(UTF-8)", "$dir/$requirelevel/$name.txt";
+            my $lines = <$fh>;
             $lines =~ s/\n|\r/<br \/>/g;
             use utf8;
             utf8::encode($lines) unless ( utf8::is_utf8($lines) );
@@ -232,8 +232,8 @@ sub sample_data_sql_list {
         my @frameworklist;
         map {
             my $name = substr( $_, 0, -4 );
-            open FILE, "<:utf8","$dir/$requirelevel/$name.txt";
-            my $lines = <FILE>;
+            open my $fh , "<:encoding(UTF-8)", "$dir/$requirelevel/$name.txt";
+            my $lines = <$fh>;
             $lines =~ s/\n|\r/<br \/>/g;
             use utf8;
             utf8::encode($lines) unless ( utf8::is_utf8($lines) );

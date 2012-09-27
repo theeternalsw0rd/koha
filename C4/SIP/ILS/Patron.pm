@@ -17,7 +17,6 @@ use Data::Dumper;
 
 use C4::Debug;
 use C4::Context;
-# use C4::Dates;
 use C4::Koha;
 use C4::Members;
 use C4::Reserves;
@@ -27,7 +26,7 @@ use Digest::MD5 qw(md5_base64);
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 
 BEGIN {
-	$VERSION = 2.03;
+    $VERSION = 3.07.00.049;
 	@ISA = qw(Exporter);
 	@EXPORT_OK = qw(invalid_patron);
 }
@@ -42,7 +41,7 @@ sub new {
 	$debug and warn "new Patron (GetMember): " . Dumper($kp);
     unless (defined $kp) {
 		syslog("LOG_DEBUG", "new ILS::Patron(%s): no such patron", $patron_id);
-		return undef;
+        return;
 	}
 	$kp = GetMemberDetails(undef,$patron_id);
 	$debug and warn "new Patron (GetMemberDetails): " . Dumper($kp);
@@ -208,7 +207,10 @@ sub check_password {
 # A few special cases, not in AUTOLOADed %fields
 sub fee_amount {
     my $self = shift;
-    return $self->{fines} || undef;
+    if ( $self->{fines} ) {
+        return $self->{fines};
+    }
+    return;
 }
 
 sub fines_amount {
@@ -232,7 +234,7 @@ sub expired {
 # 
 sub drop_hold {
     my ($self, $item_id) = @_;
-	$item_id or return undef;
+    return if !$item_id;
 	my $result = 0;
 	foreach (qw(hold_items unavail_holds)) {
 		$self->{$_} or next;

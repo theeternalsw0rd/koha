@@ -33,7 +33,6 @@ use warnings;
 use CGI;
 use C4::Auth;
 use C4::Output;
-use C4::Dates;
 
 my $dbh     = C4::Context->dbh;
 my $input   = new CGI;
@@ -46,7 +45,7 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
         query           => $input,
         type            => "intranet",
         authnotrequired => 0,
-        flagsrequired   => { acquisition => 1 },
+        flagsrequired   => { acquisition => '*' },
         debug           => 1,
     }
 );

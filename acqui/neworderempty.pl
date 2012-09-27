@@ -75,7 +75,6 @@ use C4::Input;
 use C4::Auth;
 use C4::Budgets;
 use C4::Input;
-use C4::Dates;
 
 use C4::Bookseller  qw/ GetBookSellerFromId /;
 use C4::Acquisition;
@@ -87,7 +86,7 @@ use C4::Input;
 use C4::Koha;
 use C4::Branch;			# GetBranches
 use C4::Members;
-use C4::Search qw/FindDuplicate BiblioAddAuthorities/;
+use C4::Search qw/FindDuplicate/;
 
 #needed for z3950 import:
 use C4::ImportBatch qw/GetImportRecordMarc SetImportRecordStatus/;
@@ -111,7 +110,7 @@ my $new = 'no';
 
 my $budget_name;
 
-my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
+my ( $template, $loggedinuser, $cookie, $userflags ) = get_template_and_user(
     {
         template_name   => "acqui/neworderempty.tmpl",
         query           => $input,
@@ -123,6 +122,12 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
 );
 
 my $marcflavour = C4::Context->preference('marcflavour');
+
+if(!$basketno) {
+    my $order = GetOrder($ordernumber);
+    $basketno = $order->{'basketno'};
+}
+
 my $basket = GetBasket($basketno);
 my $contract = &GetContract($basket->{contractnumber});
 
@@ -150,7 +155,7 @@ if ( $ordernumber eq '' and defined $params->{'breedingid'}){
     }
     #from this point: add a new record
         if (C4::Context->preference("BiblioAddsAuthorities")){
-            my ($countlinked,$countcreated)=BiblioAddAuthorities($marcrecord, $params->{'frameworkcode'});
+            my $headings_linked=BiblioAutoLink($marcrecord, $params->{'frameworkcode'});
         }
         my $bibitemnum;
         $params->{'frameworkcode'} or $params->{'frameworkcode'} = "";
@@ -246,8 +251,9 @@ my ( $flags, $homebranch )= ($borrower->{'flags'},$borrower->{'branchcode'});
 my $budget =  GetBudget($budget_id);
 # build budget list
 my $budget_loop = [];
-my $budgets = GetBudgetHierarchy(q{},$borrower->{branchcode},$borrower->{borrowernumber});
+my $budgets = GetBudgetHierarchy;
 foreach my $r (@{$budgets}) {
+    next unless (CanUserUseBudget($borrower, $r, $userflags));
     if (!defined $r->{budget_amount} || $r->{budget_amount} == 0) {
         next;
     }
@@ -259,6 +265,8 @@ foreach my $r (@{$budgets}) {
     };
 }
 
+@{$budget_loop} =
+  sort { uc( $a->{b_txt}) cmp uc( $b->{b_txt}) } @{$budget_loop};
 
 if ($close) {
     $budget_id      =  $data->{'budget_id'};
@@ -273,8 +281,6 @@ if ($budget) {    # its a mod ..
     }
 } elsif(@{$budgets}){
     $CGIsort1 = GetAuthvalueDropbox(  @$budgets[0]->{'sort1_authcat'}, '' );
-}else{
-    $CGIsort1 = GetAuthvalueDropbox( '', '' );
 }
 
 # if CGIsort is successfully fetched, the use it
@@ -292,8 +298,6 @@ if ($budget) {
     }
 } elsif(@{$budgets}) {
     $CGIsort2 = GetAuthvalueDropbox(  @$budgets[0]->{sort2_authcat}, '' );
-}else{
-    $CGIsort2 = GetAuthvalueDropbox( '', '' );
 }
 
 if ($CGIsort2) {
@@ -303,17 +307,15 @@ if ($CGIsort2) {
 }
 
 if (C4::Context->preference('AcqCreateItem') eq 'ordering' && !$ordernumber) {
-    # prepare empty item form
-    my $cell = PrepareItemrecordDisplay('','','','ACQ');
-#     warn "==> ".Data::Dumper::Dumper($cell);
-    unless ($cell) {
-        $cell = PrepareItemrecordDisplay('','','','');
+    # Check if ACQ framework exists
+    my $marc = GetMarcStructure(1, 'ACQ');
+    unless($marc) {
         $template->param('NoACQframework' => 1);
     }
-    my @itemloop;
-    push @itemloop,$cell;
-    
-    $template->param(items => \@itemloop);
+    $template->param(
+        AcqCreateItemOrdering => 1,
+        UniqueItemFields => C4::Context->preference('UniqueItemFields'),
+    );
 }
 # Get the item types list, but only if item_level_itype is YES. Otherwise, it will be in the item, no need to display it in the biblio
 my @itemtypes;
@@ -329,6 +331,13 @@ $template->param(
     budget_name  => $budget_name
 ) if ($close);
 
+# get option values for gist syspref
+my @gst_values = map {
+    option => $_
+}, split( '\|', C4::Context->preference("gist") );
+
+my $cur = GetCurrency();
+
 $template->param(
     existing         => $biblionumber,
     ordernumber           => $ordernumber,
@@ -340,26 +349,29 @@ $template->param(
     basketbooksellernote => $basket->{booksellernote},
     basketcontractno     => $basket->{contractnumber},
     basketcontractname   => $contract->{contractname},
-    creationdate         => C4::Dates->new($basket->{creationdate},'iso')->output,
+    creationdate         => $basket->{creationdate},
     authorisedby         => $basket->{'authorisedby'},
     authorisedbyname     => $basket->{'authorisedbyname'},
-    closedate            => C4::Dates->new($basket->{'closedate'},'iso')->output,
+    closedate            => $basket->{'closedate'},
     # order details
     suggestionid         => $suggestion->{suggestionid},
     surnamesuggestedby   => $suggestion->{surnamesuggestedby},
     firstnamesuggestedby => $suggestion->{firstnamesuggestedby},
-    biblionumber     => $biblionumber,
-    uncertainprice   => $data->{'uncertainprice'},
-    authorisedbyname => $borrower->{'firstname'} . " " . $borrower->{'surname'},
-    biblioitemnumber => $data->{'biblioitemnumber'},
-    discount_2dp     => sprintf( "%.2f",  $bookseller->{'discount'}) ,   # for display
-    discount         => $bookseller->{'discount'},
+    biblionumber         => $biblionumber,
+    uncertainprice       => $data->{'uncertainprice'},
+    authorisedbyname     => $borrower->{'firstname'} . " " . $borrower->{'surname'},
+    biblioitemnumber     => $data->{'biblioitemnumber'},
+    discount_2dp         => sprintf( "%.2f",  $bookseller->{'discount'} ) ,   # for display
+    discount             => $bookseller->{'discount'},
+    orderdiscount_2dp    => sprintf( "%.2f", $data->{'discount'} || 0 ),
+    orderdiscount        => $data->{'discount'},
     listincgst       => $bookseller->{'listincgst'},
     invoiceincgst    => $bookseller->{'invoiceincgst'},
     name             => $bookseller->{'name'},
     cur_active_sym   => $active_currency->{'symbol'},
     cur_active       => $active_currency->{'currency'},
     loop_currencies  => \@loop_currency,
+    currency_rate    => $cur->{rate},
     orderexists      => ( $new eq 'yes' ) ? 0 : 1,
     title            => $data->{'title'},
     author           => $data->{'author'},
@@ -367,24 +379,24 @@ $template->param(
     editionstatement => $data->{'editionstatement'},
     budget_loop      => $budget_loop,
     isbn             => $data->{'isbn'},
+    ean              => $data->{'ean'},
     seriestitle      => $data->{'seriestitle'},
     itemtypeloop     => \@itemtypes,
     quantity         => $data->{'quantity'},
     quantityrec      => $data->{'quantity'},
     rrp              => $data->{'rrp'},
-    listprice        => sprintf("%.2f", $data->{'listprice'}||$data->{'price'}||$listprice),
-    total            => sprintf("%.2f", ($data->{'ecost'}||0)*($data->{'quantity'}||0) ),
-    ecost            => $data->{'ecost'},
-    unitprice        => sprintf("%.2f", $data->{'unitprice'}),
+    gst_values       => \@gst_values,
+    gstrate          => $data->{gstrate} ? $data->{gstrate}+0.0 : $bookseller->{gstrate} ? $bookseller->{gstrate}+0.0 : 0,
+    gstreg           => $bookseller->{'gstreg'},
+    listprice        => sprintf( "%.2f", $data->{listprice} || $data->{price} || $listprice),
+    total            => sprintf( "%.2f", ($data->{ecost} || 0) * ($data->{'quantity'} || 0) ),
+    ecost            => sprintf( "%.2f", $data->{ecost} || 0),
+    unitprice        => sprintf( "%.2f", $data->{unitprice} || 0),
     notes            => $data->{'notes'},
     publishercode    => $data->{'publishercode'},
     barcode_subfield => $barcode_subfield,
-    
     import_batch_id  => $import_batch_id,
-
-# CHECKME: gst-stuff needs verifing, mason.
-    gstrate          => $bookseller->{'gstrate'} // C4::Context->preference("gist") // 0,
-    gstreg           => $bookseller->{'gstreg'},
+    (uc(C4::Context->preference("marcflavour"))) => 1
 );
 
 output_html_with_http_headers $input, $cookie, $template->output;
@@ -516,6 +528,7 @@ sub Load_Duplicate {
     booksellerid        => $basket->{'booksellerid'},
     breedingid          => $params->{'breedingid'},
     duplicatetitle      => $duplicatetitle,
+    (uc(C4::Context->preference("marcflavour"))) => 1
   );
 
   output_html_with_http_headers $input, $cookie, $template->output;

@@ -11,9 +11,9 @@
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License along with
-# Koha; if not, write to the Free Software Foundation, Inc., 59 Temple Place,
-# Suite 330, Boston, MA  02111-1307 USA
+# You should have received a copy of the GNU General Public License along
+# with Koha; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 
 use strict;
@@ -21,9 +21,9 @@ use warnings;
 use CGI;
 use C4::Auth;    # get_template_and_user
 use C4::Output;
-use C4::Members;         # GetMember
 use C4::NewsChannels;    # get_opac_news
 use C4::Languages qw(getTranslatedLanguages accept_language);
+use C4::Koha qw( GetDailyQuote );
 
 my $input = new CGI;
 my $dbh   = C4::Context->dbh;
@@ -44,21 +44,20 @@ $template->param(
 );
 
 
-my $borrower = GetMember( borrowernumber=>$borrowernumber );
-$template->param(
-    textmessaging        => $borrower->{textmessaging},
-) if (ref($borrower) eq "HASH");
-
 # display news
 # use cookie setting for language, bug default to syspref if it's not set
-my ($theme, $news_lang) = C4::Templates::themelanguage(C4::Context->config('opachtdocs'),'opac-main.tt','opac',$input);
+my ($theme, $news_lang, $availablethemes) = C4::Templates::themelanguage(C4::Context->config('opachtdocs'),'opac-main.tt','opac',$input);
 
 my $all_koha_news   = &GetNewsToDisplay($news_lang);
 my $koha_news_count = scalar @$all_koha_news;
 
+my $quote = GetDailyQuote();   # other options are to pass in an exact quote id or select a random quote each pass... see perldoc C4::Koha
+
 $template->param(
-    koha_news       => $all_koha_news,
-    koha_news_count => $koha_news_count
+    koha_news           => $all_koha_news,
+    koha_news_count     => $koha_news_count,
+    display_daily_quote => C4::Context->preference('QuoteOfTheDay'),
+    daily_quote         => $quote,
 );
 
 # If GoogleIndicTransliteration system preference is On Set paramter to load Google's javascript in OPAC search screens

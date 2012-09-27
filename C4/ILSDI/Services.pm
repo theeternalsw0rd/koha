@@ -33,6 +33,7 @@ use C4::ILSDI::Utility;
 use XML::Simple;
 use HTML::Entities;
 use CGI;
+use DateTime;
 
 =head1 NAME
 
@@ -410,7 +411,7 @@ sub GetPatronInfo {
             # Add additional fields
             $reserve->{'item'}       = $item;
             $reserve->{'branchname'} = $branchname;
-            $reserve->{'title'}      = ( GetBiblio( $reserve->{'biblionumber'} ) )[1]->{'title'};
+            $reserve->{'title'}      = GetBiblio( $reserve->{'biblionumber'} )->{'title'};
         }
         $borrower->{'holds'}->{'hold'} = \@reserves;
     }
@@ -418,6 +419,10 @@ sub GetPatronInfo {
     # Issues management
     if ( $cgi->param('show_loans') eq "1" ) {
         my $issues = GetPendingIssues($borrowernumber);
+        foreach my $issue ( @$issues ){
+            $issue->{'issuedate'} = $issue->{'issuedate'}->strftime('%Y-%m-%d %H:%M');
+            $issue->{'date_due'} = $issue->{'date_due'}->strftime('%Y-%m-%d %H:%M');
+        }
         $borrower->{'loans'}->{'loan'} = $issues;
     }
 
@@ -558,7 +563,7 @@ sub RenewLoan {
     # Hashref building
     my $out;
     $out->{'renewals'} = $issue->{'renewals'};
-    $out->{'date_due'} = $issue->{'date_due'};
+    $out->{date_due}   = $issue->{date_due}->strftime('%Y-%m-%d %H:%S');
     $out->{'success'}  = $renewal[0];
     $out->{'error'}    = $renewal[1];
 
@@ -596,7 +601,7 @@ sub HoldTitle {
 
     # Get the biblio record, or return an error code
     my $biblionumber = $cgi->param('bib_id');
-    my ( $count, $biblio ) = GetBiblio( $biblionumber );
+    my $biblio = GetBiblio( $biblionumber );
     return { code => 'RecordNotFound' } unless $$biblio{biblionumber};
     
     my $title = $$biblio{title};
@@ -661,7 +666,7 @@ sub HoldItem {
 
     # Get the biblio or return an error code
     my $biblionumber = $cgi->param('bib_id');
-    my ( $count, $biblio ) = GetBiblio($biblionumber);
+    my $biblio = GetBiblio($biblionumber);
     return { code => 'RecordNotFound' } unless $$biblio{biblionumber};
 
     my $title = $$biblio{title};
@@ -675,8 +680,8 @@ sub HoldItem {
     return { code => 'RecordNotFound' } if $$item{biblionumber} ne $$biblio{biblionumber};
 
     # Check for item disponibility
-    my $canitembereserved = CanItemBeReserved( $borrowernumber, $itemnumber );
-    my $canbookbereserved = CanBookBeReserved( $borrowernumber, $biblionumber );
+    my $canitembereserved = C4::Reserves::CanItemBeReserved( $borrowernumber, $itemnumber );
+    my $canbookbereserved = C4::Reserves::CanBookBeReserved( $borrowernumber, $biblionumber );
     return { code => 'NotHoldable' } unless $canbookbereserved and $canitembereserved;
 
     my $branch;
@@ -700,8 +705,8 @@ sub HoldItem {
     }
 
     # Add the reserve
-    #          $branch, $borrowernumber, $biblionumber, $constraint, $bibitems,  $priority, $notes, $title, $checkitem,  $found
-    AddReserve( $branch, $borrowernumber, $biblionumber, 'a', undef, $rank, undef, $title, $itemnumber, $found );
+    # $branch,$borrowernumber,$biblionumber,$constraint,$bibitems,$priority,$resdate,$expdate,$notes,$title,$checkitem,$found
+    AddReserve( $branch, $borrowernumber, $biblionumber, 'a', undef, $rank, '', '', '', $title, $itemnumber, $found );
 
     # Hashref building
     my $out;

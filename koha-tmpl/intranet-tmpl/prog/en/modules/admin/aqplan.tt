@@ -1,7 +1,6 @@
 [% INCLUDE 'doc-head-open.inc' %]
 <title>Koha &rsaquo; Administration &rsaquo; Budgets &rsaquo; Funds &rsaquo; Planning for [% budget_period_description %] by [% authcat %]</title>
 [% INCLUDE 'doc-head-close.inc' %]
-[% INCLUDE 'calendar.inc' %]
 <script type="text/javascript" src="[% themelang %]/js/acq.js"></script>
 <script type="text/javascript">
 //<![CDATA[
@@ -66,7 +65,7 @@ YAHOO.util.Event.onAvailable("popmenu", function () {
 </script>
 <style type="text/css">td.locked { background-image: url('/intranet-tmpl/prog/img/locked.png'); padding-left : 20px; background-repeat: no-repeat; background-position: 4% 50%; } a.control { font-size:85%;text-decoration:none; }</style>
 </head>
-<body>
+<body id="admin_aqplan" class="admin">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'budgets-admin-search.inc' %]
 
@@ -117,7 +116,7 @@ YAHOO.util.Event.onAvailable("popmenu", function () {
          [% IF ( authvals_ro.display ) %]
             <th id="col[% authvals_ro.code %]" class="[% authvals_ro.colnum %]">
         [% ELSE %]
-            <th id="col[% authvals_ro.code %]" styl="display:none;" class="[% authvals_ro.colnum %]">
+            <th id="col[% authvals_ro.code %]" style="display:none;" class="[% authvals_ro.colnum %]">
         [% END %]
 
     [% authvals_ro.code %]</th>

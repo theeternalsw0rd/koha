@@ -36,6 +36,9 @@ use C4::Members qw();
 use C4::Letters;
 use C4::Branch qw( GetBranchDetail );
 use C4::Dates qw( format_date_in_iso );
+
+use Koha::DateUtils;
+
 use List::MoreUtils qw( firstidx );
 
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
@@ -85,7 +88,7 @@ This modules provides somes functions to deal with reservations.
 
 BEGIN {
     # set the version for version checking
-    $VERSION = 3.01;
+    $VERSION = 3.07.00.049;
     require Exporter;
     @ISA = qw(Exporter);
     @EXPORT = qw(
@@ -98,7 +101,7 @@ BEGIN {
         &GetReservesToBranch
         &GetReserveCount
         &GetReserveFee
-		&GetReserveInfo
+        &GetReserveInfo
         &GetReserveStatus
         
         &GetOtherReserves
@@ -117,10 +120,16 @@ BEGIN {
         &CancelReserve
         &CancelExpiredReserves
 
+        &AutoUnsuspendReserves
+
         &IsAvailableForItemLevelRequest
         
         &AlterPriority
         &ToggleLowestPriority
+
+        &ReserveSlip
+        &ToggleSuspend
+        &SuspendAll
     );
     @EXPORT_OK = qw( MergeHolds );
 }    
@@ -194,31 +203,30 @@ sub AddReserve {
     # Send e-mail to librarian if syspref is active
     if(C4::Context->preference("emailLibrarianWhenHoldIsPlaced")){
         my $borrower = C4::Members::GetMember(borrowernumber => $borrowernumber);
-        my $biblio   = GetBiblioData($biblionumber);
-        my $letter = C4::Letters::getletter( 'reserves', 'HOLDPLACED');
-	my $branchcode = $borrower->{branchcode};
-        my $branch_details = C4::Branch::GetBranchDetail($branchcode);
-        my $admin_email_address =$branch_details->{'branchemail'} || C4::Context->preference('KohaAdminEmailAddress');
+        my $branch_details = C4::Branch::GetBranchDetail($borrower->{branchcode});
+        if ( my $letter =  C4::Letters::GetPreparedLetter (
+            module => 'reserves',
+            letter_code => 'HOLDPLACED',
+            branchcode => $branch,
+            tables => {
+                'branches'  => $branch_details,
+                'borrowers' => $borrower,
+                'biblio'    => $biblionumber,
+            },
+        ) ) {
 
-        my %keys = (%$borrower, %$biblio);
-        foreach my $key (keys %keys) {
-            my $replacefield = "<<$key>>";
-            $letter->{content} =~ s/$replacefield/$keys{$key}/g;
-            $letter->{title} =~ s/$replacefield/$keys{$key}/g;
+            my $admin_email_address =$branch_details->{'branchemail'} || C4::Context->preference('KohaAdminEmailAddress');
+
+            C4::Letters::EnqueueLetter(
+                {   letter                 => $letter,
+                    borrowernumber         => $borrowernumber,
+                    message_transport_type => 'email',
+                    from_address           => $admin_email_address,
+                    to_address           => $admin_email_address,
+                }
+            );
         }
-        
-        C4::Letters::EnqueueLetter(
-                            {   letter                 => $letter,
-                                borrowernumber         => $borrowernumber,
-                                message_transport_type => 'email',
-                                from_address           => $admin_email_address,
-                                to_address           => $admin_email_address,
-                            }
-                        );
-        
-
     }
-
 
     #}
     ($const eq "o" || $const eq "e") or return;   # FIXME: why not have a useful return value?
@@ -263,7 +271,9 @@ sub GetReservesFromBiblionumber {
                 itemnumber,
                 reservenotes,
                 expirationdate,
-                lowestPriority
+                lowestPriority,
+                suspend,
+                suspend_until
         FROM     reserves
         WHERE biblionumber = ? ";
     unless ( $all_dates ) {
@@ -384,14 +394,14 @@ sub GetReservesFromBorrowernumber {
 sub CanBookBeReserved{
     my ($borrowernumber, $biblionumber) = @_;
 
-    my @items = get_itemnumbers_of($biblionumber);
+    my $items = GetItemnumbersForBiblio($biblionumber);
     #get items linked via host records
     my @hostitems = get_hostitemnumbers_of($biblionumber);
     if (@hostitems){
-	push (@items,@hostitems);
+    push (@$items,@hostitems);
     }
 
-    foreach my $item (@items){
+    foreach my $item (@$items){
         return 1 if CanItemBeReserved($borrowernumber, $item);
     }
     return 0;
@@ -860,10 +870,12 @@ Cancels all reserves with an expiration date from before today.
 
 sub CancelExpiredReserves {
 
+    # Cancel reserves that have passed their expiration date.
     my $dbh = C4::Context->dbh;
     my $sth = $dbh->prepare( "
         SELECT * FROM reserves WHERE DATE(expirationdate) < DATE( CURDATE() ) 
         AND expirationdate IS NOT NULL
+        AND found IS NULL
     " );
     $sth->execute();
 
@@ -871,6 +883,42 @@ sub CancelExpiredReserves {
         CancelReserve( $res->{'biblionumber'}, '', $res->{'borrowernumber'} );
     }
   
+    # Cancel reserves that have been waiting too long
+    if ( C4::Context->preference("ExpireReservesMaxPickUpDelay") ) {
+        my $max_pickup_delay = C4::Context->preference("ReservesMaxPickUpDelay");
+        my $charge = C4::Context->preference("ExpireReservesMaxPickUpDelayCharge");
+
+        my $query = "SELECT * FROM reserves WHERE TO_DAYS( NOW() ) - TO_DAYS( waitingdate ) > ? AND found = 'W' AND priority = 0";
+        $sth = $dbh->prepare( $query );
+        $sth->execute( $max_pickup_delay );
+
+        while (my $res = $sth->fetchrow_hashref ) {
+            if ( $charge ) {
+                manualinvoice($res->{'borrowernumber'}, $res->{'itemnumber'}, 'Hold waiting too long', 'F', $charge);
+            }
+
+            CancelReserve( $res->{'biblionumber'}, '', $res->{'borrowernumber'} );
+        }
+    }
+
+}
+
+=head2 AutoUnsuspendReserves
+
+  AutoUnsuspendReserves();
+
+Unsuspends all suspended reserves with a suspend_until date from before today.
+
+=cut
+
+sub AutoUnsuspendReserves {
+
+    my $dbh = C4::Context->dbh;
+
+    my $query = "UPDATE reserves SET suspend = 0, suspend_until = NULL WHERE DATE( suspend_until ) < DATE( CURDATE() )";
+    my $sth = $dbh->prepare( $query );
+    $sth->execute();
+
 }
 
 =head2 CancelReserve
@@ -880,8 +928,8 @@ sub CancelExpiredReserves {
 Cancels a reserve.
 
 Use either C<$biblionumber> or C<$itemnumber> to specify the item to
-cancel, but not both: if both are given, C<&CancelReserve> does
-nothing.
+cancel, but not both: if both are given, C<&CancelReserve> uses
+C<$itemnumber>.
 
 C<$borrowernumber> is the borrower number of the patron on whose
 behalf the book was reserved.
@@ -1008,7 +1056,7 @@ itemnumber and supplying itemnumber.
 
 sub ModReserve {
     #subroutine to update a reserve
-    my ( $rank, $biblio, $borrower, $branch , $itemnumber) = @_;
+    my ( $rank, $biblio, $borrower, $branch , $itemnumber, $suspend_until) = @_;
      return if $rank eq "W";
      return if $rank eq "n";
     my $dbh = C4::Context->dbh;
@@ -1041,14 +1089,24 @@ sub ModReserve {
         
     }
     elsif ($rank =~ /^\d+/ and $rank > 0) {
-        my $query = qq/
-        UPDATE reserves SET priority = ? ,branchcode = ?, itemnumber = ?, found = NULL, waitingdate = NULL
+        my $query = "
+            UPDATE reserves SET priority = ? ,branchcode = ?, itemnumber = ?, found = NULL, waitingdate = NULL
             WHERE biblionumber   = ?
-             AND borrowernumber = ?
-        /;
+            AND borrowernumber = ?
+        ";
         my $sth = $dbh->prepare($query);
         $sth->execute( $rank, $branch,$itemnumber, $biblio, $borrower);
         $sth->finish;
+
+        if ( defined( $suspend_until ) ) {
+            if ( $suspend_until ) {
+                $suspend_until = C4::Dates->new( $suspend_until )->output("iso");
+                $dbh->do("UPDATE reserves SET suspend = 1, suspend_until = ? WHERE biblionumber = ? AND borrowernumber = ?", undef, ( $suspend_until, $biblio, $borrower ) );
+            } else {
+                $dbh->do("UPDATE reserves SET suspend_until = NULL WHERE biblionumber = ? AND borrowernumber = ?", undef, ( $biblio, $borrower ) );
+            }
+        }
+
         _FixPriority( $biblio, $borrower, $rank);
     }
 }
@@ -1137,13 +1195,9 @@ sub ModReserveStatus {
 
     #first : check if we have a reservation for this item .
     my ($itemnumber, $newstatus) = @_;
-    my $dbh          = C4::Context->dbh;
-    my $query = " UPDATE reserves
-    SET    found=?,waitingdate = now()
-    WHERE itemnumber=?
-      AND found IS NULL
-      AND priority = 0
-    ";
+    my $dbh = C4::Context->dbh;
+
+    my $query = "UPDATE reserves SET found = ?, waitingdate = NOW() WHERE itemnumber = ? AND found IS NULL AND priority = 0";
     my $sth_set = $dbh->prepare($query);
     $sth_set->execute( $newstatus, $itemnumber );
 
@@ -1196,15 +1250,15 @@ sub ModReserveAffect {
     }
     else {
     # affect the reserve to Waiting as well.
-    $query = "
-        UPDATE reserves
-        SET     priority = 0,
-                found = 'W',
-                waitingdate=now(),
-                itemnumber = ?
-        WHERE borrowernumber = ?
-          AND biblionumber = ?
-    ";
+        $query = "
+            UPDATE reserves
+            SET     priority = 0,
+                    found = 'W',
+                    waitingdate = NOW(),
+                    itemnumber = ?
+            WHERE borrowernumber = ?
+              AND biblionumber = ?
+        ";
     }
     $sth = $dbh->prepare($query);
     $sth->execute( $itemnumber, $borrowernumber,$biblionumber);
@@ -1455,6 +1509,98 @@ sub ToggleLowestPriority {
     _FixPriority( $biblionumber, $borrowernumber, '999999' );
 }
 
+=head2 ToggleSuspend
+
+  ToggleSuspend( $borrowernumber, $biblionumber );
+
+This function sets the suspend field to true if is false, and false if it is true.
+If the reserve is currently suspended with a suspend_until date, that date will
+be cleared when it is unsuspended.
+
+=cut
+
+sub ToggleSuspend {
+    my ( $borrowernumber, $biblionumber, $suspend_until ) = @_;
+
+    $suspend_until = output_pref( dt_from_string( $suspend_until ), 'iso' ) if ( $suspend_until );
+
+    my $do_until = ( $suspend_until ) ? '?' : 'NULL';
+
+    my $dbh = C4::Context->dbh;
+
+    my $sth = $dbh->prepare(
+        "UPDATE reserves SET suspend = NOT suspend,
+        suspend_until = CASE WHEN suspend = 0 THEN NULL ELSE $do_until END
+        WHERE biblionumber = ?
+        AND borrowernumber = ?
+    ");
+
+    my @params;
+    push( @params, $suspend_until ) if ( $suspend_until );
+    push( @params, $biblionumber );
+    push( @params, $borrowernumber );
+
+    $sth->execute( @params );
+    $sth->finish;
+}
+
+=head2 SuspendAll
+
+  SuspendAll(
+      borrowernumber   => $borrowernumber,
+      [ biblionumber   => $biblionumber, ]
+      [ suspend_until  => $suspend_until, ]
+      [ suspend        => $suspend ]
+  );
+
+  This function accepts a set of hash keys as its parameters.
+  It requires either borrowernumber or biblionumber, or both.
+
+  suspend_until is wholly optional.
+
+=cut
+
+sub SuspendAll {
+    my %params = @_;
+
+    my $borrowernumber = $params{'borrowernumber'} || undef;
+    my $biblionumber   = $params{'biblionumber'}   || undef;
+    my $suspend_until  = $params{'suspend_until'}  || undef;
+    my $suspend        = defined( $params{'suspend'} ) ? $params{'suspend'} :  1;
+
+    $suspend_until = C4::Dates->new( $suspend_until )->output("iso") if ( defined( $suspend_until ) );
+
+    return unless ( $borrowernumber || $biblionumber );
+
+    my ( $query, $sth, $dbh, @query_params );
+
+    $query = "UPDATE reserves SET suspend = ? ";
+    push( @query_params, $suspend );
+    if ( !$suspend ) {
+        $query .= ", suspend_until = NULL ";
+    } elsif ( $suspend_until ) {
+        $query .= ", suspend_until = ? ";
+        push( @query_params, $suspend_until );
+    }
+    $query .= " WHERE ";
+    if ( $borrowernumber ) {
+        $query .= " borrowernumber = ? ";
+        push( @query_params, $borrowernumber );
+    }
+    $query .= " AND " if ( $borrowernumber && $biblionumber );
+    if ( $biblionumber ) {
+        $query .= " biblionumber = ? ";
+        push( @query_params, $biblionumber );
+    }
+    $query .= " AND found IS NULL ";
+
+    $dbh = C4::Context->dbh;
+    $sth = $dbh->prepare( $query );
+    $sth->execute( @query_params );
+    $sth->finish;
+}
+
+
 =head2 _FixPriority
 
   &_FixPriority($biblio,$borrowernumber,$rank,$ignoreSetLowestRank);
@@ -1599,6 +1745,7 @@ sub _Findgroupreserve {
         AND item_level_request = 1
         AND itemnumber = ?
         AND reservedate <= CURRENT_DATE()
+        AND suspend = 0
     /;
     my $sth = $dbh->prepare($item_level_target_query);
     $sth->execute($itemnumber);
@@ -1629,6 +1776,7 @@ sub _Findgroupreserve {
         AND item_level_request = 0
         AND hold_fill_targets.itemnumber = ?
         AND reservedate <= CURRENT_DATE()
+        AND suspend = 0
     /;
     $sth = $dbh->prepare($title_level_target_query);
     $sth->execute($itemnumber);
@@ -1660,6 +1808,7 @@ sub _Findgroupreserve {
           OR  reserves.constrainttype='a' )
           AND (reserves.itemnumber IS NULL OR reserves.itemnumber = ?)
           AND reserves.reservedate <= CURRENT_DATE()
+          AND suspend = 0
     /;
     $sth = $dbh->prepare($query);
     $sth->execute( $biblio, $bibitem, $itemnumber );
@@ -1700,11 +1849,7 @@ sub _koha_notify_reserve {
     my $messagingprefs;
     if ( $to_address || $borrower->{'smsalertnumber'} ) {
         $messagingprefs = C4::Members::Messaging::GetMessagingPreferences( { borrowernumber => $borrowernumber, message_name => 'Hold_Filled' } );
-
-        return if ( !defined( $messagingprefs->{'letter_code'} ) );
-        $letter_code = $messagingprefs->{'letter_code'};
     } else {
-        $letter_code = 'HOLD_PRINT';
         $print_mode = 1;
     }
 
@@ -1720,23 +1865,24 @@ sub _koha_notify_reserve {
 
     my $admin_email_address = $branch_details->{'branchemail'} || C4::Context->preference('KohaAdminEmailAddress');
 
-    my $letter = getletter( 'reserves', $letter_code );
-    die "Could not find a letter called '$letter_code' in the 'reserves' module" unless( $letter );
+    my %letter_params = (
+        module => 'reserves',
+        branchcode => $reserve->{branchcode},
+        tables => {
+            'branches'  => $branch_details,
+            'borrowers' => $borrower,
+            'biblio'    => $biblionumber,
+            'reserves'  => $reserve,
+            'items', $reserve->{'itemnumber'},
+        },
+        substitute => { today => C4::Dates->new()->output() },
+    );
 
-    C4::Letters::parseletter( $letter, 'branches', $reserve->{'branchcode'} );
-    C4::Letters::parseletter( $letter, 'borrowers', $borrowernumber );
-    C4::Letters::parseletter( $letter, 'biblio', $biblionumber );
-    C4::Letters::parseletter( $letter, 'reserves', $borrowernumber, $biblionumber );
-
-    if ( $reserve->{'itemnumber'} ) {
-        C4::Letters::parseletter( $letter, 'items', $reserve->{'itemnumber'} );
-    }
-    my $today = C4::Dates->new()->output();
-    $letter->{'title'} =~ s/<<today>>/$today/g;
-    $letter->{'content'} =~ s/<<today>>/$today/g;
-    $letter->{'content'} =~ s/<<[a-z0-9_]+\.[a-z0-9]+>>//g; #remove any stragglers
 
     if ( $print_mode ) {
+        $letter_params{ 'letter_code' } = 'HOLD_PRINT';
+        my $letter =  C4::Letters::GetPreparedLetter ( %letter_params ) or die "Could not find a letter called '$letter_params{'letter_code'}' in the 'reserves' module";
+
         C4::Letters::EnqueueLetter( {
             letter => $letter,
             borrowernumber => $borrowernumber,
@@ -1746,8 +1892,10 @@ sub _koha_notify_reserve {
         return;
     }
 
-    if ( grep { $_ eq 'email' } @{$messagingprefs->{transports}} ) {
-        # aka, 'email' in ->{'transports'}
+    if ( $to_address && defined $messagingprefs->{transports}->{'email'} ) {
+        $letter_params{ 'letter_code' } = $messagingprefs->{transports}->{'email'};
+        my $letter =  C4::Letters::GetPreparedLetter ( %letter_params ) or die "Could not find a letter called '$letter_params{'letter_code'}' in the 'reserves' module";
+
         C4::Letters::EnqueueLetter(
             {   letter                 => $letter,
                 borrowernumber         => $borrowernumber,
@@ -1757,7 +1905,10 @@ sub _koha_notify_reserve {
         );
     }
 
-    if ( grep { $_ eq 'sms' } @{$messagingprefs->{transports}} ) {
+    if ( $borrower->{'smsalertnumber'} && defined $messagingprefs->{transports}->{'sms'} ) {
+        $letter_params{ 'letter_code' } = $messagingprefs->{transports}->{'sms'};
+        my $letter =  C4::Letters::GetPreparedLetter ( %letter_params ) or die "Could not find a letter called '$letter_params{'letter_code'}' in the 'reserves' module";
+
         C4::Letters::EnqueueLetter(
             {   letter                 => $letter,
                 borrowernumber         => $borrowernumber,
@@ -1907,6 +2058,35 @@ sub MergeHolds {
     }
 }
 
+=head2 ReserveSlip
+
+  ReserveSlip($branchcode, $borrowernumber, $biblionumber)
+
+  Returns letter hash ( see C4::Letters::GetPreparedLetter ) or undef
+
+=cut
+
+sub ReserveSlip {
+    my ($branch, $borrowernumber, $biblionumber) = @_;
+
+#   return unless ( C4::Context->boolean_preference('printreserveslips') );
+
+    my $reserve = GetReserveInfo($borrowernumber,$biblionumber )
+      or return;
+
+    return  C4::Letters::GetPreparedLetter (
+        module => 'circulation',
+        letter_code => 'RESERVESLIP',
+        branchcode => $branch,
+        tables => {
+            'reserves'    => $reserve,
+            'branches'    => $reserve->{branchcode},
+            'borrowers'   => $reserve,
+            'biblio'      => $reserve,
+            'items'       => $reserve,
+        },
+    );
+}
 
 =head1 AUTHOR
 

@@ -11,9 +11,9 @@
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License along with
-# Koha; if not, write to the Free Software Foundation, Inc., 59 Temple Place,
-# Suite 330, Boston, MA  02111-1307 USA
+# You should have received a copy of the GNU General Public License along
+# with Koha; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 
 use strict;
@@ -25,10 +25,12 @@ use C4::Auth;
 use C4::Koha;
 use C4::Biblio;
 use C4::Circulation;
-use C4::Dates qw/format_date/;
 use C4::Members;
+use Koha::DateUtils;
+use MARC::Record;
 
 use C4::Output;
+use C4::Charset qw(StripNonXmlChars);
 
 my $query = new CGI;
 my ( $template, $borrowernumber, $cookie ) = get_template_and_user(
@@ -50,55 +52,65 @@ $template->param(%{$borr});
 my $itemtypes = GetItemTypes();
 
 # get the record
-my $order  = $query->param('order') || '';
-if ( $order eq '' ) {
+my $order = $query->param('order') || '';
+if ( $order eq 'title' ) {
+    $template->param( orderbytitle => 1 );
+}
+elsif ( $order eq 'author' ) {
+    $template->param( orderbyauthor => 1 );
+}
+else {
     $order = "date_due desc";
     $template->param( orderbydate => 1 );
 }
 
-if ( $order eq 'title' ) {
-    $template->param( orderbytitle => 1 );
-}
 
-if ( $order eq 'author' ) {
-    $template->param( orderbyauthor => 1 );
-}
+my $limit = $query->param('limit');
+$limit = ( $limit eq 'full' ) ? 0 : 50;
 
-my $limit = $query->param('limit') || 50;
-if ( $limit eq 'full' ) {
-    $limit = 0;
-}
-else {
-    $limit = 50;
-}
+my $issues = GetAllIssues( $borrowernumber, $order, $limit );
 
-my ( $issues ) = GetAllIssues( $borrowernumber, $order, $limit );
+my $itype_attribute =
+  ( C4::Context->preference('item-level_itypes') ) ? 'itype' : 'itemtype';
 
-
-my @loop_reading;
-
-foreach my $issue (@{$issues} ) {
-    my %line;
-	
-    my $record = GetMarcBiblio($issue->{'biblionumber'});
-
-	# XISBN Stuff
-	my $isbn               = GetNormalizedISBN($issue->{'isbn'});
-	$line{normalized_isbn} = $isbn;
-    $line{biblionumber}    = $issue->{'biblionumber'};
-    $line{title}           = $issue->{'title'};
-    $line{author}          = $issue->{'author'};
-    $line{itemcallnumber}  = $issue->{'itemcallnumber'};
-    $line{date_due}        = format_date( $issue->{'date_due'} );
-    $line{returndate}      = format_date( $issue->{'returndate'} );
-    $line{volumeddesc}     = $issue->{'volumeddesc'};
-    $issue->{'itemtype'}   = C4::Context->preference('item-level_itypes') ? $issue->{'itype'} : $issue->{'itemtype'};
-    if($issue->{'itemtype'}) {
-        $line{'description'}   = $itemtypes->{ $issue->{'itemtype'} }->{'description'};
-        $line{imageurl}        = getitemtypeimagelocation( 'opac', $itemtypes->{ $issue->{'itemtype'}  }->{'imageurl'} );
+my $opac_summary_html = C4::Context->preference('OPACMySummaryHTML');
+foreach my $issue ( @{$issues} ) {
+    $issue->{normalized_isbn} = GetNormalizedISBN( $issue->{isbn} );
+    if ( $issue->{$itype_attribute} ) {
+        $issue->{description} =
+          $itemtypes->{ $issue->{$itype_attribute} }->{description};
+        $issue->{imageurl} =
+          getitemtypeimagelocation( 'opac',
+            $itemtypes->{ $issue->{$itype_attribute} }->{imageurl} );
     }
-    push( @loop_reading, \%line );
-    $line{subtitle} = GetRecordValue('subtitle', $record, GetFrameworkCode($issue->{'biblionumber'}));
+    if ( $issue->{marcxml} ) {
+        my $marcxml = StripNonXmlChars( $issue->{marcxml} );
+        my $marc_rec =
+          MARC::Record::new_from_xml( $marcxml, 'utf8',
+            C4::Context->preference('marcflavour') );
+        $issue->{subtitle} =
+          GetRecordValue( 'subtitle', $marc_rec, $issue->{frameworkcode} );
+    }
+    # My Summary HTML
+    if ($opac_summary_html) {
+        my $my_summary_html = $opac_summary_html;
+        $issue->{author}
+          ? $my_summary_html =~ s/{AUTHOR}/$issue->{author}/g
+          : $my_summary_html =~ s/{AUTHOR}//g;
+        my $title = $issue->{title};
+        $title =~ s/\/+$//;    # remove trailing slash
+        $title =~ s/\s+$//;    # remove trailing space
+        $title
+          ? $my_summary_html =~ s/{TITLE}/$title/g
+          : $my_summary_html =~ s/{TITLE}//g;
+        $issue->{normalized_isbn}
+          ? $my_summary_html =~ s/{ISBN}/$issue->{normalized_isbn}/g
+          : $my_summary_html =~ s/{ISBN}//g;
+        $issue->{biblionumber}
+          ? $my_summary_html =~ s/{BIBLIONUMBER}/$issue->{biblionumber}/g
+          : $my_summary_html =~ s/{BIBLIONUMBER}//g;
+        $issue->{MySummaryHTML} = $my_summary_html;
+    }
 }
 
 if (C4::Context->preference('BakerTaylorEnabled')) {
@@ -125,11 +137,11 @@ for(qw(AmazonCoverImages GoogleJackets)) {	# BakerTaylorEnabled handled above
 }
 
 $template->param(
-    READING_RECORD => \@loop_reading,
+    READING_RECORD => $issues,
     limit          => $limit,
     showfulllink   => 1,
-	readingrecview => 1,
-	count          => scalar @loop_reading,
+    readingrecview => 1,
+    OPACMySummaryHTML => $opac_summary_html ? 1 : 0,
 );
 
 output_html_with_http_headers $query, $cookie, $template->output;

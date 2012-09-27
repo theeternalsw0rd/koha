@@ -9,7 +9,7 @@
   xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
   exclude-result-prefixes="marc items">
     <xsl:import href="NORMARCslimUtils.xsl"/>
-    <xsl:output method = "xml" indent="yes" omit-xml-declaration = "yes" />
+    <xsl:output method = "html" indent="yes" omit-xml-declaration = "yes" />
     <xsl:key name="item-by-status" match="items:item" use="items:status"/>
     <xsl:key name="item-by-status-and-branch" match="items:item" use="concat(items:status, ' ', items:homebranch)"/>
 
@@ -19,6 +19,7 @@
     <xsl:template match="marc:record">
 
     <xsl:variable name="DisplayOPACiconsXSLT" select="marc:sysprefs/marc:syspref[@name='DisplayOPACiconsXSLT']"/>
+    <xsl:variable name="singleBranchMode" select="marc:sysprefs/marc:syspref[@name='singleBranchMode']"/>
 
         <xsl:variable name="leader" select="marc:leader"/>
         <xsl:variable name="leader6" select="substring($leader,7,1)"/>
@@ -324,7 +325,7 @@
     <xsl:when test="marc:datafield[@tag=100] or marc:datafield[@tag=110] or marc:datafield[@tag=111] or marc:datafield[@tag=700] or marc:datafield[@tag=710] or marc:datafield[@tag=711]">
 
     av 
-        <xsl:for-each select="marc:datafield[@tag=100 or @tag=700]">
+        <xsl:for-each select="marc:datafield[(@tag=100 or @tag=700) and @ind1!='z']">
             <xsl:choose>
             <xsl:when test="position()=last()">
                 <xsl:call-template name="nameABCDQ"/>.
@@ -335,7 +336,7 @@
             </xsl:choose>
         </xsl:for-each>
 
-        <xsl:for-each select="marc:datafield[@tag=110 or @tag=710]">
+        <xsl:for-each select="marc:datafield[(@tag=110 or @tag=710) and @ind1!='z']">
             <xsl:choose>
             <xsl:when test="position()=last()">
                 <xsl:call-template name="nameABCDN"/>.
@@ -346,7 +347,7 @@
             </xsl:choose>
         </xsl:for-each>
 
-        <xsl:for-each select="marc:datafield[@tag=111 or @tag=711]">
+        <xsl:for-each select="marc:datafield[(@tag=111 or @tag=711) and @ind1!='z']">
             <xsl:choose>
             <xsl:when test="position()=last()">
                 <xsl:call-template name="nameACDEQ"/>.
@@ -377,12 +378,12 @@
         <span class="label">Type: </span>
         
             <xsl:choose>
-                <xsl:when test="$typeOf008='Mon'"><img src="/opac-tmpl/prog/famfamfam/silk/book.png" alt="Bok" title="Bok"/> Bok</xsl:when>
-                <xsl:when test="$typeOf008='Per'"><img src="/opac-tmpl/prog/famfamfam/silk/newspaper.png" alt="Periodika" title="Periodika"/> Periodika</xsl:when>      
-                <xsl:when test="$typeOf008='Fil'"><img src="/opac-tmpl/prog/famfamfam/silk/computer_link.png" alt="Fil" title="Fil"/> Fil</xsl:when>
-                <xsl:when test="$typeOf008='Kar'"><img src="/opac-tmpl/prog/famfamfam/silk/map.png" alt="Kart" title="Kart"/> Kart</xsl:when>
-                <xsl:when test="$typeOf008='FV'"><img src="/opac-tmpl/prog/famfamfam/silk/film.png" alt="Film og video" title="Film og video"/> Film og video</xsl:when>
-                <xsl:when test="$typeOf008='Mus'"><img src="/opac-tmpl/prog/famfamfam/silk/sound.png" alt="Musikktrykk og lydopptak" title="Musikktrykk og lydopptak"/> Musikk</xsl:when>
+                <xsl:when test="$typeOf008='Mon'"><img src="/opac-tmpl/lib/famfamfam/silk/book.png" alt="Bok" title="Bok"/> Bok</xsl:when>
+                <xsl:when test="$typeOf008='Per'"><img src="/opac-tmpl/lib/famfamfam/silk/newspaper.png" alt="Periodika" title="Periodika"/> Periodika</xsl:when>
+                <xsl:when test="$typeOf008='Fil'"><img src="/opac-tmpl/lib/famfamfam/silk/computer_link.png" alt="Fil" title="Fil"/> Fil</xsl:when>
+                <xsl:when test="$typeOf008='Kar'"><img src="/opac-tmpl/lib/famfamfam/silk/map.png" alt="Kart" title="Kart"/> Kart</xsl:when>
+                <xsl:when test="$typeOf008='FV'"><img src="/opac-tmpl/lib/famfamfam/silk/film.png" alt="Film og video" title="Film og video"/> Film og video</xsl:when>
+                <xsl:when test="$typeOf008='Mus'"><img src="/opac-tmpl/lib/famfamfam/silk/sound.png" alt="Musikktrykk og lydopptak" title="Musikktrykk og lydopptak"/> Musikk</xsl:when>
                 <xsl:when test="$typeOf008='gra'"> Grafisk materiale</xsl:when>
                 <xsl:when test="$typeOf008='kom'"> Kombidokumenter</xsl:when>
                 <xsl:when test="$typeOf008='trd'"> Tre-dimensjonale gjenstander</xsl:when>
@@ -712,8 +713,18 @@
                    <xsl:when test="count(key('item-by-status', 'available'))>0">
                    <span class="available">
                        <b><xsl:text>Copies available for loan: </xsl:text></b>
-                       <xsl:variable name="available_items"
-                           select="key('item-by-status', 'available')"/>
+                       <xsl:variable name="available_items" select="key('item-by-status', 'available')"/>
+               <xsl:choose>
+               <xsl:when test="$singleBranchMode=1">
+               <xsl:for-each select="$available_items[generate-id() = generate-id(key('item-by-status-and-branch', concat(items:status, ' ', items:homebranch))[1])]">
+                 <xsl:if test="items:itemcallnumber != '' and items:itemcallnumber"> [<xsl:value-of select="items:itemcallnumber"/>]</xsl:if>
+               <xsl:text> (</xsl:text>
+               <xsl:value-of select="count(key('item-by-status-and-branch', concat(items:status, ' ', items:homebranch)))"/>
+                <xsl:text>)</xsl:text>
+                <xsl:choose><xsl:when test="position()=last()"><xsl:text>. </xsl:text></xsl:when><xsl:otherwise><xsl:text>, </xsl:text></xsl:otherwise></xsl:choose>
+            </xsl:for-each>
+            </xsl:when>
+               <xsl:otherwise>
                        <xsl:for-each select="$available_items[generate-id() = generate-id(key('item-by-status-and-branch', concat(items:status, ' ', items:homebranch))[1])]">
                            <xsl:value-of select="items:homebranch"/>
 						   <xsl:if test="items:itemcallnumber != '' and items:itemcallnumber"> [<xsl:value-of select="items:itemcallnumber"/>]</xsl:if>
@@ -723,6 +734,8 @@
                            <xsl:text>)</xsl:text>
 <xsl:choose><xsl:when test="position()=last()"><xsl:text>. </xsl:text></xsl:when><xsl:otherwise><xsl:text>, </xsl:text></xsl:otherwise></xsl:choose>
                        </xsl:for-each>
+               </xsl:otherwise>
+               </xsl:choose>
                    </span>
                    </xsl:when>
 

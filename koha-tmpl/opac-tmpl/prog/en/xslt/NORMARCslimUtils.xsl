@@ -25,13 +25,15 @@
 		<xsl:param name="delimeter"><xsl:text> </xsl:text></xsl:param>
 		<xsl:param name="subdivCodes"/>
 		<xsl:param name="subdivDelimiter"/>
+        <xsl:param name="prefix"/>
+        <xsl:param name="suffix"/>
 		<xsl:variable name="str">
 			<xsl:for-each select="marc:subfield">
 				<xsl:if test="contains($codes, @code)">
                     <xsl:if test="contains($subdivCodes, @code)">
                         <xsl:value-of select="$subdivDelimiter"/>
                     </xsl:if>
-					<xsl:value-of select="text()"/><xsl:value-of select="$delimeter"/>
+					<xsl:value-of select="$prefix"/><xsl:value-of select="text()"/><xsl:value-of select="$suffix"/><xsl:value-of select="$delimeter"/>
 				</xsl:if>
 			</xsl:for-each>
 		</xsl:variable>
@@ -168,29 +170,31 @@
                             </xsl:if>
                         </xsl:for-each>
                     </xsl:variable>
-                    <xsl:choose>
-                        <xsl:when test="boolean($bibno)">
-                            <a>
-                                <xsl:attribute name="href">/cgi-bin/koha/opac-detail.pl?biblionumber=<xsl:value-of  select="$bibno"/></xsl:attribute>
+                    <xsl:if test="string-length($str) &gt; 0">
+                        <xsl:choose>
+                            <xsl:when test="boolean($bibno)">
+                                <a>
+                                    <xsl:attribute name="href">/cgi-bin/koha/opac-detail.pl?biblionumber=<xsl:value-of  select="$bibno"/></xsl:attribute>
+                                    <xsl:value-of select="$str"/>
+                                </a>
+                            </xsl:when>
+                           <xsl:when test="boolean($index) and boolean(marc:subfield[@code=9])">
+                                <a>
+                                    <xsl:attribute name="href">/cgi-bin/koha/opac-search.pl?q=an:<xsl:value-of  select="marc:subfield[@code=9]"/></xsl:attribute>
+                                    <xsl:value-of select="$str"/>
+                                </a>
+                            </xsl:when>
+                            <xsl:when test="boolean($index)">
+                                <a>
+                                    <xsl:attribute name="href">/cgi-bin/koha/opac-search.pl?q=<xsl:value-of  select="$index"/>:<xsl:value-of  select="marc:subfield[@code='a']"/></xsl:attribute>
+                                    <xsl:value-of select="$str"/>
+                                </a>
+                            </xsl:when>
+                            <xsl:otherwise>
                                 <xsl:value-of select="$str"/>
-                            </a>
-                        </xsl:when>
-                       <xsl:when test="boolean($index) and boolean(marc:subfield[@code=9])">
-                            <a>
-                                <xsl:attribute name="href">/cgi-bin/koha/opac-search.pl?q=an:<xsl:value-of  select="marc:subfield[@code=9]"/></xsl:attribute>
-                                  <xsl:value-of select="$str"/>
-                            </a>
-                        </xsl:when>
-                        <xsl:when test="boolean($index)">
-                            <a>
-                                <xsl:attribute name="href">/cgi-bin/koha/opac-search.pl?q=<xsl:value-of  select="$index"/>:<xsl:value-of  select="marc:subfield[@code='a']"/></xsl:attribute>
-                                <xsl:value-of select="$str"/>
-                            </a>
-                        </xsl:when>
-                        <xsl:otherwise>
-                            <xsl:value-of select="$str"/>
-                        </xsl:otherwise>
-                    </xsl:choose>
+                            </xsl:otherwise>
+                        </xsl:choose>
+                    </xsl:if>
                 </span>
             </xsl:if>
         </xsl:for-each>

@@ -1,4 +1,4 @@
-Web Services:
+Web services:
     OAI-PMH:
         -
             - pref: OAI-PMH
@@ -21,6 +21,12 @@ Web Services:
             - pref: "OAI-PMH:ConfFile"
               class: file
             - . If empty, Koha OAI Server operates in normal mode, otherwise it operates in extended mode. In extended mode, it's possible to parameter other formats than marcxml or Dublin Core. OAI-PMH:ConfFile specify a YAML configuration file which list available metadata formats and XSL file used to create them from marcxml records.
+        -
+            - pref: "OAI-PMH:AutoUpdateSets"
+              choices:
+                  yes: Enable
+                  no: Disable
+            - automatic update of OAI-PMH sets when a bibliographic record is created or updated
     ILS-DI:
         -
             - pref: ILS-DI
@@ -32,3 +38,9 @@ Web Services:
             - pref: ILS-DI:AuthorizedIPs
               class: Text
             - allowed IPs to use the ILS-DI services
+    Reporting:
+        -
+            - Only return
+            - pref: SvcMaxReportRows
+              class: integer
+            - rows of a report requested via the reports web service.

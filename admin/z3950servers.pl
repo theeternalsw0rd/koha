@@ -20,7 +20,7 @@
 #	- we delete the record having primkey=$primkey
 
 use strict;
-#use warnings; FIXME - Bug 2505
+use warnings;
 use CGI;
 use C4::Context;
 use C4::Auth;
@@ -29,16 +29,34 @@ use C4::Output;
 sub StringSearch  {
 	my ($searchstring,$type)=@_;
 	my $dbh = C4::Context->dbh;
-	$searchstring=~ s/\'/\\\'/g;
-	my @data=split(' ',$searchstring);
-	my $count=@data;
-	my $sth=$dbh->prepare("Select host,port,db,userid,password,name,id,checked,rank,syntax,encoding from z3950servers where (name like ?) order by rank,name");
-	$sth->execute("$data[0]\%");
+    my @data = ('%');
+    my $count = 1;
+	if ( defined $searchstring ) {
+        $searchstring =~ s/\'/\\\'/g;
+        @data=split(' ',$searchstring);
+        $count=@data;
+    }
+    else {
+        $searchstring = '';
+    }
+
+    my $query    = "SELECT host,port,db,userid,password,name,id,checked,rank,syntax,encoding,timeout";
+    $query      .= " FROM z3950servers";
+    if ( $searchstring ne '' ) { $query .= " WHERE (name like ?)" }
+    $query      .= " ORDER BY rank,name";
+	my $sth=$dbh->prepare($query);
+
+    if ( $searchstring ne '' ) {
+        $sth->execute("$data[0]\%");
+    }
+    else {
+        $sth->execute;
+    }
+
 	my @results;
 	while (my $data=$sth->fetchrow_hashref) {
 	    push(@results,$data);
 	}
-	#  $sth->execute;
 	$sth->finish;
 	$dbh->disconnect;
 	return (scalar(@results),\@results);
@@ -46,18 +64,18 @@ sub StringSearch  {
 
 my $input = new CGI;
 my $searchfield=$input->param('searchfield');
-my $offset=$input->param('offset');
+my $offset=$input->param('offset') || 0;
 my $script_name="/cgi-bin/koha/admin/z3950servers.pl";
 
 my $pagesize=20;
-my $op = $input->param('op');
+my $op = $input->param('op') || '';
 
 my ($template, $loggedinuser, $cookie) 
     = get_template_and_user({template_name => "admin/z3950servers.tmpl",
 				query => $input,
 				type => "intranet",
 				authnotrequired => 0,
-				flagsrequired => {parameters => 1},
+                flagsrequired => {parameters => 'parameters_remaining_permissions'},
 				debug => 1,
 				});
 
@@ -74,13 +92,13 @@ if ($op eq 'add_form') {
 	my $data;
 	if ($searchfield) {
 		my $dbh = C4::Context->dbh;
-		my $sth=$dbh->prepare("select host,port,db,userid,password,name,id,checked,rank,syntax,encoding from z3950servers where (name = ?) order by rank,name");
+		my $sth=$dbh->prepare("select host,port,db,userid,password,name,id,checked,rank,syntax,encoding,timeout from z3950servers where (name = ?) order by rank,name");
 		$sth->execute($searchfield);
 		$data=$sth->fetchrow_hashref;
 		$sth->finish;
 	}
     $template->param( $_ => $data->{$_} ) 
-        for ( qw( host port db userid password checked rank ) );
+        for ( qw( host port db userid password checked rank timeout ) );
     $template->param( $_ . $data->{$_} => 1)
         for ( qw( syntax encoding ) );
 													# END $OP eq ADD_FORM
@@ -93,7 +111,7 @@ if ($op eq 'add_form') {
 	$sth->execute($input->param('searchfield'));
 	my $checked = $input->param('checked') ? 1 : 0;
 	if ($sth->rows) {
-		$sth=$dbh->prepare("update z3950servers set host=?, port=?, db=?, userid=?, password=?, name=?, checked=?, rank=?,syntax=?,encoding=? where name=?");
+		$sth=$dbh->prepare("update z3950servers set host=?, port=?, db=?, userid=?, password=?, name=?, checked=?, rank=?,syntax=?,encoding=?,timeout=? where name=?");
 		$sth->execute($input->param('host'),
 		      $input->param('port'),
 		      $input->param('db'),
@@ -104,14 +122,15 @@ if ($op eq 'add_form') {
 		      $input->param('rank'),
 			  $input->param('syntax'),
               $input->param('encoding'),
+              $input->param('timeout'),
 		      $input->param('searchfield'),
 		      );
 	} 
 	else {
 		$sth=$dbh->prepare(
 		  "INSERT INTO z3950servers " .
-		  "(host,port,db,userid,password,name,checked,rank,syntax,encoding) " .
-		  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)" );
+		  "(host,port,db,userid,password,name,checked,rank,syntax,encoding,timeout) " .
+		  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)" );
         $sth->execute(
             $input->param( 'host' ),
             $input->param( 'port' ),
@@ -119,10 +138,11 @@ if ($op eq 'add_form') {
             $input->param( 'userid' ),
             $input->param( 'password' ),
             $input->param( 'searchfield' ),
-            $input->param( 'checked' ),
+            $checked,
             $input->param( 'rank' ),
             $input->param( 'syntax' ),
-            $input->param( 'encoding' ) );
+            $input->param( 'encoding' ),
+            $input->param( 'timeout' ) );
 	}
 	$sth->finish;
 													# END $OP eq ADD_VALIDATE
@@ -132,7 +152,7 @@ if ($op eq 'add_form') {
 	$template->param(delete_confirm => 1);
 	my $dbh = C4::Context->dbh;
 
-	my $sth2=$dbh->prepare("select host,port,db,userid,password,name,id,checked,rank,syntax,encoding from z3950servers where (name = ?) order by rank,name");
+	my $sth2=$dbh->prepare("select host,port,db,userid,password,name,id,checked,rank,syntax,encoding,timeout from z3950servers where (name = ?) order by rank,name");
 	$sth2->execute($searchfield);
 	my $data=$sth2->fetchrow_hashref;
 	$sth2->finish;
@@ -145,6 +165,7 @@ if ($op eq 'add_form') {
                          checked => $data->{'checked'},
                          rank => $data->{'rank'},
                          syntax => $data->{'syntax'},
+                         timeout => $data->{'timeout'},
                          encoding => $data->{'encoding'}            );
 
 													# END $OP eq DELETE_CONFIRM
@@ -162,8 +183,8 @@ if ($op eq 'add_form') {
 	$template->param(else => 1);
 	my ($count,$results)=StringSearch($searchfield,'web');
 	my @loop;
+
 	for (my $i=$offset; $i < ($offset+$pagesize<$count?$offset+$pagesize:$count); $i++){
-			
 		my $urlsearchfield=$results->[$i]{name};
 		$urlsearchfield=~s/ /%20/g;
 		my %row	= ( name => $results->[$i]{'name'},
@@ -175,7 +196,8 @@ if ($op eq 'add_form') {
 			checked => $results->[$i]{'checked'},
 			rank => $results->[$i]{'rank'},
 			syntax => $results->[$i]{'syntax'},
-      encoding => $results->[$i]{'encoding'});
+			encoding => $results->[$i]{'encoding'},
+      timeout => $results->[$i]{'timeout'});
 		push @loop, \%row;
 
 	}

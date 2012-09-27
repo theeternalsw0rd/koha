@@ -31,7 +31,7 @@ my $framework = $query->param('framework') || "";
 my $field         = $query->param('fieldname');
 my $fieldcode     = $query->param('marcfield');
 my $subfieldcode  = $query->param('marcsubfield');
-my $op            = $query->param('op');
+my $op            = $query->param('op') || q{};
 my $id            = $query->param('id');
 
 my ($template, $loggedinuser, $cookie)
@@ -39,7 +39,7 @@ my ($template, $loggedinuser, $cookie)
 			     query => $query,
 			     type => "intranet",
 			     authnotrequired => 0,
-			     flagsrequired => {parameters => 1},
+                 flagsrequired => {parameters => 'parameters_remaining_permissions'},
 			     debug => 1,
 			     });
 

@@ -14,11 +14,11 @@
 //]]>
 </script>
 </head>
-<body>
+<body id="pat_pay" class="pat">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'patron-search.inc' %]
 
-<div id="breadcrumbs"><a href="/cgi-bin/koha/mainpage.pl">Home</a> &rsaquo; <a href="/cgi-bin/koha/members/members-home.pl">Patrons</a>  &rsaquo; Pay Fines for [% borrower.firstname %] [% borrower.surname %]</div>
+<div id="breadcrumbs"><a href="/cgi-bin/koha/mainpage.pl">Home</a> &rsaquo; <a href="/cgi-bin/koha/members/members-home.pl">Patrons</a>  &rsaquo; Pay fines for [% borrower.firstname %] [% borrower.surname %]</div>
 
 <div id="doc3" class="yui-t2">
    
@@ -28,10 +28,10 @@
 [% INCLUDE 'members-toolbar.inc' borrowernumber=borrower.borrowernumber %]
 
 <!-- The manual invoice and credit buttons -->
-<div class="toptabs">
-<ul class="ui-tabs-nav">
+<div class="statictabs">
+<ul>
 	<li><a href="/cgi-bin/koha/members/boraccount.pl?borrowernumber=[% borrower.borrowernumber %]">Account</a></li>
-	<li class="ui-tabs-selected"><a href="/cgi-bin/koha/members/pay.pl?borrowernumber=[% borrower.borrowernumber %]" >Pay fines</a></li>
+    <li class="active"><a href="/cgi-bin/koha/members/pay.pl?borrowernumber=[% borrower.borrowernumber %]" >Pay fines</a></li>
 	<li><a href="/cgi-bin/koha/members/maninvoice.pl?borrowernumber=[% borrower.borrowernumber %]" >Create manual invoice</a></li>
 	<li><a href="/cgi-bin/koha/members/mancredit.pl?borrowernumber=[% borrower.borrowernumber %]" >Create manual credit</a></li>
 </ul>
@@ -44,14 +44,14 @@
 <table>
 <thead>
 <tr>
-	<th>Fines &amp; Charges</th>
+    <th>Fines &amp; charges</th>
     <th>Sel</th>
 	<th>Description</th>
-	<th>Account Type</th>
+    <th>Account type</th>
 	<th>Notify id</th>
 	<th>Level</th>
 	<th>Amount</th>
-	<th>Amount Outstanding</th>
+    <th>Amount outstanding</th>
 </tr>
 </thead>
 <tfoot>
@@ -73,6 +73,7 @@
     <input type="hidden" name="description[% line.accountno %]" value="[% line.description %]" />
     <input type="hidden" name="accounttype[% line.accountno %]" value="[% line.accounttype %]" />
     <input type="hidden" name="amount[% line.accountno %]" value="[% line.amount %]" />
+    <input type="hidden" name="accountlines_id[% line.accountno %]" value="[% line.accountlines_id %]" />
     <input type="hidden" name="amountoutstanding[% line.accountno %]" value="[% line.amountoutstanding %]" />
     <input type="hidden" name="borrowernumber[% line.accountno %]" value="[% line.borrowernumber %]" />
     <input type="hidden" name="accountno[% line.accountno %]" value="[% line.accountno %]" />
@@ -85,7 +86,7 @@
         <input type="checkbox" checked="checked" name="incl_par_[% line.accountno %]" />
     [% END %]
     </td>
-    <td>[% line.description %] [% line.title |html_entity %]</td>
+    <td>[% line.description %] ([% line.title |html_entity %])</td>
     <td>[% line.accounttype %]</td>
     <td>[% line.notify_id %]</td>
     <td>[% line.notify_level %]</td>
@@ -96,7 +97,7 @@
 [% IF ( account_grp.total ) %]
 <tr>
 
-    <td class="total" colspan="7">Sub Total:</td>
+    <td class="total" colspan="7">Sub total:</td>
     <td>[% account_grp.total | format('%.2f') %]</td>
 </tr>
 [% END %]

@@ -29,7 +29,7 @@ our $debug;
 
 BEGIN {
 	# set the version for version checking
-	$VERSION = 3.01;
+    $VERSION = 3.07.00.049;
 	@ISA    = qw(Exporter);
 	@EXPORT = qw(
 		&UpdateStats
@@ -76,20 +76,20 @@ sub UpdateStats {
     my (
         $branch,         $type,
         $amount,   $other,          $itemnum,
-        $itemtype, $borrowernumber, $accountno
+        $itemtype, $borrowernumber, $accountno, $ccode
       )
       = @_;
     my $dbh = C4::Context->dbh;
     my $sth = $dbh->prepare(
         "INSERT INTO statistics
         (datetime, branch, type, value,
-         other, itemnumber, itemtype, borrowernumber, proccode)
-         VALUES (now(),?,?,?,?,?,?,?,?)"
+         other, itemnumber, itemtype, borrowernumber, proccode, ccode)
+         VALUES (now(),?,?,?,?,?,?,?,?,?)"
     );
     $sth->execute(
         $branch,    $type,    $amount,
         $other,     $itemnum, $itemtype, $borrowernumber,
-		$accountno
+		$accountno, $ccode
     );
 }
 

@@ -17,9 +17,8 @@ package C4::AuthoritiesMarc;
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 use strict;
-#use warnings; FIXME - Bug 2505
+use warnings;
 use C4::Context;
-use C4::Koha;
 use MARC::Record;
 use C4::Biblio;
 use C4::Search;
@@ -27,12 +26,13 @@ use C4::AuthoritiesMarc::MARC21;
 use C4::AuthoritiesMarc::UNIMARC;
 use C4::Charset;
 use C4::Log;
+use Koha::Authority;
 
 use vars qw($VERSION @ISA @EXPORT);
 
 BEGIN {
 	# set the version for version checking
-	$VERSION = 3.01;
+    $VERSION = 3.07.00.049;
 
 	require Exporter;
 	@ISA = qw(Exporter);
@@ -41,21 +41,21 @@ BEGIN {
 	    &GetAuthType
 	    &GetAuthTypeCode
     	&GetAuthMARCFromKohaField 
-    	&AUTHhtml2marc
 
     	&AddAuthority
     	&ModAuthority
     	&DelAuthority
     	&GetAuthority
     	&GetAuthorityXML
-    
+
     	&CountUsage
     	&CountUsageChildren
     	&SearchAuthorities
     
-    	&BuildSummary
-    	&BuildUnimarcHierarchies
-    	&BuildUnimarcHierarchy
+        &BuildSummary
+        &BuildAuthHierarchies
+        &BuildAuthHierarchy
+        &GenerateHierarchy
     
     	&merge
     	&FindDuplicateAuthority
@@ -98,15 +98,16 @@ sub GetAuthMARCFromKohaField {
 =head2 SearchAuthorities 
 
   (\@finalresult, $nbresults)= &SearchAuthorities($tags, $and_or, 
-     $excluding, $operator, $value, $offset,$length,$authtypecode,$sortby)
+     $excluding, $operator, $value, $offset,$length,$authtypecode,
+     $sortby[, $skipmetadata])
 
 returns ref to array result and count of results returned
 
 =cut
 
 sub SearchAuthorities {
-    my ($tags, $and_or, $excluding, $operator, $value, $offset,$length,$authtypecode,$sortby) = @_;
-#     warn "CALL : $tags, $and_or, $excluding, $operator, $value, $offset,$length,$authtypecode,$sortby";
+    my ($tags, $and_or, $excluding, $operator, $value, $offset,$length,$authtypecode,$sortby,$skipmetadata) = @_;
+    # warn Dumper($tags, $and_or, $excluding, $operator, $value, $offset,$length,$authtypecode,$sortby);
     my $dbh=C4::Context->dbh;
     if (C4::Context->preference('NoZebra')) {
     
@@ -200,22 +201,24 @@ sub SearchAuthorities {
         }
     } else {
         my $query;
-        my $attr;
+        my $attr = '';
             # the marclist may contain "mainentry". In this case, search the tag_to_report, that depends on
             # the authtypecode. Then, search on $a of this tag_to_report
             # also store main entry MARC tag, to extract it at end of search
         my $mainentrytag;
         ##first set the authtype search and may be multiple authorities
-        my $n=0;
-        my @authtypecode;
-        my @auths=split / /,$authtypecode ;
-        foreach my  $auth (@auths){
-            $query .=" \@attr 1=authtype \@attr 5=100 ".$auth; ##No truncation on authtype
-            push @authtypecode ,$auth;
-            $n++;
-        }
-        if ($n>1){
-            while ($n>1){$query= "\@or ".$query;$n--;}
+        if ($authtypecode) {
+            my $n=0;
+            my @authtypecode;
+            my @auths=split / /,$authtypecode ;
+            foreach my  $auth (@auths){
+                $query .=" \@attr 1=authtype \@attr 5=100 ".$auth; ##No truncation on authtype
+                    push @authtypecode ,$auth;
+                $n++;
+            }
+            if ($n>1){
+                while ($n>1){$query= "\@or ".$query;$n--;}
+            }
         }
         
         my $dosearch;
@@ -225,23 +228,48 @@ sub SearchAuthorities {
         for(my $i = 0 ; $i <= $#{$value} ; $i++)
         {
             if (@$value[$i]){
-                if (@$tags[$i] eq "mainmainentry") {
-
-                $attr =" \@attr 1=Heading-Main ";
-
-                }elsif (@$tags[$i] eq "mainentry") {
-                $attr =" \@attr 1=Heading ";
-                }else{
-                $attr =" \@attr 1=Any ";
+                if ( @$tags[$i] eq "mainmainentry" ) {
+                    $attr = " \@attr 1=Heading-Main ";
                 }
-                if (@$operator[$i] eq 'is') {
-                    $attr.=" \@attr 4=1  \@attr 5=100 ";##Phrase, No truncation,all of subfield field must match
-                }elsif (@$operator[$i] eq "="){
-                    $attr.=" \@attr 4=107 ";           #Number Exact match
-                }elsif (@$operator[$i] eq "start"){
-                    $attr.=" \@attr 3=2 \@attr 4=1 \@attr 5=1 ";#Firstinfield Phrase, Right truncated
-                } else {
-                    $attr .=" \@attr 5=1 \@attr 4=6 ";## Word list, right truncated, anywhere
+                elsif ( @$tags[$i] eq "mainentry" ) {
+                    $attr = " \@attr 1=Heading ";
+                }
+                elsif ( @$tags[$i] eq "match" ) {
+                    $attr = " \@attr 1=Match ";
+                }
+                elsif ( @$tags[$i] eq "match-heading" ) {
+                    $attr = " \@attr 1=Match-heading ";
+                }
+                elsif ( @$tags[$i] eq "see-from" ) {
+                    $attr = " \@attr 1=Match-heading-see-from ";
+                }
+                elsif ( @$tags[$i] eq "thesaurus" ) {
+                    $attr = " \@attr 1=Subject-heading-thesaurus ";
+                }
+                else { # Assume any if no index was specified
+                    $attr = " \@attr 1=Any ";
+                }
+                if ( @$operator[$i] eq 'is' ) {
+                    $attr .= " \@attr 4=1  \@attr 5=100 "
+                      ; ##Phrase, No truncation,all of subfield field must match
+                }
+                elsif ( @$operator[$i] eq "=" ) {
+                    $attr .= " \@attr 4=107 ";    #Number Exact match
+                }
+                elsif ( @$operator[$i] eq "start" ) {
+                    $attr .= " \@attr 3=2 \@attr 4=1 \@attr 5=1 "
+                      ;    #Firstinfield Phrase, Right truncated
+                }
+                elsif ( @$operator[$i] eq "exact" ) {
+                    $attr .= " \@attr 4=1  \@attr 5=100 \@attr 6=3 "
+                      ; ##Phrase, No truncation,all of subfield field must match
+                }
+                else {
+                    $attr .= " \@attr 5=1 \@attr 4=6 "
+                      ;    ## Word list, right truncated, anywhere
+                      if ($sortby eq 'Relevance') {
+                          $attr .= "\@attr 2=102 ";
+                      }
                 }
                 @$value[$i] =~ s/"/\\"/g; # Escape the double-quotes in the search value
                 $attr =$attr."\"".@$value[$i]."\"";
@@ -251,20 +279,23 @@ sub SearchAuthorities {
             }#if value
         }
         ##Add how many queries generated
-        if ($query=~/\S+/){
-          $query= $and x $attr_cnt . $query . $q2;
+        if (defined $query && $query=~/\S+/){
+          $query= $and x $attr_cnt . $query . (defined $q2 ? $q2 : '');
         } else {
           $query= $q2;
         }
         ## Adding order
         #$query=' @or  @attr 7=2 @attr 1=Heading 0 @or  @attr 7=1 @attr 1=Heading 1'.$query if ($sortby eq "HeadingDsc");
-        my $orderstring= ($sortby eq "HeadingAsc"?
-                           '@attr 7=1 @attr 1=Heading 0'
-                         :
-                           $sortby eq "HeadingDsc"?      
-                            '@attr 7=2 @attr 1=Heading 0'
-                           :''
-                        );            
+        my $orderstring;
+        if ($sortby eq 'HeadingAsc') {
+            $orderstring = '@attr 7=1 @attr 1=Heading 0';
+        } elsif ($sortby eq 'HeadingDsc') {
+            $orderstring = '@attr 7=2 @attr 1=Heading 0';
+        } elsif ($sortby eq 'AuthidAsc') {
+            $orderstring = '@attr 7=1 @attr 1=Local-Number 0';
+        } elsif ($sortby eq 'AuthidDsc') {
+            $orderstring = '@attr 7=2 @attr 1=Local-Number 0';
+        }
         $query=($query?$query:"\@attr 1=_ALLRECORDS \@attr 2=103 ''");
         $query="\@or $orderstring $query" if $orderstring;
 
@@ -309,35 +340,46 @@ sub SearchAuthorities {
             my $separator=C4::Context->preference('authoritysep');
             $authrecord = MARC::File::USMARC::decode($marcdata);
             my $authid=$authrecord->field('001')->data(); 
-            my $summary=BuildSummary($authrecord,$authid,$authtypecode);
-            my $query_auth_tag = "SELECT auth_tag_to_report FROM auth_types WHERE authtypecode=?";
-            my $sth = $dbh->prepare($query_auth_tag);
-            $sth->execute($authtypecode);
-            my $auth_tag_to_report = $sth->fetchrow;
-            my $reported_tag;
-            my $mainentry = $authrecord->field($auth_tag_to_report);
-            if ($mainentry) {
-                foreach ($mainentry->subfields()) {
-                    $reported_tag .='$'.$_->[0].$_->[1];
-                }
-            }
             my %newline;
-            $newline{summary} = $summary;
             $newline{authid} = $authid;
-            $newline{even} = $counter % 2;
-            $newline{reported_tag} = $reported_tag;
+            if ( !$skipmetadata ) {
+                my $summary =
+                  BuildSummary( $authrecord, $authid, $authtypecode );
+                my $query_auth_tag =
+"SELECT auth_tag_to_report FROM auth_types WHERE authtypecode=?";
+                my $sth = $dbh->prepare($query_auth_tag);
+                $sth->execute($authtypecode);
+                my $auth_tag_to_report = $sth->fetchrow;
+                my $reported_tag;
+                my $mainentry = $authrecord->field($auth_tag_to_report);
+                if ($mainentry) {
+
+                    foreach ( $mainentry->subfields() ) {
+                        $reported_tag .= '$' . $_->[0] . $_->[1];
+                    }
+                }
+                my $thisauthtype = GetAuthType(GetAuthTypeCode($authid));
+                $newline{authtype}     = defined ($thisauthtype) ?
+                                            $thisauthtype->{'authtypetext'} :
+                                            (GetAuthType($authtypecode) ? $_->{'authtypetext'} : '');
+                $newline{summary}      = $summary;
+                $newline{even}         = $counter % 2;
+                $newline{reported_tag} = $reported_tag;
+            }
             $counter++;
             push @finalresult, \%newline;
             }## while counter
-        ###
-        for (my $z=0; $z<@finalresult; $z++){
-                my  $count=CountUsage($finalresult[$z]{authid});
-                $finalresult[$z]{used}=$count;
-        }# all $z's
-        
+            ###
+            if (! $skipmetadata) {
+                for (my $z=0; $z<@finalresult; $z++){
+                    my  $count=CountUsage($finalresult[$z]{authid});
+                    $finalresult[$z]{used}=$count;
+                }# all $z's
+            }
+
         }## if nbresult
         NOLUCK:
-        # $oAResult->destroy();
+        $oAResult->destroy();
         # $oAuth[0]->destroy();
         
         return (\@finalresult, $nbresults);
@@ -813,19 +855,8 @@ Returns MARC::Record of the authority passed in parameter.
 
 sub GetAuthority {
     my ($authid)=@_;
-    my $dbh=C4::Context->dbh;
-    my $sth=$dbh->prepare("select authtypecode, marcxml from auth_header where authid=?");
-    $sth->execute($authid);
-    my ($authtypecode, $marcxml) = $sth->fetchrow;
-    my $record=eval {MARC::Record->new_from_xml(StripNonXmlChars($marcxml),'UTF-8',
-        (C4::Context->preference("marcflavour") eq "UNIMARC"?"UNIMARCAUTH":C4::Context->preference("marcflavour")))};
-    return undef if ($@);
-    $record->encoding('UTF-8');
-    if (C4::Context->preference("marcflavour") eq "MARC21") {
-      my ($auth_type_tag, $auth_type_subfield) = get_auth_type_location($authtypecode);
-      C4::AuthoritiesMarc::MARC21::fix_marc21_auth_type_location($record, $auth_type_tag, $auth_type_subfield);
-    }
-    return ($record);
+    my $authority = Koha::Authority->get_from_authid($authid);
+    return ($authority->record);
 }
 
 =head2 GetAuthType 
@@ -853,53 +884,6 @@ sub GetAuthType {
     return;
 }
 
-
-sub AUTHhtml2marc {
-    my ($rtags,$rsubfields,$rvalues,%indicators) = @_;
-    my $dbh=C4::Context->dbh;
-    my $prevtag = -1;
-    my $record = MARC::Record->new();
-#---- TODO : the leader is missing
-
-#     my %subfieldlist=();
-    my $prevvalue; # if tag <10
-    my $field; # if tag >=10
-    for (my $i=0; $i< @$rtags; $i++) {
-        # rebuild MARC::Record
-        if (@$rtags[$i] ne $prevtag) {
-            if ($prevtag < 10) {
-                if ($prevvalue) {
-                    $record->add_fields((sprintf "%03s",$prevtag),$prevvalue);
-                }
-            } else {
-                if ($field) {
-                    $record->add_fields($field);
-                }
-            }
-            $indicators{@$rtags[$i]}.='  ';
-            if (@$rtags[$i] <10) {
-                $prevvalue= @$rvalues[$i];
-                undef $field;
-            } else {
-                undef $prevvalue;
-                $field = MARC::Field->new( (sprintf "%03s",@$rtags[$i]), substr($indicators{@$rtags[$i]},0,1),substr($indicators{@$rtags[$i]},1,1), @$rsubfields[$i] => @$rvalues[$i]);
-            }
-            $prevtag = @$rtags[$i];
-        } else {
-            if (@$rtags[$i] <10) {
-                $prevvalue=@$rvalues[$i];
-            } else {
-                if (length(@$rvalues[$i])>0) {
-                    $field->add_subfields(@$rsubfields[$i] => @$rvalues[$i]);
-                }
-            }
-            $prevtag= @$rtags[$i];
-        }
-    }
-    # the last has not been included inside the loop... do it now !
-    $record->add_fields($field) if $field;
-    return $record;
-}
 
 =head2 FindDuplicateAuthority
 
@@ -942,9 +926,9 @@ sub FindDuplicateAuthority {
 
 =head2 BuildSummary
 
-  $text= &BuildSummary( $record, $authid, $authtypecode)
+  $summary= &BuildSummary( $record, $authid, $authtypecode)
 
-return HTML encoded Summary
+Returns a hashref with a summary of the specified record.
 
 Comment : authtypecode can be infered from both record and authid.
 Moreover, authid can also be inferred from $record.
@@ -952,176 +936,304 @@ Would it be interesting to delete those things.
 
 =cut
 
-sub BuildSummary{
-## give this a Marc record to return summary
-  my ($record,$authid,$authtypecode)=@_;
-  my $dbh=C4::Context->dbh;
-  my $summary;
-  # handle $authtypecode is NULL or eq ""
-  if ($authtypecode) {
-  	my $authref = GetAuthType($authtypecode);
-  	$summary = $authref->{summary};
-  }
-  # FIXME: should use I18N.pm
-  my %language;
-  $language{'fre'}="Français";
-  $language{'eng'}="Anglais";
-  $language{'ger'}="Allemand";
-  $language{'ita'}="Italien";
-  $language{'spa'}="Espagnol";
-  my %thesaurus;
-  $thesaurus{'1'}="Peuples";
-  $thesaurus{'2'}="Anthroponymes";
-  $thesaurus{'3'}="Oeuvres";
-  $thesaurus{'4'}="Chronologie";
-  $thesaurus{'5'}="Lieux";
-  $thesaurus{'6'}="Sujets";
-  #thesaurus a remplir
-  my @fields = $record->fields();
-  my $reported_tag;
-  # if the library has a summary defined, use it. Otherwise, build a standard one
-  # FIXME - it appears that the summary field in the authority frameworks
-  #         can work as a display template.  However, this doesn't
-  #         suit the MARC21 version, so for now the "templating"
-  #         feature will be enabled only for UNIMARC for backwards
-  #         compatibility.
-  if ($summary and C4::Context->preference('marcflavour') eq 'UNIMARC') {
-    my @fields = $record->fields();
-    #             $reported_tag = '$9'.$result[$counter];
-	my @stringssummary;
-    foreach my $field (@fields) {
-      my $tag = $field->tag();
-      my $tagvalue = $field->as_string();
-      my $localsummary= $summary;
-	  $localsummary =~ s/\[(.?.?.?.?)$tag\*(.*?)\]/$1$tagvalue$2\[$1$tag$2\]/g;
-      if ($tag<10) {
-        if ($tag eq '001') {
-          $reported_tag.='$3'.$field->data();
-        }
-      } else {
-        my @subf = $field->subfields;
-        for my $i (0..$#subf) {
-          my $subfieldcode = $subf[$i][0];
-          my $subfieldvalue = $subf[$i][1];
-          my $tagsubf = $tag.$subfieldcode;
-          $localsummary =~ s/\[(.?.?.?.?)$tagsubf(.*?)\]/$1$subfieldvalue$2\[$1$tagsubf$2\]/g;
-        }
-      }
-	  push @stringssummary, $localsummary if ($localsummary ne $summary);
+sub BuildSummary {
+    ## give this a Marc record to return summary
+    my ($record,$authid,$authtypecode)=@_;
+    my $dbh=C4::Context->dbh;
+    my %summary;
+    # handle $authtypecode is NULL or eq ""
+    if ($authtypecode) {
+        my $authref = GetAuthType($authtypecode);
+        $summary{authtypecode} = $authref->{authtypecode};
+        $summary{type} = $authref->{authtypetext};
+        $summary{summary} = $authref->{summary};
     }
-	my $resultstring;
-	$resultstring = join(" -- ",@stringssummary);
-    $resultstring =~ s/\[(.*?)\]//g;
-    $resultstring =~ s/\n/<br>/g;
-	$summary      =  $resultstring;
-  } else {
-    my $heading; 
-    my $altheading;
-    my $seealso;
-    my $broaderterms;
-    my $narrowerterms;
-    my $see;
-    my $seeheading;
-        my $notes;
-    my @fields = $record->fields();
+    my $marc21subfields = 'abcdfghjklmnopqrstuvxyz68';
+    my %marc21controlrefs = ( 'a' => 'earlier',
+        'b' => 'later',
+        'd' => 'acronym',
+        'f' => 'musical',
+        'g' => 'broader',
+        'h' => 'narrower',
+        'n' => 'notapplicable',
+        'i' => 'subfi',
+        't' => 'parent'
+    );
+    my %thesaurus;
+    $thesaurus{'1'}="Peuples";
+    $thesaurus{'2'}="Anthroponymes";
+    $thesaurus{'3'}="Oeuvres";
+    $thesaurus{'4'}="Chronologie";
+    $thesaurus{'5'}="Lieux";
+    $thesaurus{'6'}="Sujets";
+    #thesaurus a remplir
+    my $reported_tag;
+# if the library has a summary defined, use it. Otherwise, build a standard one
+# FIXME - it appears that the summary field in the authority frameworks
+#         can work as a display template.  However, this doesn't
+#         suit the MARC21 version, so for now the "templating"
+#         feature will be enabled only for UNIMARC for backwards
+#         compatibility.
+    if ($summary{summary} and C4::Context->preference('marcflavour') eq 'UNIMARC') {
+        my @fields = $record->fields();
+#             $reported_tag = '$9'.$result[$counter];
+        my @stringssummary;
+        foreach my $field (@fields) {
+            my $tag = $field->tag();
+            my $tagvalue = $field->as_string();
+            my $localsummary= $summary{summary};
+            $localsummary =~ s/\[(.?.?.?.?)$tag\*(.*?)\]/$1$tagvalue$2\[$1$tag$2\]/g;
+            if ($tag<10) {
+                if ($tag eq '001') {
+                    $reported_tag.='$3'.$field->data();
+                }
+            } else {
+                my @subf = $field->subfields;
+                for my $i (0..$#subf) {
+                    my $subfieldcode = $subf[$i][0];
+                    my $subfieldvalue = $subf[$i][1];
+                    my $tagsubf = $tag.$subfieldcode;
+                    $localsummary =~ s/\[(.?.?.?.?)$tagsubf(.*?)\]/$1$subfieldvalue$2\[$1$tagsubf$2\]/g;
+                }
+            }
+            push @stringssummary, $localsummary if ($localsummary ne $summary{summary});
+        }
+        my $resultstring;
+        $resultstring = join(" -- ",@stringssummary);
+        $resultstring =~ s/\[(.*?)\]//g;
+        $resultstring =~ s/\n/<br>/g;
+        $summary{summary}      =  $resultstring;
+    }
+    my @authorized;
+    my @notes;
+    my @seefrom;
+    my @seealso;
+    my @otherscript;
     if (C4::Context->preference('marcflavour') eq 'UNIMARC') {
-    # construct UNIMARC summary, that is quite different from MARC21 one
-      # accepted form
-      foreach my $field ($record->field('2..')) {
-        $heading.= $field->as_string('abcdefghijlmnopqrstuvwxyz');
-      }
-      # rejected form(s)
-      foreach my $field ($record->field('3..')) {
-        $notes.= '<span class="note">'.$field->subfield('a')."</span>\n";
-      }
-      foreach my $field ($record->field('4..')) {
-        if ($field->subfield('2')) {
-            my $thesaurus = "thes. : ".$thesaurus{"$field->subfield('2')"}." : ";
-            $see.= '<span class="UF">'.$thesaurus.$field->as_string('abcdefghijlmnopqrstuvwxyz')."</span> -- \n";
+# construct UNIMARC summary, that is quite different from MARC21 one
+# accepted form
+        foreach my $field ($record->field('2..')) {
+            push @authorized, { heading => $field->as_string('abcdefghijlmnopqrstuvwxyz'), field => $field->tag() };
         }
-      }
-      # see :
-      foreach my $field ($record->field('5..')) {
-            
-        if (($field->subfield('5')) && ($field->subfield('a')) && ($field->subfield('5') eq 'g')) {
-          $broaderterms.= '<span class="BT"> '.$field->as_string('abcdefgjxyz')."</span> -- \n";
-        } elsif (($field->subfield('5')) && ($field->as_string) && ($field->subfield('5') eq 'h')){
-          $narrowerterms.= '<span class="NT">'.$field->as_string('abcdefgjxyz')."</span> -- \n";
-        } elsif ($field->subfield('a')) {
-          $seealso.= '<span class="RT">'.$field->as_string('abcdefgxyz')."</a></span> -- \n";
+# rejected form(s)
+        foreach my $field ($record->field('3..')) {
+            push @notes, { note => $field->subfield('a'), field => $field->tag() };
         }
-      }
-      # // form
-      foreach my $field ($record->field('7..')) {
-        my $lang = substr($field->subfield('8'),3,3);
-        $seeheading.= '<span class="langue"> En '.$language{$lang}.' : </span><span class="OT"> '.$field->subfield('a')."</span><br />\n";  
-      }
-            $broaderterms =~s/-- \n$//;
-            $narrowerterms =~s/-- \n$//;
-            $seealso =~s/-- \n$//;
-            $see =~s/-- \n$//;
-      $summary = $heading."<br />".($notes?"$notes <br />":"");
-      $summary.= '<p><div class="label">TG : '.$broaderterms.'</div></p>' if ($broaderterms);
-      $summary.= '<p><div class="label">TS : '.$narrowerterms.'</div></p>' if ($narrowerterms);
-      $summary.= '<p><div class="label">TA : '.$seealso.'</div></p>' if ($seealso);
-      $summary.= '<p><div class="label">EP : '.$see.'</div></p>' if ($see);
-      $summary.= '<p><div class="label">'.$seeheading.'</div></p>' if ($seeheading);
-      } else {
-      # construct MARC21 summary
-          # FIXME - looping over 1XX is questionable
-          # since MARC21 authority should have only one 1XX
-          foreach my $field ($record->field('1..')) {
-              next if "152" eq $field->tag(); # FIXME - 152 is not a good tag to use
-                                              # in MARC21 -- purely local tags really ought to be
-                                              # 9XX
-              if ($record->field('100')) {
-                  $heading.= $field->as_string('abcdefghjklmnopqrstvxyz68');
-              } elsif ($record->field('110')) {
-                                      $heading.= $field->as_string('abcdefghklmnoprstvxyz68');
-              } elsif ($record->field('111')) {
-                                      $heading.= $field->as_string('acdefghklnpqstvxyz68');
-              } elsif ($record->field('130')) {
-                                      $heading.= $field->as_string('adfghklmnoprstvxyz68');
-              } elsif ($record->field('148')) {
-                                      $heading.= $field->as_string('abvxyz68');
-              } elsif ($record->field('150')) {
-                  $heading.= $field->as_string('abvxyz68');
-              #$heading.= $field->as_formatted();
-              my $tag=$field->tag();
-              $heading=~s /^$tag//g;
-              $heading =~s /\_/\$/g;
-              } elsif ($record->field('151')) {
-                                      $heading.= $field->as_string('avxyz68');
-              } elsif ($record->field('155')) {
-                                      $heading.= $field->as_string('abvxyz68');
-              } elsif ($record->field('180')) {
-                                      $heading.= $field->as_string('vxyz68');
-              } elsif ($record->field('181')) {
-                                      $heading.= $field->as_string('vxyz68');
-              } elsif ($record->field('182')) {
-                                      $heading.= $field->as_string('vxyz68');
-              } elsif ($record->field('185')) {
-                                      $heading.= $field->as_string('vxyz68');
-              } else {
-                  $heading.= $field->as_string();
-              }
-          } #See From
-          foreach my $field ($record->field('4..')) {
-              $seeheading.= "<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>used for/see from:</i> ".$field->as_string();
-          } #See Also
-          foreach my $field ($record->field('5..')) {
-              $altheading.= "<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>see also:</i> ".$field->as_string();
-          }
-          $summary .= ": " if $summary;
-          $summary.=$heading.$seeheading.$altheading;
-      }
-  }
-  return $summary;
+        foreach my $field ($record->field('4..')) {
+            my $thesaurus = $field->subfield('2') ? "thes. : ".$thesaurus{"$field->subfield('2')"}." : " : '';
+            push @seefrom, { heading => $thesaurus . $field->as_string('abcdefghijlmnopqrstuvwxyz'), type => 'seefrom', field => $field->tag() };
+        }
+# see :
+        foreach my $field ($record->field('5..')) {
+            if (($field->subfield('5')) && ($field->subfield('a')) && ($field->subfield('5') eq 'g')) {
+                push @seealso, {
+                    heading => $field->as_string('abcdefgjxyz'),
+                    type => 'broader',
+                    field => $field->tag(),
+                    search => $field->as_string('abcdefgjxyz'),
+                    authid => $field->subfield('9')
+                };
+            } elsif (($field->subfield('5')) && ($field->as_string) && ($field->subfield('5') eq 'h')){
+                push @seealso, {
+                    heading => $field->as_string('abcdefgjxyz'),
+                    type => 'narrower',
+                    field => $field->tag(),
+                    search => $field->as_string('abcdefgjxyz'),
+                    authid => $field->subfield('9')
+                };
+            } elsif ($field->subfield('a')) {
+                push @seealso, {
+                    heading => $field->as_string('abcdefgxyz'),
+                    type => 'seealso',
+                    field => $field->tag(),
+                    search => $field->as_string('abcdefgjxyz'),
+                    authid => $field->subfield('9')
+                };
+            }
+        }
+# // form
+        foreach my $field ($record->field('7..')) {
+            my $lang = substr($field->subfield('8'),3,3);
+            push @otherscript, { lang => $lang, term => $field->subfield('a'), direction => 'ltr', field => $field->tag() };
+        }
+    } else {
+# construct MARC21 summary
+# FIXME - looping over 1XX is questionable
+# since MARC21 authority should have only one 1XX
+        my $subfields_to_report;
+        foreach my $field ($record->field('1..')) {
+            my $tag = $field->tag();
+            next if "152" eq $tag;
+# FIXME - 152 is not a good tag to use
+# in MARC21 -- purely local tags really ought to be
+# 9XX
+            if ($tag eq '100') {
+                $subfields_to_report = 'abcdefghjklmnopqrstvxyz';
+            } elsif ($tag eq '110') {
+                $subfields_to_report = 'abcdefghklmnoprstvxyz';
+            } elsif ($tag eq '111') {
+                $subfields_to_report = 'acdefghklnpqstvxyz';
+            } elsif ($tag eq '130') {
+                $subfields_to_report = 'adfghklmnoprstvxyz';
+            } elsif ($tag eq '148') {
+                $subfields_to_report = 'abvxyz';
+            } elsif ($tag eq '150') {
+                $subfields_to_report = 'abvxyz';
+            } elsif ($tag eq '151') {
+                $subfields_to_report = 'avxyz';
+            } elsif ($tag eq '155') {
+                $subfields_to_report = 'abvxyz';
+            } elsif ($tag eq '180') {
+                $subfields_to_report = 'vxyz';
+            } elsif ($tag eq '181') {
+                $subfields_to_report = 'vxyz';
+            } elsif ($tag eq '182') {
+                $subfields_to_report = 'vxyz';
+            } elsif ($tag eq '185') {
+                $subfields_to_report = 'vxyz';
+            }
+            if ($subfields_to_report) {
+                push @authorized, { heading => $field->as_string($subfields_to_report), field => $tag };
+            } else {
+                push @authorized, { heading => $field->as_string(), field => $tag };
+            }
+        }
+        foreach my $field ($record->field('4..')) { #See From
+            my $type = 'seefrom';
+            $type = ($marc21controlrefs{substr $field->subfield('w'), 0, 1} || '') if ($field->subfield('w'));
+            if ($type eq 'notapplicable') {
+                $type = substr $field->subfield('w'), 2, 1;
+                $type = 'earlier' if $type && $type ne 'n';
+            }
+            if ($type eq 'subfi') {
+                push @seefrom, { heading => $field->as_string($marc21subfields), type => ($field->subfield('i') || ''), field => $field->tag() };
+            } else {
+                push @seefrom, { heading => $field->as_string($marc21subfields), type => $type, field => $field->tag() };
+            }
+        }
+        foreach my $field ($record->field('5..')) { #See Also
+            my $type = 'seealso';
+            $type = ($marc21controlrefs{substr $field->subfield('w'), 0, 1} || '') if ($field->subfield('w'));
+            if ($type eq 'notapplicable') {
+                $type = substr $field->subfield('w'), 2, 1;
+                $type = 'earlier' if $type && $type ne 'n';
+            }
+            if ($type eq 'subfi') {
+                push @seealso, {
+                    heading => $field->as_string($marc21subfields),
+                    type => $field->subfield('i'),
+                    field => $field->tag(),
+                    search => $field->as_string($marc21subfields) || '',
+                    authid => $field->subfield('9') || ''
+                };
+            } else {
+                push @seealso, {
+                    heading => $field->as_string($marc21subfields),
+                    type => $type,
+                    field => $field->tag(),
+                    search => $field->as_string($marc21subfields) || '',
+                    authid => $field->subfield('9') || ''
+                };
+            }
+        }
+        foreach my $field ($record->field('6..')) {
+            push @notes, { note => $field->as_string(), field => $field->tag() };
+        }
+        foreach my $field ($record->field('880')) {
+            my $linkage = $field->subfield('6');
+            my $category = substr $linkage, 0, 1;
+            if ($category eq '1') {
+                $category = 'preferred';
+            } elsif ($category eq '4') {
+                $category = 'seefrom';
+            } elsif ($category eq '5') {
+                $category = 'seealso';
+            }
+            my $type;
+            if ($field->subfield('w')) {
+                $type = $marc21controlrefs{substr $field->subfield('w'), '0'};
+            } else {
+                $type = $category;
+            }
+            my $direction = $linkage =~ m#/r$# ? 'rtl' : 'ltr';
+            push @otherscript, { term => $field->as_string($subfields_to_report), category => $category, type => $type, direction => $direction, linkage => $linkage };
+        }
+    }
+    $summary{mainentry} = $authorized[0]->{heading};
+    $summary{authorized} = \@authorized;
+    $summary{notes} = \@notes;
+    $summary{seefrom} = \@seefrom;
+    $summary{seealso} = \@seealso;
+    $summary{otherscript} = \@otherscript;
+    return \%summary;
 }
 
-=head2 BuildUnimarcHierarchies
+=head2 GetAuthorizedHeading
 
-  $text= &BuildUnimarcHierarchies( $authid, $force)
+  $heading = &GetAuthorizedHeading({ record => $record, authid => $authid })
+
+Takes a MARC::Record object describing an authority record or an authid, and
+returns a string representation of the first authorized heading. This routine
+should be considered a temporary shim to ease the future migration of authority
+data from C4::AuthoritiesMarc to the object-oriented Koha::*::Authority.
+
+=cut
+
+sub GetAuthorizedHeading {
+    my $args = shift;
+    my $record;
+    unless ($record = $args->{record}) {
+        return unless $args->{authid};
+        $record = GetAuthority($args->{authid});
+    }
+    if (C4::Context->preference('marcflavour') eq 'UNIMARC') {
+# construct UNIMARC summary, that is quite different from MARC21 one
+# accepted form
+        foreach my $field ($record->field('2..')) {
+            return $field->as_string('abcdefghijlmnopqrstuvwxyz');
+        }
+    } else {
+        foreach my $field ($record->field('1..')) {
+            my $tag = $field->tag();
+            next if "152" eq $tag;
+# FIXME - 152 is not a good tag to use
+# in MARC21 -- purely local tags really ought to be
+# 9XX
+            if ($tag eq '100') {
+                return $field->as_string('abcdefghjklmnopqrstvxyz68');
+            } elsif ($tag eq '110') {
+                return $field->as_string('abcdefghklmnoprstvxyz68');
+            } elsif ($tag eq '111') {
+                return $field->as_string('acdefghklnpqstvxyz68');
+            } elsif ($tag eq '130') {
+                return $field->as_string('adfghklmnoprstvxyz68');
+            } elsif ($tag eq '148') {
+                return $field->as_string('abvxyz68');
+            } elsif ($tag eq '150') {
+                return $field->as_string('abvxyz68');
+            } elsif ($tag eq '151') {
+                return $field->as_string('avxyz68');
+            } elsif ($tag eq '155') {
+                return $field->as_string('abvxyz68');
+            } elsif ($tag eq '180') {
+                return $field->as_string('vxyz68');
+            } elsif ($tag eq '181') {
+                return $field->as_string('vxyz68');
+            } elsif ($tag eq '182') {
+                return $field->as_string('vxyz68');
+            } elsif ($tag eq '185') {
+                return $field->as_string('vxyz68');
+            } else {
+                return $field->as_string();
+            }
+        }
+    }
+    return;
+}
+
+=head2 BuildAuthHierarchies
+
+  $text= &BuildAuthHierarchies( $authid, $force)
 
 return text containing trees for hierarchies
 for them to be stored in auth_header
@@ -1131,54 +1243,59 @@ Example of text:
 
 =cut
 
-sub BuildUnimarcHierarchies{
-  my $authid = shift @_;
+sub BuildAuthHierarchies{
+    my $authid = shift @_;
 #   warn "authid : $authid";
-  my $force = shift @_;
-  my @globalresult;
-  my $dbh=C4::Context->dbh;
-  my $hierarchies;
-  my $data = GetHeaderAuthority($authid);
-  if ($data->{'authtrees'} and not $force){
-    return $data->{'authtrees'};
+    my $force = shift @_ || (C4::Context->preference('marcflavour') eq 'UNIMARC' ? 0 : 1);
+    my @globalresult;
+    my $dbh=C4::Context->dbh;
+    my $hierarchies;
+    my $data = GetHeaderAuthority($authid);
+    if ($data->{'authtrees'} and not $force){
+        return $data->{'authtrees'};
 #  } elsif ($data->{'authtrees'}){
 #    $hierarchies=$data->{'authtrees'};
-  } else {
-    my $record = GetAuthority($authid);
-    my $found;
-    return unless $record;
-    foreach my $field ($record->field('5..')){
-      if ($field->subfield('5') && $field->subfield('5') eq 'g'){
-		my $subfauthid=_get_authid_subfield($field);
-        next if ($subfauthid eq $authid);
-        my $parentrecord = GetAuthority($subfauthid);
-        my $localresult=$hierarchies;
-        my $trees;
-        $trees = BuildUnimarcHierarchies($subfauthid);
-        my @trees;
-        if ($trees=~/;/){
-           @trees = split(/;/,$trees);
-        } else {
-           push @trees, $trees;
+    } else {
+        my $record = GetAuthority($authid);
+        my $found;
+        return unless $record;
+        foreach my $field ($record->field('5..')){
+            my $broader = 0;
+            $broader = 1 if (
+                    (C4::Context->preference('marcflavour') eq 'UNIMARC' && $field->subfield('5') && $field->subfield('5') eq 'g') ||
+                    (C4::Context->preference('marcflavour') ne 'UNIMARC' && $field->subfield('w') && substr($field->subfield('w'), 0, 1) eq 'g'));
+            if ($broader) {
+                my $subfauthid=_get_authid_subfield($field) || '';
+                next if ($subfauthid eq $authid);
+                my $parentrecord = GetAuthority($subfauthid);
+                next unless $parentrecord;
+                my $localresult=$hierarchies;
+                my $trees;
+                $trees = BuildAuthHierarchies($subfauthid);
+                my @trees;
+                if ($trees=~/;/){
+                    @trees = split(/;/,$trees);
+                } else {
+                    push @trees, $trees;
+                }
+                foreach (@trees){
+                    $_.= ",$authid";
+                }
+                @globalresult = (@globalresult,@trees);
+                $found=1;
+            }
+            $hierarchies=join(";",@globalresult);
         }
-        foreach (@trees){
-          $_.= ",$authid";
-        }
-        @globalresult = (@globalresult,@trees);
-        $found=1;
-      }
-      $hierarchies=join(";",@globalresult);
+#Unless there is no ancestor, I am alone.
+        $hierarchies="$authid" unless ($hierarchies);
     }
-    #Unless there is no ancestor, I am alone.
-    $hierarchies="$authid" unless ($hierarchies);
-  }
-  AddAuthorityTrees($authid,$hierarchies);
-  return $hierarchies;
+    AddAuthorityTrees($authid,$hierarchies);
+    return $hierarchies;
 }
 
-=head2 BuildUnimarcHierarchy
+=head2 BuildAuthHierarchy
 
-  $ref= &BuildUnimarcHierarchy( $record, $class,$authid)
+  $ref= &BuildAuthHierarchy( $record, $class,$authid)
 
 return a hashref in order to display hierarchy for record and final Authid $authid
 
@@ -1189,42 +1306,101 @@ return a hashref in order to display hierarchy for record and final Authid $auth
 "current_value"
 "value"
 
-"ifparents"  
-"ifchildren" 
-Those two latest ones should disappear soon.
+=cut
+
+sub BuildAuthHierarchy{
+    my $record = shift @_;
+    my $class = shift @_;
+    my $authid_constructed = shift @_;
+    return unless ($record && $record->field('001'));
+    my $authid=$record->field('001')->data();
+    my %cell;
+    my $parents=""; my $children="";
+    my (@loopparents,@loopchildren);
+    my $marcflavour = C4::Context->preference('marcflavour');
+    my $relationshipsf = $marcflavour eq 'UNIMARC' ? '5' : 'w';
+    foreach my $field ($record->field('5..')){
+        my $subfauthid=_get_authid_subfield($field);
+        if ($subfauthid && $field->subfield($relationshipsf) && $field->subfield('a')){
+            my $relationship = substr($field->subfield($relationshipsf), 0, 1);
+            if ($relationship eq 'h'){
+                push @loopchildren, { "authid"=>$subfauthid,"value"=>$field->subfield('a')};
+            }
+            elsif ($relationship eq 'g'){
+                push @loopparents, { "authid"=>$subfauthid,"value"=>$field->subfield('a')};
+            }
+# brothers could get in there with an else
+        }
+    }
+    $cell{"parents"}=\@loopparents;
+    $cell{"children"}=\@loopchildren;
+    $cell{"class"}=$class;
+    $cell{"authid"}=$authid;
+    $cell{"current_value"} =1 if ($authid eq $authid_constructed);
+    $cell{"value"}=C4::Context->preference('marcflavour') eq 'UNIMARC' ? $record->subfield('2..',"a") : $record->subfield('1..', 'a');
+    return \%cell;
+}
+
+=head2 BuildAuthHierarchyBranch
+
+  $branch = &BuildAuthHierarchyBranch( $tree, $authid[, $cnt])
+
+Return a data structure representing an authority hierarchy
+given a list of authorities representing a single branch in
+an authority hierarchy tree. $authid is the current node in
+the tree (which may or may not be somewhere in the middle).
+$cnt represents the level of the upper-most item, and is only
+used when BuildAuthHierarchyBranch is called recursively (i.e.,
+don't ever pass in anything but zero to it).
 
 =cut
 
-sub BuildUnimarcHierarchy{
-  my $record = shift @_;
-  my $class = shift @_;
-  my $authid_constructed = shift @_;
-  return undef unless ($record);
-  my $authid=$record->field('001')->data();
-  my %cell;
-  my $parents=""; my $children="";
-  my (@loopparents,@loopchildren);
-  foreach my $field ($record->field('5..')){
-      my $subfauthid=_get_authid_subfield($field);
-      if ($subfauthid && $field->subfield('5') && $field->subfield('a')){
-          if ($field->subfield('5') eq 'h'){
-              push @loopchildren, { "childauthid"=>$field->subfield('3'),"childvalue"=>$field->subfield('a')};
-	  }
-	  elsif ($field->subfield('5') eq 'g'){
-	      push @loopparents, { "parentauthid"=>$field->subfield('3'),"parentvalue"=>$field->subfield('a')};
-	  }
-          # brothers could get in there with an else
-      }
-  }
-  $cell{"ifparents"}=1 if (scalar(@loopparents)>0);
-  $cell{"ifchildren"}=1 if (scalar(@loopchildren)>0);
-  $cell{"loopparents"}=\@loopparents if (scalar(@loopparents)>0);
-  $cell{"loopchildren"}=\@loopchildren if (scalar(@loopchildren)>0);
-  $cell{"class"}=$class;
-  $cell{"loopauthid"}=$authid;
-  $cell{"current_value"} =1 if $authid eq $authid_constructed;
-  $cell{"value"}=$record->subfield('2..',"a");
-  return \%cell;
+sub BuildAuthHierarchyBranch {
+    my ($tree, $authid, $cnt) = @_;
+    $cnt |= 0;
+    my $elementdata = GetAuthority(shift @$tree);
+    my $branch = BuildAuthHierarchy($elementdata,"child".$cnt, $authid);
+    if (scalar @$tree > 0) {
+        my $nextBranch = BuildAuthHierarchyBranch($tree, $authid, ++$cnt);
+        my $nextAuthid = $nextBranch->{authid};
+        my $found;
+        # If we already have the next branch listed as a child, let's
+        # replace the old listing with the new one. If not, we will add
+        # the branch at the end.
+        foreach my $cell (@{$branch->{children}}) {
+            if ($cell->{authid} eq $nextAuthid) {
+                $cell = $nextBranch;
+                $found = 1;
+                last;
+            }
+        }
+        push @{$branch->{children}}, $nextBranch unless $found;
+    }
+    return $branch;
+}
+
+=head2 GenerateHierarchy
+
+  $hierarchy = &GenerateHierarchy($authid);
+
+Return an arrayref holding one or more "trees" representing
+authority hierarchies.
+
+=cut
+
+sub GenerateHierarchy {
+    my ($authid) = @_;
+    my $trees    = BuildAuthHierarchies($authid);
+    my @trees    = split /;/,$trees ;
+    push @trees,$trees unless (@trees);
+    my @loophierarchies;
+    foreach my $tree (@trees){
+        my @tree=split /,/,$tree;
+        push @tree, $tree unless (@tree);
+        my $branch = BuildAuthHierarchyBranch(\@tree, $authid);
+        push @loophierarchies, [ $branch ];
+    }
+    return \@loophierarchies;
 }
 
 sub _get_authid_subfield{
@@ -1317,8 +1493,8 @@ sub merge {
     } else {
         #zebra connection  
         my $oConnection=C4::Context->Zconn("biblioserver",0);
-        my $oldSyntax = $oConnection->option("preferredRecordSyntax");
-        $oConnection->option("preferredRecordSyntax"=>"XML");
+        # We used to use XML syntax here, but that no longer works.
+        # Thankfully, we don't need it.
         my $query;
         $query= "an=".$mergefrom;
         my $oResult = $oConnection->search(new ZOOM::Query::CCL2RPN( $query, $oConnection ));
@@ -1331,11 +1507,14 @@ sub merge {
             my $rec;
             $rec=$oResult->record($z);
             my $marcdata = $rec->raw();
-            push @reccache, $marcdata;
+            my $marcrecordzebra= MARC::Record->new_from_usmarc($marcdata);
+            my ( $biblionumbertagfield, $biblionumbertagsubfield ) = &GetMarcFromKohaField( "biblio.biblionumber", '' );
+            my $i = ($biblionumbertagfield < 10) ? $marcrecordzebra->field($biblionumbertagfield)->data : $marcrecordzebra->subfield($biblionumbertagfield, $biblionumbertagsubfield);
+            my $marcrecorddb=GetMarcBiblio($i);
+            push @reccache, $marcrecorddb;
             $z++;
         }
         $oResult->destroy();
-        $oConnection->option("preferredRecordSyntax"=>$oldSyntax);
     }
     #warn scalar(@reccache)." biblios to update";
     # Get All candidate Tags for the change 
@@ -1357,16 +1536,16 @@ sub merge {
     # May be used as a template for a bulkedit field  
     foreach my $marcrecord(@reccache){
         my $update;           
-        $marcrecord= MARC::Record->new_from_xml($marcrecord,"utf8",C4::Context->preference("marcflavour")) unless(C4::Context->preference('NoZebra'));
         foreach my $tagfield (@tags_using_authtype){
 #             warn "tagfield : $tagfield ";
             foreach my $field ($marcrecord->field($tagfield)){
+                # biblio is linked to authority with $9 subfield containing authid
                 my $auth_number=$field->subfield("9");
                 my $tag=$field->tag();          
                 if ($auth_number==$mergefrom) {
                 my $field_to=MARC::Field->new(($tag_to?$tag_to:$tag),$field->indicator(1),$field->indicator(2),"9"=>$mergeto);
 		my $exclude='9';
-                foreach my $subfield (@record_to) {
+                foreach my $subfield (grep {$_->[0] ne '9'} @record_to) {
                     $field_to->add_subfields($subfield->[0] =>$subfield->[1]);
 		    $exclude.= $subfield->[0];
                 }
@@ -1471,7 +1650,7 @@ sub get_auth_type_location {
     my $auth_type_code = @_ ? shift : '';
 
     my ($tag, $subfield) = GetAuthMARCFromKohaField('auth_header.authtypecode', $auth_type_code);
-    if (defined $tag and defined $subfield and $tag != 0 and $subfield != 0) {
+    if (defined $tag and defined $subfield and $tag != 0 and $subfield ne '' and $subfield ne ' ') {
         return ($tag, $subfield);
     } else {
         if (C4::Context->preference('marcflavour') eq "MARC21")  {

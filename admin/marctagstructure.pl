@@ -52,7 +52,7 @@ my ($template, $loggedinuser, $cookie)
 			     query => $input,
 			     type => "intranet",
 			     authnotrequired => 0,
-			     flagsrequired => {parameters => 1},
+                 flagsrequired => {parameters => 'parameters_remaining_permissions'},
 			     debug => 1,
 			     });
 
@@ -267,7 +267,7 @@ if ($op eq 'add_form') {
 			$row_data{delete}        = "$script_name?op=delete_confirm&amp;searchfield="      .$results[$i]->{'mts_tagfield'}."&amp;frameworkcode=".$frameworkcode;
 			$j=$i;
 			my @internal_loop = ();
-			while ( ( $results[$i]->{'tagfield'} == $results[$j]->{'tagfield'} ) and ( $j < $cnt ) ) {
+			while ( ( $j < $cnt ) and ( $results[$i]->{'tagfield'} == $results[$j]->{'tagfield'} ) ) {
 				my %subfield_data;
 				$subfield_data{tagsubfield}      = $results[$j]->{'tagsubfield'};
 				$subfield_data{liblibrarian}     = $results[$j]->{'liblibrarian'};
@@ -348,6 +348,7 @@ sub StringSearch  {
 #
 sub duplicate_framework {
 	my ($newframeworkcode,$oldframeworkcode) = @_;
+	my $dbh = C4::Context->dbh;
 	my $sth = $dbh->prepare("select tagfield,liblibrarian,libopac,repeatable,mandatory,authorised_value from marc_tag_structure where frameworkcode=?");
 	$sth->execute($oldframeworkcode);
 	my $sth_insert = $dbh->prepare("insert into marc_tag_structure (tagfield, liblibrarian, libopac, repeatable, mandatory, authorised_value, frameworkcode) values (?,?,?,?,?,?,?)");

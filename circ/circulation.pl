@@ -4,6 +4,7 @@
 
 # Copyright 2000-2002 Katipo Communications
 # copyright 2010 BibLibre
+# Copyright 2011 PTFS-Europe Ltd.
 #
 # This file is part of Koha.
 #
@@ -21,7 +22,7 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 use strict;
-#use warnings; FIXME - Bug 2505
+use warnings;
 use CGI;
 use C4::Output;
 use C4::Print;
@@ -37,6 +38,7 @@ use C4::Reserves;
 use C4::Context;
 use CGI::Session;
 use C4::Members::Attributes qw(GetBorrowerAttributes);
+use Koha::DateUtils;
 
 use Date::Calc qw(
   Today
@@ -92,8 +94,12 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user (
 my $branches = GetBranches();
 
 my @failedrenews = $query->param('failedrenew');    # expected to be itemnumbers 
-my %renew_failed;
+our %renew_failed = {};
 for (@failedrenews) { $renew_failed{$_} = 1; }
+
+my @failedreturns = $query->param('failedreturn');
+our %return_failed = {};
+for (@failedreturns) { $return_failed{$_} = 1; }
 
 my $findborrower = $query->param('findborrower');
 $findborrower =~ s|,| |g;
@@ -145,14 +151,7 @@ my $duedatespec_allow = C4::Context->preference('SpecifyDueDate');
 if($duedatespec_allow){
     if ($duedatespec) {
         if ($duedatespec =~ C4::Dates->regexp('syspref')) {
-            my $tempdate = C4::Dates->new($duedatespec);
-#           if ($tempdate and $tempdate->output('iso') gt C4::Dates->new()->output('iso')) {
-#               # i.e., it has to be later than today/now
-                $datedue = $tempdate;
-#           } else {
-#               $invalidduedate = 1;
-#               $template->param(IMPOSSIBLE=>1, INVALID_DATE=>$duedatespec);
-#           }
+                $datedue = dt_from_string($duedatespec);
         } else {
             $invalidduedate = 1;
             $template->param(IMPOSSIBLE=>1, INVALID_DATE=>$duedatespec);
@@ -160,7 +159,7 @@ if($duedatespec_allow){
     }
 }
 
-my $todaysdate = C4::Dates->new->output('iso');
+our $todaysdate = C4::Dates->new->output('iso');
 
 # check and see if we should print
 if ( $barcode eq '' && $print eq 'maybe' ) {
@@ -176,7 +175,10 @@ if ( $barcode eq '' && $query->param('charges') eq 'yes' ) {
 }
 
 if ( $print eq 'yes' && $borrowernumber ne '' ) {
-    printslip( $borrowernumber );
+    if ( C4::Context->boolean_preference('printcirculationslips') ) {
+        my $letter = IssueSlip($branch, $borrowernumber, "QUICK");
+        NetworkPrint($letter->{content});
+    }
     $query->param( 'borrowernumber', '' );
     $borrowernumber = '';
 }
@@ -279,9 +281,11 @@ if ($borrowernumber) {
 #
 if ($barcode) {
     # always check for blockers on issuing
-    my ( $error, $question ) =
+    my ( $error, $question, $alerts ) =
     CanBookBeIssued( $borrower, $barcode, $datedue , $inprocess );
     my $blocker = $invalidduedate ? 1 : 0;
+
+    $template->param( alert => $alerts );
 
     delete $question->{'DEBT'} if ($debt_confirmed);
     foreach my $impossible ( keys %$error ) {
@@ -358,6 +362,8 @@ if ($borrowernumber) {
         $getreserv{itemcallnumber} = $getiteminfo->{'itemcallnumber'};
         $getreserv{biblionumber}   = $getiteminfo->{'biblionumber'};
         $getreserv{waitingat}      = GetBranchName( $num_res->{'branchcode'} );
+        $getreserv{suspend}        = $num_res->{'suspend'};
+        $getreserv{suspend_until}  = $num_res->{'suspend_until'};
         #         check if we have a waiting status for reservations
         if ( $num_res->{'found'} eq 'W' ) {
             $getreserv{color}   = 'reserved';
@@ -415,13 +421,13 @@ if ($borrowernumber) {
 # make the issued books table.
 my $todaysissues = '';
 my $previssues   = '';
-my @todaysissues;
-my @previousissues;
-my @relissues;
-my @relprevissues;
+our @todaysissues   = ();
+our @previousissues = ();
+our @relissues      = ();
+our @relprevissues  = ();
 my $displayrelissues;
 
-my $totalprice = 0;
+our $totalprice = 0;
 
 sub build_issue_data {
     my $issueslist = shift;
@@ -452,13 +458,15 @@ sub build_issue_data {
         $totalprice += $it->{'replacementprice'};
         $it->{'itemtype'} = $itemtypeinfo->{'description'};
         $it->{'itemtype_image'} = $itemtypeinfo->{'imageurl'};
-        $it->{'dd'} = format_date($it->{'date_due'});
-        $it->{'displaydate'} = format_date($it->{'issuedate'});
-        $it->{'od'} = ( $it->{'date_due'} lt $todaysdate ) ? 1 : 0 ;
+        $it->{'dd'} = output_pref($it->{'date_due'});
+        $it->{'displaydate'} = output_pref($it->{'issuedate'});
+        #$it->{'od'} = ( $it->{'date_due'} lt $todaysdate ) ? 1 : 0 ;
+        $it->{'od'} = $it->{'overdue'};
         ($it->{'author'} eq '') and $it->{'author'} = ' ';
         $it->{'renew_failed'} = $renew_failed{$it->{'itemnumber'}};
+        $it->{'return_failed'} = $return_failed{$it->{'barcode'}};
 
-        if ( $todaysdate eq $it->{'issuedate'} or $todaysdate eq $it->{'lastreneweddate'} ) {
+        if ( $it->{'issuedate'} gt $todaysdate or $it->{'lastreneweddate'} gt $todaysdate ) {
             (!$relatives) ? push @todaysissues, $it : push @relissues, $it;
         } else {
             (!$relatives) ? push @previousissues, $it : push @relprevissues, $it;
@@ -705,7 +713,9 @@ $template->param(
     soundon           => C4::Context->preference("SoundOn"),
     fast_cataloging   => $fast_cataloging,
     CircAutoPrintQuickSlip   => C4::Context->preference("CircAutoPrintQuickSlip"),
-	activeBorrowerRelationship => (C4::Context->preference('borrowerRelationship') ne ''),
+    activeBorrowerRelationship => (C4::Context->preference('borrowerRelationship') ne ''),
+    SuspendHoldsIntranet => C4::Context->preference('SuspendHoldsIntranet'),
+    AutoResumeSuspendedHolds => C4::Context->preference('AutoResumeSuspendedHolds'),
 );
 
 # save stickyduedate to session
@@ -727,6 +737,9 @@ $template->param(
 	AllowRenewalLimitOverride => C4::Context->preference("AllowRenewalLimitOverride"),
     dateformat                => C4::Context->preference("dateformat"),
     DHTMLcalendar_dateformat  => C4::Dates->DHTMLcalendar(),
+    export_remove_fields      => C4::Context->preference("ExportRemoveFields"),
+    export_with_csv_profile   => C4::Context->preference("ExportWithCsvProfile"),
     canned_bor_notes_loop     => $canned_notes,
 );
+
 output_html_with_http_headers $query, $cookie, $template->output;

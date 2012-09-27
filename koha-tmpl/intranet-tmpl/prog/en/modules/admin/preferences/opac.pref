@@ -22,6 +22,14 @@ OPAC:
                   no: Disable
             - "Koha OPAC as public. Private OPAC requires authentification before accessing the OPAC."
         -
+            - "Show star-ratings on"
+            - pref: OpacStarRatings
+              choices:
+                  all: "results and details"
+                  disable: "no"
+                  details: "only details"
+            - "pages."
+        -
             - pref: OpacMaintenance
               choices:
                   yes: Show
@@ -48,17 +56,15 @@ OPAC:
                   no: Show
             - lost items on search and detail pages.
         -
-            - Show biblio records on OPAC result page
+            - 'Display OPAC results using XSLT stylesheet at: '
             - pref: OPACXSLTResultsDisplay
-              choices:
-                  yes: using XSLT stylesheets.
-                  no: normally.
+              class: file
+            - '<br />Options:<br />- leave empty for "no xslt"<br />- enter "default" for the default one<br />- put a path to define a xslt file<br />- put an URL for an external specific stylesheet.<br />{langcode} will be replaced with current interface language'
         -
-            - Show item details pages on the OPAC
+            - 'Display OPAC details using XSLT stylesheet at: '
             - pref: OPACXSLTDetailsDisplay
-              choices:
-                  yes: using XSLT stylesheets.
-                  no: normally.
+              class: file
+            - '<br />Options:<br />- leave empty for "no xslt"<br />- enter "default" for the default one<br />- put a path to define a xslt file<br />- put an URL for an external specific stylesheet.<br />{langcode} will be replaced with current interface language'
         -
             - On pages displayed with XSLT stylesheets on the OPAC,
             - pref: DisplayOPACiconsXSLT
@@ -73,11 +79,19 @@ OPAC:
                   no: "Don't include"
             - "COinS / OpenURL / Z39.88 in OPAC search results.  <br/>Warning: Enabling this feature will slow OPAC search response times."
         -
-            - pref: OPACDisplayRequestPriority
+            - pref: OPACShowUnusedAuthorities
               choices:
                   yes: Show
-                  no: "Don't show"
-            - patrons the priority level of their holds in the OPAC.
+                  no: "Do not show"
+            - unused authorities in the OPAC authority browser.
+        -
+            - pref: OPACShowHoldQueueDetails
+              choices:
+                  none: "Don't show any hold details"
+                  priority: "Show priority level"
+                  holds: "Show holds"
+                  holds_priority: "Show holds and their priority level"
+            - to patrons in the OPAC.
         -
             - pref: OPACShowCheckoutName
               default: 0
@@ -99,6 +113,13 @@ OPAC:
                   yes: Show
                   no: "Don't show"
             - a link to recent comments in the OPAC masthead.
+        -
+            - pref: OPACShowBarcode
+              default: 0
+              choices:
+                  yes: Show
+                  no: "Don't show"
+            - the item's barcode on the holdings tab.
         -
             - pref: OpacHighlightedWords
               choices:
@@ -130,20 +151,20 @@ OPAC:
             - Include the additional CSS stylesheet
             - pref: opaccolorstylesheet
               class: file
-            - to override specified settings from the default stylesheet (leave blank to disable). Enter a filename or a complete URL beginning with <code>http://</code> (if the file lives on a remote server). Please note that if you enter a filename, the file should be in the css subdirectory for each active theme and language within the Koha templates directory.
+            - to override specified settings from the default stylesheet (leave blank to disable). Enter just a filename, a full local path or a complete URL starting with <code>http://</code> (if the file lives on a remote server). Please note that if you just enter a filename, the file should be in the css subdirectory for each active theme and language within the Koha templates directory. A full local path is expected to start from your HTTP document root.
         -
             - Use the CSS stylesheet
             - pref: opaclayoutstylesheet
               class: file
-            - on all pages in the OPAC, instead of the default (leave blank to disable). Please enter filename only. The file should be in the css subdirectory for each active theme and language within the Koha templates directory.
-        -
-            - Use the remote CSS stylesheet
-            - pref: opacstylesheet
-              class: file
-            - on all pages in the OPAC, instead of the default. (This should be a complete URL, starting with <code>http://</code>.)
+            - on all pages in the OPAC, instead of the default css (used when leaving this field blank). Enter just a filename, a full local path or a complete URL starting with <code>http://</code> (if the file lives on a remote server). Please note that if you just enter a filename, the file should be in the css subdirectory for each active theme and language within the Koha templates directory. A full local path is expected to start from your HTTP document root.
         -
             - "Include the following CSS on all pages in the OPAC:"
             - pref: OPACUserCSS
+              type: textarea
+              class: code
+        -
+            - "Include the following CSS for the mobile view on all pages in the OPAC:"
+            - pref: OPACMobileUserCSS
               type: textarea
               class: code
         -
@@ -152,8 +173,30 @@ OPAC:
               type: textarea
               class: code
         -
+            - "Show the following HTML in its own column on the main page of the OPAC (mobile version):"
+            - pref: OpacMainUserBlockMobile
+              type: textarea
+              class: code
+        -
+            - pref: OpacShowLibrariesPulldownMobile
+              choices:
+                  yes: Show
+                  no: "Don't show"
+            - the libraries pulldown on the mobile version of the OPAC.
+        -
+            - pref: OpacShowFiltersPulldownMobile
+              choices:
+                  yes: Show
+                  no: "Don't show"
+            - the search filters pulldown on the mobile version of the OPAC.
+        -
             - "Show the following HTML on the left hand column of the main page and patron account on the OPAC (generally navigation links):"
             - pref: OpacNav
+              type: textarea
+              class: code
+        -
+            - "Show the following HTML in the right hand column of the main page under the main login form:"
+            - pref: OpacNavRight
               type: textarea
               class: code
         -
@@ -178,7 +221,7 @@ OPAC:
               type: textarea
               class: code
         -
-            - 'Include a "Links" column on the "my summary" tab when a user is logged in to the OPAC, with the following HTML (leave blank to disable):'
+            - 'Include a "Links" column on the "my summary" and "my reading history" tabs when a user is logged in to the OPAC, with the following HTML (leave blank to disable):'
             - '<br />Note: The placeholders {BIBLIONUMBER}, {TITLE}, {ISBN} and {AUTHOR} will be replaced with information from the displayed record.'
             - pref: OPACMySummaryHTML
               type: textarea
@@ -235,6 +278,12 @@ OPAC:
                   no: "Don't allow"
             - patrons to notify the library of changes to their contact information from the OPAC.
         -
+            - pref: OPACpatronimages
+              choices:
+                  yes: Show
+                  no: "Don't show"
+            - patron images on the patron information page in the OPAC.
+        -
             - pref: OPACFinesTab
               choices:
                   yes: Allow
@@ -277,11 +326,16 @@ OPAC:
                   no: "Don't allow"
             - patrons to make comments on items on the OPAC.
         -
+            - Show
             - pref: ShowReviewer
               choices:
-                  yes: Show
-                  no: Hide
-            - reviewer's name above comments in OPAC.
+                  none: no name
+                  full: full name
+                  first: first name
+                  surname: last name
+                  firstandinitial: first name and last name initial
+                  username: username
+            - of commenter with comments in OPAC.
         -
             - pref: ShowReviewerPhoto
               choices:
@@ -299,6 +353,27 @@ OPAC:
             - pref: numSearchRSSResults
               class: long
             -  search results in the RSS feed.
+        -
+            - pref: SocialNetworks
+              default: 0
+              choices:
+                  yes: Enable
+                  no: Disable
+            - social network links in opac detail pages
+        -
+            - pref: OpacBrowseResults
+              default: 1
+              choices:
+                  yes: Enable
+                  no: Disable
+            - browsing and paging search results from the OPAC detail page.
+        -
+            - pref: QuoteOfTheDay
+              default: 0
+              choices:
+                  yes: Enable
+                  no: Disable
+            - Quote of the Day display on OPAC home page
     Policy:
         -
             - pref: singleBranchMode
@@ -306,7 +381,7 @@ OPAC:
               choices:
                   yes: "Don't allow"
                   no: Allow
-            - patrons to select their branch on the OPAC.
+            - patrons to select their branch on the OPAC or show branch names with callnumbers.
         -
             - pref: SearchMyLibraryFirst
               choices:
@@ -341,9 +416,9 @@ OPAC:
             - Use 
             - pref: OpacRenewalBranch
               choices:
-                  itemhomebranch: "the item's home branch"
-                  patronhomebranch: "the patron's home branch"
-                  checkoutbranch: "the branch the item was checked out from"
+                  itemhomebranch: "the item's home library"
+                  patronhomebranch: "the patron's home library"
+                  checkoutbranch: "the library the item was checked out from"
                   null: "NULL"
                   opacrenew: "'OPACRenew'"
             - as branchcode to store in the statistics table.
@@ -351,7 +426,7 @@ OPAC:
             - Only allow patrons to renew their own books on the OPAC if they have less than
             - pref: OPACFineNoRenewals
               class: currency
-            - '[% local_currency %] in fines (set a large value to always allow renewal).'
+            - '[% local_currency %] in fines (leave blank to disable).'
         -
             - pref: OPACViewOthersSuggestions
               choices:
@@ -364,12 +439,26 @@ OPAC:
               choices:
                   no: "Don't allow"
                   yes: Allow
-            - patrons to select branch when making a purchase suggestion
+            - patrons to select library when making a purchase suggestion
         -
             - pref: OpacHiddenItems
               type: textarea
               class: code
-            - Allows to define custom rules for hiding specific items at opac. See docs/opac/OpacHiddenItems.txt for more informations.
+            - Allows to define custom rules for hiding specific items at opac. See docs/opac/OpacHiddenItems.txt for more informations
+        -
+            - pref: OpacAllowPublicListCreation
+              default: 1
+              choices:
+                  no: "Don't allow"
+                  yes: Allow
+            - opac users to create public lists
+        -
+            - pref: OpacAllowSharingPrivateLists
+              default: 0
+              choices:
+                  no: "Don't allow"
+                  yes: Allow
+            - opac users to share private lists with other patrons. This feature is not active yet but will be released soon
 
     Privacy:
         -
@@ -424,7 +513,7 @@ OPAC:
               choices:
                   yes: Use
                   no: "Don't use"
-            - "the item home branch when finding items for the shelf browser."      
+            - "the item home library when finding items for the shelf browser."
         -
             - pref: ShelfBrowserUsesCcode
               default: 0

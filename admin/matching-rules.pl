@@ -30,7 +30,7 @@ use C4::Matcher;
 
 my $script_name = "/cgi-bin/koha/admin/matching-rules.pl";
 
-my $input = new CGI;
+our $input = new CGI;
 my $op = $input->param('op') || '';
 
 
@@ -39,7 +39,7 @@ my ($template, $loggedinuser, $cookie)
                  query => $input,
                  type => "intranet",
                  authnotrequired => 0,
-                 flagsrequired => {parameters => 1},
+                 flagsrequired => {parameters => 'parameters_remaining_permissions'},
                  debug => 1,
                  });
 
@@ -92,9 +92,10 @@ sub add_matching_rule_form {
 sub add_update_matching_rule {
     my $template = shift;
     my $matcher_id = shift;
+    my $record_type = $input->param('record_type') || 'biblio';
 
     # do parsing
-    my $matcher = C4::Matcher->new('biblio', 1000); # FIXME biblio only for now
+    my $matcher = C4::Matcher->new($record_type, 1000);
     $matcher->code($input->param('code'));
     $matcher->description($input->param('description'));
     $matcher->threshold($input->param('threshold'));
@@ -203,10 +204,11 @@ sub edit_matching_rule_form {
 
     my $matcher = C4::Matcher->fetch($matcher_id);
 
-    $template->param(matcher_id => $matcher_id);
-    $template->param(code => $matcher->code());
-    $template->param(description => $matcher->description());
-    $template->param(threshold => $matcher->threshold());
+    $template->{VARS}->{'matcher_id'} = $matcher_id;
+    $template->{VARS}->{'code'} = $matcher->code();
+    $template->{VARS}->{'description'} = $matcher->description();
+    $template->{VARS}->{'threshold'} = $matcher->threshold();
+    $template->{VARS}->{'record_type'} = $matcher->record_type();
 
     my $matcher_info = $matcher->dump();
     my @matchpoints = ();

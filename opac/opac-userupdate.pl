@@ -143,9 +143,6 @@ EOF
     }
 }
 
-$borr->{'dateenrolled'} = format_date( $borr->{'dateenrolled'} );
-$borr->{'dateexpiry'}   = format_date( $borr->{'dateexpiry'} );
-$borr->{'dateofbirth'}  = format_date( $borr->{'dateofbirth'} );
 $borr->{'ethnicity'}    = fixEthnicity( $borr->{'ethnicity'} );
 $borr->{'branchname'}   = GetBranchName($borr->{'branchcode'});
 
@@ -161,15 +158,24 @@ my $checkin_prefs  = C4::Members::Messaging::GetMessagingPreferences({
     borrowernumber => $borrowernumber,
     message_name   => 'Item Checkout'
 });
-for (@{ $checkin_prefs->{transports} }) {
+for ( keys %{ $checkin_prefs->{transports} }) {
     $borr->{"items_returned_$_"} = 1;
 }
 my $checkout_prefs = C4::Members::Messaging::GetMessagingPreferences({
     borrowernumber => $borrowernumber,
     message_name   => 'Item Check-in'
 });
-for (@{ $checkout_prefs->{transports} }) {
+for ( keys %{ $checkout_prefs->{transports} }) {
     $borr->{"items_borrowed_$_"} = 1;
+}
+
+if (C4::Context->preference('OPACpatronimages')) {
+    my ($image, $dberror) = GetPatronImage($borr->{'cardnumber'});
+    if ($image) {
+        $template->param(
+            display_patron_image => 1
+        );
+    }
 }
 
 my @bordat;

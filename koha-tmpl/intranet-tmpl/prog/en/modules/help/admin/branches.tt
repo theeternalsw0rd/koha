@@ -11,7 +11,7 @@
 <p>To add a new library:</p>
 
 <ul>
-	<li>Click 'New Library'</li>
+   <li>Click 'New Library'</li>
 	<li>Fill in the data requested on the form that follows
 <ul>
 	<li>Of the fields listed, only 'Library code' and 'Name' are required</li>
@@ -47,6 +47,6 @@
 
 <p>Properties are then applied to libraries via the add or edit library form.</p>
 
-<p><strong>See the full documentation for Libraries &amp; Groups in the <a href="http://manual.koha-community.org/3.6/en/basicparams.html#libsgroups">manual</a> (online).</strong></p>
+<p><strong>See the full documentation for Libraries &amp; Groups in the <a href="http://manual.koha-community.org/3.8/en/basicparams.html#libsgroups">manual</a> (online).</strong></p>
 
 [% INCLUDE 'help-bottom.inc' %]

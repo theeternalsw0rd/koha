@@ -29,12 +29,12 @@ use CGI;
 use C4::Acquisition;
 use C4::Budgets;
 use C4::Bookseller qw( GetBookSellerFromId);
-use C4::Dates qw/format_date/;
 use C4::Debug;
 use C4::Biblio;
 use C4::Members qw/GetMember/;  #needed for permissions checking for changing basketgroup of a basket
 use C4::Items;
 use C4::Suggestions;
+use Date::Calc qw/Add_Delta_Days/;
 
 =head1 NAME
 
@@ -68,7 +68,7 @@ my $query        = new CGI;
 my $basketno     = $query->param('basketno');
 my $booksellerid = $query->param('booksellerid');
 
-my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
+my ( $template, $loggedinuser, $cookie, $userflags ) = get_template_and_user(
     {
         template_name   => "acqui/basket.tmpl",
         query           => $query,
@@ -126,10 +126,12 @@ if ( $op eq 'delete_confirm' ) {
         basketbooksellernote => $basket->{booksellernote},
         basketcontractno     => $basket->{contractnumber},
         basketcontractname   => $contract->{contractname},
-        creationdate         => format_date( $basket->{creationdate} ),
+        creationdate         => $basket->{creationdate},
         authorisedby         => $basket->{authorisedby},
         authorisedbyname     => $basket->{authorisedbyname},
-        closedate            => format_date( $basket->{closedate} ),
+        closedate            => $basket->{closedate},
+        deliveryplace        => $basket->{deliveryplace},
+        billingplace         => $basket->{billingplace},
         active               => $bookseller->{'active'},
         booksellerid         => $bookseller->{'id'},
         name                 => $bookseller->{'name'},
@@ -146,7 +148,7 @@ if ( $op eq 'delete_confirm' ) {
         -type       => 'text/csv',
         -attachment => 'basket' . $basket->{'basketno'} . '.csv',
     );
-    print GetBasketAsCSV($query->param('basketno'));
+    print GetBasketAsCSV($query->param('basketno'), $query);
     exit;
 } elsif ($op eq 'close') {
     my $confirm = $query->param('confirm') || $confirm_pref eq '2';
@@ -156,8 +158,15 @@ if ( $op eq 'delete_confirm' ) {
         $basketno =~ /^\d+$/ and CloseBasket($basketno);
         # if requested, create basket group, close it and attach the basket
         if ($query->param('createbasketgroup')) {
+            my $branchcode;
+            if(C4::Context->userenv and C4::Context->userenv->{'branch'}
+              and C4::Context->userenv->{'branch'} ne "NO_LIBRARY_SET") {
+                $branchcode = C4::Context->userenv->{'branch'};
+            }
             my $basketgroupid = NewBasketgroup( { name => $basket->{basketname},
                             booksellerid => $booksellerid,
+                            deliveryplace => $branchcode,
+                            billingplace => $branchcode,
                             closed => 1,
                             });
             ModBasket( { basketno => $basketno,
@@ -214,6 +223,15 @@ if ( $op eq 'delete_confirm' ) {
         }
         unshift( @$basketgroups, \%emptygroup );
     }
+
+    # if the basket is closed, calculate estimated delivery date
+    my $estimateddeliverydate;
+    if( $basket->{closedate} ) {
+        my ($year, $month, $day) = ($basket->{closedate} =~ /(\d+)-(\d+)-(\d+)/);
+        ($year, $month, $day) = Add_Delta_Days($year, $month, $day, $bookseller->{deliverytime});
+        $estimateddeliverydate = "$year-$month-$day";
+    }
+
     # if new basket, pre-fill infos
     $basket->{creationdate} = ""            unless ( $basket->{creationdate} );
     $basket->{authorisedby} = $loggedinuser unless ( $basket->{authorisedby} );
@@ -222,132 +240,69 @@ if ( $op eq 'delete_confirm' ) {
       "loggedinuser: $loggedinuser; creationdate: %s; authorisedby: %s",
       $basket->{creationdate}, $basket->{authorisedby};
 
-	#to get active currency
-	my $cur = GetCurrency();
+    #to get active currency
+    my $cur = GetCurrency();
 
 
     my @results = GetOrders( $basketno );
-    
-	my $gist = $bookseller->{gstrate} // C4::Context->preference("gist") // 0;
-	$gist = 0 if $gist == 0.0000;
-	my $discount = $bookseller->{'discount'} / 100;
-    my $total_rrp = 0;      # RRP Total, its value will be assigned to $total_rrp_gsti or $total_rrp_gste depending of $bookseller->{'listincgst'}
-    my $total_rrp_gsti = 0; # RRP Total, GST included
-    my $total_rrp_gste = 0; # RRP Total, GST excluded
-    my $gist_rrp = 0;
-    my $total_rrp_est = 0;
-
-    my $qty_total;
     my @books_loop;
-    my $suggestion;
 
-    for my $order ( @results ) {
-        my $rrp = $order->{'listprice'} || 0;
-		my $qty = $order->{'quantity'} || 0;
-        if (!defined $order->{quantityreceived}) {
-            $order->{quantityreceived} = 0;
-        }
-        for ( qw(rrp ecost quantityreceived)) {
-            if (!defined $order->{$_}) {
-                $order->{$_} = 0;
-            }
-        }
-
-        my $budget = GetBudget(  $order->{'budget_id'} );
-        $rrp = ConvertCurrency( $order->{'currency'}, $rrp );
-
-        $total_rrp += $qty * $order->{'rrp'};
-        my $line_total = $qty * $order->{'ecost'};
-        $total_rrp_est += $qty * $order->{'ecost'};
-		# FIXME: what about the "actual cost" field?
-        $qty_total += $qty;
-        my %line = %{ $order };
-        my $biblionumber = $order->{'biblionumber'};
-        my $countbiblio = CountBiblioInOrders($biblionumber);
-        my $ordernumber = $order->{'ordernumber'};
-        my @subscriptions = GetSubscriptionsId ($biblionumber);
-        my $itemcount = GetItemsCount($biblionumber);
-        my $holds  = GetHolds ($biblionumber);
-        my @items = GetItemnumbersFromOrder( $ordernumber );
-        my $itemholds;
-        foreach my $item (@items){
-            my $nb = GetItemHolds($biblionumber, $item);
-            if ($nb){
-                $itemholds += $nb;
-            }
-        }
-        # if the biblio is not in other orders and if there is no items elsewhere and no subscriptions and no holds we can then show the link "Delete order and Biblio" see bug 5680
-        $line{can_del_bib}          = 1 if $countbiblio <= 1 && $itemcount == scalar @items && !(@subscriptions) && !($holds);
-        $line{items}                = ($itemcount) - (scalar @items);
-        $line{left_item}            = 1 if $line{items} >= 1;
-        $line{left_biblio}          = 1 if $countbiblio > 1;
-        $line{biblios}              = $countbiblio - 1;
-        $line{left_subscription}    = 1 if scalar @subscriptions >= 1;
-        $line{subscriptions}        = scalar @subscriptions;
-        ($holds >= 1) ? $line{left_holds} = 1 : $line{left_holds} = 0;
-        $line{left_holds_on_order}  = 1 if $line{left_holds}==1 && ($line{items} == 0 || $itemholds );
-        $line{holds}                = $holds;
-        $line{holds_on_order}       = $itemholds?$itemholds:$holds if $line{left_holds_on_order};
-        $line{order_received}       = ( $qty == $order->{'quantityreceived'} );
-        $line{basketno}             = $basketno;
-        $line{budget_name}          = $budget->{budget_name};
-        $line{rrp}                  = sprintf( "%.2f", $line{'rrp'} );
-        $line{ecost}                = sprintf( "%.2f", $line{'ecost'} );
-        $line{line_total}           = sprintf( "%.2f", $line_total );
-        if ($line{uncertainprice}) {
+    my @book_foot_loop;
+    my %foot;
+    my $total_quantity = 0;
+    my $total_gste = 0;
+    my $total_gsti = 0;
+    my $total_gstvalue = 0;
+    for my $order (@results) {
+        my $line = get_order_infos( $order, $bookseller);
+        if ( $line->{uncertainprice} ) {
             $template->param( uncertainprices => 1 );
-            $line{rrp} .= ' (Uncertain)';
         }
-	if ($line{'title'}){
-	    my $volume = $order->{'volume'};
-	    my $seriestitle = $order->{'seriestitle'};
-	    $line{'title'} .= " / $seriestitle" if $seriestitle;
-	    $line{'title'} .= " / $volume" if $volume;
-	} else {
-	    $line{'title'} = "Deleted bibliographic notice, can't find title.";
-	}
 
-        $suggestion = GetSuggestionInfoFromBiblionumber($line{biblionumber});
-        $line{suggestionid}         = $suggestion->{suggestionid};
-        $line{surnamesuggestedby}   = $suggestion->{surnamesuggestedby};
-        $line{firstnamesuggestedby} = $suggestion->{firstnamesuggestedby};
+        push @books_loop, $line;
 
-        push @books_loop, \%line;
+        $foot{$$line{gstgsti}}{gstgsti} = $$line{gstgsti};
+        $foot{$$line{gstgsti}}{gstvalue} += $$line{gstvalue};
+        $total_gstvalue += $$line{gstvalue};
+        $foot{$$line{gstgsti}}{quantity}  += $$line{quantity};
+        $total_quantity += $$line{quantity};
+        $foot{$$line{gstgsti}}{totalgste} += $$line{totalgste};
+        $total_gste += $$line{totalgste};
+        $foot{$$line{gstgsti}}{totalgsti} += $$line{totalgsti};
+        $total_gsti += $$line{totalgsti};
     }
 
-my $total_est_gste;
-    my $total_est_gsti;
-    my $gist_est;
-    if ($gist){                                                    # if we have GST
-       if ( $bookseller->{'listincgst'} ) {                        # if prices already includes GST
-           $total_rrp_gsti = $total_rrp;                           # we know $total_rrp_gsti
-           $total_rrp_gste = $total_rrp_gsti / ( $gist + 1 );      # and can reverse compute other values
-           $gist_rrp       = $total_rrp_gsti - $total_rrp_gste;    #
-           $total_est_gste = $total_rrp_gste - ( $total_rrp_gste * $discount );
-           $total_est_gsti = $total_rrp_est;
-        } else {                                                    # if prices does not include GST
-           $total_rrp_gste = $total_rrp;                           # then we use the common way to compute other values
-           $gist_rrp       = $total_rrp_gste * $gist;              #
-           $total_rrp_gsti = $total_rrp_gste + $gist_rrp;          #
-           $total_est_gste = $total_rrp_est;
-           $total_est_gsti = $total_rrp_gsti - ( $total_rrp_gsti * $discount );
-       }
-       $gist_est = $gist_rrp - ( $gist_rrp * $discount );
-    } else {
-    $total_rrp_gsti = $total_rrp;
-    $total_est_gsti = $total_rrp_est;
-}
+    push @book_foot_loop, map {$_} values %foot;
+
+    # Get cancelled orders
+    @results = GetCancelledOrders($basketno);
+    my @cancelledorders_loop;
+    for my $order (@results) {
+        my $line = get_order_infos( $order, $bookseller);
+        push @cancelledorders_loop, $line;
+    }
 
     my $contract = &GetContract($basket->{contractnumber});
     my @orders = GetOrders($basketno);
 
+    if ($basket->{basketgroupid}){
+        my $basketgroup = GetBasketgroup($basket->{basketgroupid});
+        for my $key (keys %$basketgroup ){
+            $basketgroup->{"basketgroup$key"} = delete $basketgroup->{$key};
+        }
+        $basketgroup->{basketgroupdeliveryplace} = C4::Branch::GetBranchName( $basketgroup->{basketgroupdeliveryplace} );
+        $basketgroup->{basketgroupbillingplace} = C4::Branch::GetBranchName( $basketgroup->{basketgroupbillingplace} );
+        $template->param(%$basketgroup);
+    }
     my $borrower= GetMember('borrowernumber' => $loggedinuser);
-    my $budgets = GetBudgetHierarchy(q{},$borrower->{branchcode},$borrower->{borrowernumber});
+    my $budgets = GetBudgetHierarchy;
     my $has_budgets = 0;
     foreach my $r (@{$budgets}) {
         if (!defined $r->{budget_amount} || $r->{budget_amount} == 0) {
             next;
         }
+        next unless (CanUserUseBudget($loggedinuser, $r, $userflags));
+
         $has_budgets = 1;
         last;
     }
@@ -364,32 +319,114 @@ my $total_est_gste;
         basketbooksellernote => $basket->{booksellernote},
         basketcontractno     => $basket->{contractnumber},
         basketcontractname   => $contract->{contractname},
-        creationdate         => C4::Dates->new($basket->{creationdate},'iso')->output,
+        creationdate         => $basket->{creationdate},
         authorisedby         => $basket->{authorisedby},
         authorisedbyname     => $basket->{authorisedbyname},
-        closedate            => C4::Dates->new($basket->{closedate},'iso')->output,
+        closedate            => $basket->{closedate},
+        estimateddeliverydate=> $estimateddeliverydate,
+        deliveryplace        => C4::Branch::GetBranchName( $basket->{deliveryplace} ),
+        billingplace         => C4::Branch::GetBranchName( $basket->{billingplace} ),
         active               => $bookseller->{'active'},
         booksellerid         => $bookseller->{'id'},
         name                 => $bookseller->{'name'},
-        entrydate            => C4::Dates->new($results[0]->{'entrydate'},'iso')->output,
         books_loop           => \@books_loop,
+        book_foot_loop       => \@book_foot_loop,
         cancelledorders_loop => \@cancelledorders,
-        gist_rate            => sprintf( "%.2f", $gist * 100 ) . '%',
-        total_rrp_gste       => sprintf( "%.2f", $total_rrp_gste ),
-        total_est_gste       => sprintf( "%.2f", $total_est_gste ),
-        gist_est             => sprintf( "%.2f", $gist_est ),
-        gist_rrp             => sprintf( "%.2f", $gist_rrp ),        
-        total_rrp_gsti       => sprintf( "%.2f", $total_rrp_gsti ),
-        total_est_gsti       => sprintf( "%.2f", $total_est_gsti ),
-#        currency             => $bookseller->{'listprice'},
-	currency		=> $cur->{'currency'},
-        qty_total            => $qty_total,
-        GST                  => $gist,
+        total_quantity       => $total_quantity,
+        total_gste           => sprintf( "%.2f", $total_gste ),
+        total_gsti           => sprintf( "%.2f", $total_gsti ),
+        total_gstvalue       => sprintf( "%.2f", $total_gstvalue ),
+        currency             => $cur->{'currency'},
+        listincgst           => $bookseller->{listincgst},
         basketgroups         => $basketgroups,
         grouped              => $basket->{basketgroupid},
         unclosable           => @orders ? 0 : 1, 
         has_budgets          => $has_budgets,
     );
+}
+
+sub get_order_infos {
+    my $order = shift;
+    my $bookseller = shift;
+    my $qty = $order->{'quantity'} || 0;
+    if ( !defined $order->{quantityreceived} ) {
+        $order->{quantityreceived} = 0;
+    }
+    my $budget = GetBudget( $order->{'budget_id'} );
+
+    my %line = %{ $order };
+    $line{order_received} = ( $qty == $order->{'quantityreceived'} );
+    $line{basketno}       = $basketno;
+    $line{budget_name}    = $budget->{budget_name};
+    $line{rrp} = ConvertCurrency( $order->{'currency'}, $line{rrp} ); # FIXME from comm
+    if ( $bookseller->{'listincgst'} ) {
+        $line{rrpgsti} = sprintf( "%.2f", $line{rrp} );
+        $line{gstgsti} = sprintf( "%.2f", $line{gstrate} * 100 );
+        $line{rrpgste} = sprintf( "%.2f", $line{rrp} / ( 1 + ( $line{gstgsti} / 100 ) ) );
+        $line{gstgste} = sprintf( "%.2f", $line{gstgsti} / ( 1 + ( $line{gstgsti} / 100 ) ) );
+        $line{ecostgsti} = sprintf( "%.2f", $line{ecost} );
+        $line{ecostgste} = sprintf( "%.2f", $line{ecost} / ( 1 + ( $line{gstgsti} / 100 ) ) );
+        $line{gstvalue} = sprintf( "%.2f", ( $line{ecostgsti} - $line{ecostgste} ) * $line{quantity});
+        $line{totalgste} = sprintf( "%.2f", $order->{quantity} * $line{ecostgste} );
+        $line{totalgsti} = sprintf( "%.2f", $order->{quantity} * $line{ecostgsti} );
+    } else {
+        $line{rrpgsti} = sprintf( "%.2f", $line{rrp} * ( 1 + ( $line{gstrate} ) ) );
+        $line{rrpgste} = sprintf( "%.2f", $line{rrp} );
+        $line{gstgsti} = sprintf( "%.2f", $line{gstrate} * 100 );
+        $line{gstgste} = sprintf( "%.2f", $line{gstrate} * 100 );
+        $line{ecostgsti} = sprintf( "%.2f", $line{ecost} * ( 1 + ( $line{gstrate} ) ) );
+        $line{ecostgste} = sprintf( "%.2f", $line{ecost} );
+        $line{gstvalue} = sprintf( "%.2f", ( $line{ecostgsti} - $line{ecostgste} ) * $line{quantity});
+        $line{totalgste} = sprintf( "%.2f", $order->{quantity} * $line{ecostgste} );
+        $line{totalgsti} = sprintf( "%.2f", $order->{quantity} * $line{ecostgsti} );
+    }
+
+    if ( $line{uncertainprice} ) {
+        $line{rrpgste} .= ' (Uncertain)';
+    }
+    if ( $line{'title'} ) {
+        my $volume      = $order->{'volume'};
+        my $seriestitle = $order->{'seriestitle'};
+        $line{'title'} .= " / $seriestitle" if $seriestitle;
+        $line{'title'} .= " / $volume"      if $volume;
+    } else {
+        $line{'title'} = "Deleted bibliographic notice, can't find title.";
+    }
+
+    my $biblionumber = $order->{'biblionumber'};
+    my $countbiblio = CountBiblioInOrders($biblionumber);
+    my $ordernumber = $order->{'ordernumber'};
+    my @subscriptions = GetSubscriptionsId ($biblionumber);
+    my $itemcount = GetItemsCount($biblionumber);
+    my $holds  = GetHolds ($biblionumber);
+    my @items = GetItemnumbersFromOrder( $ordernumber );
+    my $itemholds;
+    foreach my $item (@items){
+        my $nb = GetItemHolds($biblionumber, $item);
+        if ($nb){
+            $itemholds += $nb;
+        }
+    }
+    # if the biblio is not in other orders and if there is no items elsewhere and no subscriptions and no holds we can then show the link "Delete order and Biblio" see bug 5680
+    $line{can_del_bib}          = 1 if $countbiblio <= 1 && $itemcount == scalar @items && !(@subscriptions) && !($holds);
+    $line{items}                = ($itemcount) - (scalar @items);
+    $line{left_item}            = 1 if $line{items} >= 1;
+    $line{left_biblio}          = 1 if $countbiblio > 1;
+    $line{biblios}              = $countbiblio - 1;
+    $line{left_subscription}    = 1 if scalar @subscriptions >= 1;
+    $line{subscriptions}        = scalar @subscriptions;
+    ($holds >= 1) ? $line{left_holds} = 1 : $line{left_holds} = 0;
+    $line{left_holds_on_order}  = 1 if $line{left_holds}==1 && ($line{items} == 0 || $itemholds );
+    $line{holds}                = $holds;
+    $line{holds_on_order}       = $itemholds?$itemholds:$holds if $line{left_holds_on_order};
+
+
+    my $suggestion   = GetSuggestionInfoFromBiblionumber($line{biblionumber});
+    $line{suggestionid}         = $$suggestion{suggestionid};
+    $line{surnamesuggestedby}   = $$suggestion{surnamesuggestedby};
+    $line{firstnamesuggestedby} = $$suggestion{firstnamesuggestedby};
+
+    return \%line;
 }
 
 output_html_with_http_headers $query, $cookie, $template->output;

@@ -1,19 +1,40 @@
+[% USE KohaDates %]
 [% INCLUDE 'doc-head-open.inc' %]
 <title>Koha &rsaquo; Acquisitions &rsaquo; [% UNLESS ( basketno ) %]New [% END %][% IF ( delete_confirm ) %]Delete [% END %]Basket [% basketname|html %] ([% basketno %]) for [% name|html %]</title>
+<link rel="stylesheet" type="text/css" href="[% themelang %]/css/datatables.css" />
 [% INCLUDE 'doc-head-close.inc' %]
-[% UNLESS ( closedate ) %]
-<script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.tablesorter.min.js"></script>
+<script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.dataTables.min.js"></script>
+[% INCLUDE 'datatables-strings.inc' %]
+<script type="text/javascript" src="[% themelang %]/js/datatables.js"></script>
+
 <script type="text/javascript">
 //<![CDATA[
+    function updateColumnsVisibility(visible) {
+        if ( visible ) {
+            $("table .gste, .gsti").show();
+        } else {
+            [% IF ( listincgst ) %]
+                $("table .gste").hide();
+            [% ELSE %]
+                $("table .gsti").hide();
+            [% END %]
+        }
+    }
+
     $(document).ready(function() {
-        $("#orders").tablesorter({
-            headers: {
-                9: { sorter: false },
-                10: { sorter: false }
-            }
+        $("#show_all_details").click(function(){
+            updateColumnsVisibility($(this+":checked").val());
         });
-        $("#cancelledorderst").tablesorter();
+
+        $("#show_all_details").attr('checked', false);
+        updateColumnsVisibility(false);
     });
+//]]>
+</script>
+
+[% UNLESS ( closedate ) %]
+<script type="text/javascript">
+//<![CDATA[
             function confirm_close() {
                 var is_confirmed = confirm(_('Are you sure you want to close this basket?'));
                 if (is_confirmed) {
@@ -67,11 +88,31 @@
 </script>
 [% END %]
 [% END %]
+<script type="text/javascript">
+//<![CDATA[
+    $(document).ready(function() {
+        var orderst = $("#orders").dataTable($.extend(true, {}, dataTablesDefaults, {
+            "sPaginationType": "four_button",
+            [% IF ( active ) %]
+              [% UNLESS ( closedate ) %]
+                "aoColumnDefs": [
+                    { "aTargets": [ -1, -2 ], "bSortable": false, "bSearchable": false },
+                ],
+              [% END %]
+            [% END %]
+        } ) );
+        var cancelledorderst = $("#cancelledorderst").dataTable($.extend(true, {}, dataTablesDefaults, {
+            "sPaginationType": "four_button"
+        } ) );
+    } );
+//]]>
+</script>
+
 <style type="text/css">
 .sortmsg {font-size: 80%;}
 </style>
 </head>
-<body>
+<body id="acq_basket" class="acq">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'acquisitions-search.inc' %]
 
@@ -110,7 +151,7 @@
                     </script>
 
                     <ul id="toolbar-list" class="toolbar">
-                    <li><a href="basketheader.pl?basketno=[% basketno %]&amp;op=add_form" class="button" id="basketheadbutton">Edit basket header information</a></li>
+                    <li><a href="basketheader.pl?booksellerid=[% booksellerid %]&amp;basketno=[% basketno %]&amp;op=add_form" class="button" id="basketheadbutton">Edit basket</a></li>
                     <li><a href="javascript:confirm_deletion();" class="button" id="delbasketbutton">Delete this basket</a></li>
                     [% IF ( unclosable ) %]
                     [% ELSIF ( uncertainprices ) %]
@@ -134,11 +175,13 @@
                         // YUI Toolbar Functions
                         function yuiToolbar() {
                             new YAHOO.widget.Button("reopenbutton");
+                            new YAHOO.widget.Button("exportbutton");
                         }
                         //]]>
                     </script>
                         <ul id="toolbar-list" class="toolbar">
                             <li><a href="javascript:confirm_reopen([% skip_confirm_reopen %]);" class="button" id="reopenbutton">Reopen this basket</a></li>
+                            <li><a href="[% script_name %]?op=export&amp;basketno=[% basketno %]&amp;booksellerid=[% booksellerid %]" class="button" id="exportbutton">Export this basket as CSV</a></li>
                         </ul>
                 </div>
                 [% END %]
@@ -177,9 +220,12 @@
                 [% IF ( basketcontractno ) %]
                     <li><span class="label">Contract name:</span> <a href="../admin/aqcontract.pl?op=add_form&amp;contractnumber=[% basketcontractno %]&amp;booksellerid=[% booksellerid %]">[% basketcontractname %]</a></li>
                 [% END %]
+                [% IF ( deliveryplace ) %]<li><span class="label">Delivery place:</span> [% deliveryplace %]</li>[% END %]
+                [% IF ( billingplace ) %]<li><span class="label">Billing place:</span> [% billingplace %]</li>[% END %]
                 [% IF ( authorisedbyname ) %]<li><span class="label">Managed by:</span>  [% authorisedbyname %]</li>[% END %]
-                [% IF ( creationdate ) %]<li><span class="label">Opened on:</span>  [% creationdate %]</li>[% END %]
-                [% IF ( closedate ) %]<li><span class="label">Closed on:</span> [% closedate %]</li>[% END %]
+                [% IF ( creationdate ) %]<li><span class="label">Opened on:</span>  [% creationdate | $KohaDates %]</li>[% END %]
+                [% IF ( closedate ) %]<li><span class="label">Closed on:</span> [% closedate | $KohaDates %]</li>[% END %]
+                [% IF ( estimateddeliverydate ) %]<li><span class="label">Estimated delivery date:</span> [% estimateddeliverydate | $KohaDates  %]</li>[% END %]
 
                 </ol>
                 </div>
@@ -205,6 +251,8 @@
                         <input type="submit" value="Change basket group" /></p>
 
                     </form>
+                    [% IF ( basketgroupdeliveryplace ) %]<p>Basketgroup Delivery place: [% basketgroupdeliveryplace %]</p>[% END %]
+                    [% IF ( basketgroupbillingplace ) %]<p>Basketgroup Billing place: [% basketgroupbillingplace %]</p>[% END %]
                 </div>
                 [% END %]
             </div>
@@ -213,16 +261,25 @@
 
         [% UNLESS ( delete_confirm ) %]
         <div id="acqui_basket_content" class="yui-g">
+        <label for="show_all_details">
+            <input type="checkbox" style="vertical-align: middle;" id="show_all_details" />
+            Show all details
+        </label>
         <h2>Order Details</h2>
         [% IF ( books_loop ) %]
             <table id="orders">
                 <thead>
                     <tr>
                         <th>Order</th>
-                        <th>RRP</th>
-                        <th>Est.</th>
+                        <th class="gste">RRP tax exc.</th>
+                        <th class="gste">ecost tax exc.</th>
+                        <th class="gsti">RRP tax inc.</th>
+                        <th class="gsti">ecost tax inc.</th>
                         <th>Qty.</th>
-                        <th>Total</th>
+                        <th class="gste">Total tax exc. ([% currency %])</th>
+                        <th class="gsti">Total tax inc. ([% currency %])</th>
+                        <th>GST %</th>
+                        <th>GST</th>
                         <th>Fund</th>
                         [% IF ( active ) %]
                             [% UNLESS ( closedate ) %]
@@ -233,44 +290,40 @@
                     </tr>
                 </thead>
                 <tfoot>
-                [% IF ( GST ) %]
-                <tr>
-                    <th scope="row">Total Tax Exc.</th>
-                    <td>[% total_rrp_gste %]</td>
-                    <td>&nbsp;</td>
-                    <td>[% qty_total %]</td>
-                    <td>[% total_est_gste %]</td>
+                [% FOREACH foot_loo IN book_foot_loop %]
+                    <tr>
+                        <th>Total (GST [% foot_loo.gstgsti %])</th>
+                        <th class="gste"/><th class="gste"/><th class="gsti"/><th class="gsti"/>
+                        <th>[% foot_loo.quantity %]</th>
+                        <th class="gste">[% foot_loo.totalgste %]</th>
+                        <th class="gsti">[% foot_loo.totalgsti %]</th>
+                        <th/>
+                        <th>[% foot_loo.gstvalue %]</th>
+                        <th/>
                         [% IF ( active ) %]
-                            [% IF ( closedate ) %]
-                            <td colspan="1" rowspan="3">&nbsp;</td>
-                            [% ELSE %]
-                            <td colspan="3" rowspan="3">&nbsp;</td>
+                            [% UNLESS ( closedate ) %]
+                                <th>&nbsp;</th>
+                                <th>&nbsp;</th>
                             [% END %]
                         [% END %]
-                </tr>
-                <tr>
-                    <th scope="row">Tax ([% gist_rate %])</th>
-                    <td>[% gist_rrp %]</td>
-                    <td>&nbsp;</td>
-                    <td>&nbsp;</td>
-                    <td>[% gist_est %]</td>
-                </tr>
-                <tr>
-                    <th scope="row">Total Tax Inc. ([% currency %])</th>
-                    <td>[% total_rrp_gsti %]</td>
-                    <td>&nbsp;</td>
-                    <td>[% qty_total %]</td>
-                    <td>[% total_est_gsti %]</td>
-                </tr>
-                [% ELSE %]
-                <tr>
-                    <th scope="row">Total ([% currency %])</th>
-                    <td>[% total_rrp_gsti %]</td>
-                    <td>&nbsp;</td>
-                    <td>[% qty_total %]</td>
-                    <td>[% total_est_gsti %]</td>
-                </tr>
+                    </tr>
                 [% END %]
+                <tr>
+                    <th>Total ([% currency %])</th>
+                    <th class="gste"/><th class="gste"/><th class="gsti"/><th class="gsti"/>
+                    <th>[% total_quantity %]</th>
+                    <th class="gste">[% total_gste %]</th>
+                    <th class="gsti">[% total_gsti %]</th>
+                    <th/>
+                    <th>[% total_gstvalue %]</th>
+                    <th/>
+                    [% IF ( active ) %]
+                        [% UNLESS ( closedate ) %]
+                            <th>&nbsp;</th>
+                            <th>&nbsp;</th>
+                        [% END %]
+                    [% END %]
+                </tr>
                 </tfoot>
                 <tbody>
                 [% FOREACH books_loo IN books_loop %]
@@ -278,23 +331,33 @@
                         <td>
                             <p>[% IF ( books_loo.order_received ) %] (rcvd)[% END %]
                                 <a href="/cgi-bin/koha/catalogue/detail.pl?biblionumber=[% books_loo.biblionumber %]">[% books_loo.title |html %]</a> by [% books_loo.author %]
-                                    [% IF ( books_loo.notes ) %] [% books_loo.notes %][% END %]
-                                    [% IF ( books_loo.isbn ) %] - [% books_loo.isbn %][% END %]
-                                    [% IF ( books_loo.issn ) %] - [% books_loo.issn %][% END %]
-                                    [% IF ( books_loo.publishercode ) %], [% books_loo.publishercode %][% END %]
-                                    [% IF ( books_loo.publicationyear ) %], [% books_loo.publicationyear %][% END %]
-                                    [% IF ( books_loo.suggestionid ) %]
-                                        <br/>
-                                        Suggested by: [% books_loo.surnamesuggestedby %][% IF ( books_loo.firstnamesuggestedby ) %], [% books_loo.firstnamesuggestedby %] [% END %]
-                                        (<a href="/cgi-bin/koha/suggestion/suggestion.pl?suggestionid=[% books_loo.suggestionid %]">suggestion #[% books_loo.suggestionid %]</a>)
-                                    [% END %]
-                                    [% IF ( books_loo.editionstatement ) %], [% books_loo.editionstatement %][% END %]
+                                <br />
+                                [% IF ( books_loo.isbn ) %] - [% books_loo.isbn %][% END %]
+                                [% IF ( books_loo.issn ) %] - [% books_loo.issn %][% END %]
+                                [% IF ( books_loo.publishercode ) %], [% books_loo.publishercode %][% END %]
+                                [% IF ( books_loo.publicationyear ) %], [% books_loo.publicationyear %][% END %]
+                                [% IF ( books_loo.editionstatement ) %], [% books_loo.editionstatement %][% END %]
+                                [% IF ( books_loo.suggestionid ) %]
+                                    <br/>
+                                    Suggested by: [% books_loo.surnamesuggestedby %][% IF ( books_loo.firstnamesuggestedby ) %], [% books_loo.firstnamesuggestedby %] [% END %]
+                                    (<a href="/cgi-bin/koha/suggestion/suggestion.pl?suggestionid=[% books_loo.suggestionid %]&amp;op=show">suggestion #[% books_loo.suggestionid %]</a>)
+                                [% END %]
+                                [% IF ( books_loo.notes ) %]
+                                    <p class="ordernote"><strong>Note: </strong>[% books_loo.notes|html %] [<a href="/cgi-bin/koha/acqui/modordernotes.pl?ordernumber=[% books_loo.ordernumber %]">Change note</a>]</p>
+                                [% ELSE %]
+                                    [<a href="/cgi-bin/koha/acqui/modordernotes.pl?ordernumber=[% books_loo.ordernumber %]">Add note</a>]
+                                [% END %]
                             </p>
-                            </td>
-                        <td class="number">[% books_loo.rrp %]</td>
-                        <td class="number">[% books_loo.ecost %]</td>
-                        <td class="number">[% books_loo.quantity %]</td>
-                        <td class="number">[% books_loo.line_total %]</td>
+                        </td>
+                        <td class="number gste [% IF books_loo.rrpgste.search('^0') %]error[% END %]">[% books_loo.rrpgste %]</td>
+                        <td class="number gste [% IF books_loo.ecostgste.search('^0') %]error[% END %]">[% books_loo.ecostgste %]</td>
+                        <td class="number gsti [% IF books_loo.rrpgsti.search('^0') %]error[% END %]">[% books_loo.rrpgsti %]</td>
+                        <td class="number gsti [% IF books_loo.ecostgsti.search('^0') %]error[% END %]">[% books_loo.ecostgsti %]</td>
+                        <td class="number [% IF books_loo.quantity.search('^0') %]error[% END %]">[% books_loo.quantity %]</td>
+                        <td class="number gste [% IF books_loo.totalgste.search('^0') %]error[% END %]">[% books_loo.totalgste %]</td>
+                        <td class="number gsti [% IF books_loo.totalgsti.search('^0') %]error[% END %]">[% books_loo.totalgsti %]</td>
+                        <td class="number [% IF books_loo.gstgsti.search('^0') %]error[% END %]">[% books_loo.gstgsti %]</td>
+                        <td class="number [% IF books_loo.gstvalue.search('^0') %]error[% END %]">[% books_loo.gstvalue %]</td>
                         <td>[% books_loo.budget_name %]</td>
                         [% IF ( active ) %]
                             [% UNLESS ( closedate ) %]
@@ -346,10 +409,15 @@
               <thead>
                 <tr>
                   <th>Order</th>
-                  <th>RRP</th>
-                  <th>Est.</th>
+                  <th class="gste">RRP tax exc.</th>
+                  <th class="gste">ecost tax exc.</th>
+                  <th class="gsti">RRP tax inc.</th>
+                  <th class="gsti">ecost tax inc.</th>
                   <th>Qty.</th>
-                  <th>Total</th>
+                  <th class="gste">Total tax exc. ([% currency %])</th>
+                  <th class="gsti">Total tax inc. ([% currency %])</th>
+                  <th>GST %</th>
+                  <th>GST</th>
                   <th>Fund</th>
                 </tr>
               </thead>
@@ -372,11 +440,16 @@
                         [% IF ( books_loo.editionstatement ) %], [% books_loo.editionstatement %][% END %]
                       </p>
                     </td>
-                    <td><p>[% order.rrp %]</p></td>
-                    <td><p>[% order.ecost %]</p></td>
-                    <td><p>[% order.quantity %]</p></td>
-                    <td><p>[% order.line_total %]</p></td>
-                    <td><p>[% order.budget_name %]</p></td>
+                    <td class="number gste">[% order.rrpgste %]</td>
+                    <td class="number gste">[% order.ecostgste %]</td>
+                    <td class="number gsti">[% order.rrpgsti %]</td>
+                    <td class="number gsti">[% order.ecostgsti %]</td>
+                    <td class="number">[% order.quantity %]</td>
+                    <td class="number gste">[% order.totalgste %]</td>
+                    <td class="number gsti">[% order.totalgsti %]</td>
+                    <td class="number">[% order.gstgsti %]</td>
+                    <td class="number">[% order.gstvalue %]</td>
+                    <td>[% order.budget_name %]
                   </tr>
                 [% END %]
               </tbody>

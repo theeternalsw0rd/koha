@@ -2,7 +2,7 @@
 <title>Koha &rsaquo; Circulation</title>
 [% INCLUDE 'doc-head-close.inc' %]
 </head>
-<body>
+<body id="circ_circulation-home" class="circ">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'circ-search.inc' %]
 
@@ -17,8 +17,8 @@
 
 <div class="yui-u first">	
 	<ul>
-		<li><a href="/cgi-bin/koha/circ/circulation.pl">Check Out</a></li>
-		<li><a href="/cgi-bin/koha/circ/returns.pl">Check In</a></li>
+        <li><a href="/cgi-bin/koha/circ/circulation.pl">Check out</a></li>
+        <li><a href="/cgi-bin/koha/circ/returns.pl">Check in</a></li>
 		<li><a href="/cgi-bin/koha/circ/branchtransfers.pl">Transfer</a></li>
 	[% IF ( AutoLocation ) %][% ELSE %][% IF ( IndependantBranches ) %][% ELSE %]<li><a href="/cgi-bin/koha/circ/selectbranchprinter.pl">Set library</a></li>[% END %][% END %]
 	[% IF ( fast_cataloging ) %]
@@ -33,7 +33,7 @@
 	
 <h5>Circulation Reports</h5>
 <ul>
-    <li>    <a href="/cgi-bin/koha/circ/view_holdsqueue.pl" title="holds queue">Holds Queue</a></li>
+    <li>    <a href="/cgi-bin/koha/circ/view_holdsqueue.pl" title="holds queue">Holds queue</a></li>
 	<li>    <a href="/cgi-bin/koha/circ/pendingreserves.pl" title="holds to retrieve off the shelf">Holds to pull</a></li>
 	<li>    <a href="/cgi-bin/koha/circ/waitingreserves.pl" title="holds waiting for patron pickup">Holds awaiting pickup</a></li>
 	<li>    <a href="/cgi-bin/koha/circ/reserveratios.pl">Hold ratios</a></li>
@@ -42,7 +42,6 @@
 	- <b>Warning:</b> This report is very resource intensive on
 	systems with large numbers of overdue items.</li>[% END %]
 	<li>    <a href="/cgi-bin/koha/circ/branchoverdues.pl">Overdues with fines</a> - Limited to your library.  See report help for other details.</li>
-<!--	<li>    <a href="/cgi-bin/koha/circ/billing.pl">Billing</a></li> -->
 <!--	<li>    <a href="/cgi-bin/koha/circ/stats.pl?time=yesterday">Daily reconciliation</a></li> -->
 </ul>
 	
@@ -50,9 +49,10 @@
 
 
 	<div class="yui-u">
-		<h5>Offline Circulation</h5>
+        <h5>Offline circulation</h5>
 		<ul>
-			<li><a href="/cgi-bin/koha/offline_circ/process_koc.pl">Offline Circulation File (.koc) Uploader</a></li>
+            <li><a href="/cgi-bin/koha/offline_circ/process_koc.pl">Offline circulation file (.koc) uploader</a></li>
+            <li><a href="/cgi-bin/koha/offline_circ/list.pl">Offline circulation</a> (<a href="https://addons.mozilla.org/[% lang %]/firefox/addon/koct/">Firefox add-on</a>)</li>
 		</ul>
 	</div>
 </div>

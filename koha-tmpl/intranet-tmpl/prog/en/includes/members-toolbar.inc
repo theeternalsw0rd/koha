@@ -52,9 +52,9 @@ function update_child() {
 	}
 	function yuiToolbar() {
 	    var printmenu = [
-	        { text: _("Print Page"), onclick: {fn: function(){printx_window("page")}} },
-	        { text: _("Print Slip"), onclick: {fn: function(){printx_window("slip")}} },
-	        { text: _("Quick Slip"), onclick: {fn: function(){printx_window("qslip")}} }
+            { text: _("Print summary"), onclick: {fn: function(){printx_window("page")}} },
+            { text: _("Print slip"), onclick: {fn: function(){printx_window("slip")}} },
+            { text: _("Print quick slip"), onclick: {fn: function(){printx_window("qslip")}} }
 	    ];
 
 		var moremenu = [[% IF !( usef1 ) || !( f1_id > 0 ) %]

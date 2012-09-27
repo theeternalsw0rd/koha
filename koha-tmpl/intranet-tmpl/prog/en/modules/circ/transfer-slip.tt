@@ -1,5 +1,5 @@
 [% INCLUDE 'doc-head-open.inc' %]
-<title>Koha -- Circulation: Transfers</title>
+<title>Koha &rsaquo; Circulation &rsaquo; Transfers</title>
 [% INCLUDE 'doc-head-close-receipt.inc' %]
 <script language="javascript">
 function printandclose()
@@ -9,7 +9,8 @@ window.close();
 }
 </script>
 </head>
-<body onload="printandclose();"><div id="main">
+<body id="circ_transfer-slip" class="circ" onload="printandclose();">
+<div id="main">
 
 <h5>Date: [% pulldate %]</h5>
 <h3>Transfer to [% branchname %]</h3>

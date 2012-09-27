@@ -23,7 +23,7 @@ package C4::Members;
 use strict;
 #use warnings; FIXME - Bug 2505
 use C4::Context;
-use C4::Dates qw(format_date_in_iso);
+use C4::Dates qw(format_date_in_iso format_date);
 use Digest::MD5 qw(md5_base64);
 use Date::Calc qw/Today Add_Delta_YM check_date Date_to_Days/;
 use C4::Log; # logaction
@@ -31,89 +31,99 @@ use C4::Overdues;
 use C4::Reserves;
 use C4::Accounts;
 use C4::Biblio;
+use C4::Letters;
 use C4::SQLHelper qw(InsertInTable UpdateInTable SearchInTable);
 use C4::Members::Attributes qw(SearchIdMatchingAttribute);
+use C4::NewsChannels; #get slip news
+use DateTime;
+use DateTime::Format::DateParse;
+use Koha::DateUtils;
+use Text::Unaccent qw( unac_string );
 
 our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,$debug);
 
 BEGIN {
-	$VERSION = 3.02;
-	$debug = $ENV{DEBUG} || 0;
-	require Exporter;
-	@ISA = qw(Exporter);
-	#Get data
-	push @EXPORT, qw(
-		&Search
-		&GetMemberDetails
+    $VERSION = 3.07.00.049;
+    $debug = $ENV{DEBUG} || 0;
+    require Exporter;
+    @ISA = qw(Exporter);
+    #Get data
+    push @EXPORT, qw(
+        &Search
+        &GetMemberDetails
         &GetMemberRelatives
-		&GetMember
+        &GetMember
 
-		&GetGuarantees 
+        &GetGuarantees
 
-		&GetMemberIssuesAndFines
-		&GetPendingIssues
-		&GetAllIssues
+        &GetMemberIssuesAndFines
+        &GetPendingIssues
+        &GetAllIssues
 
-		&get_institutions 
-		&getzipnamecity 
-		&getidcity
+        &get_institutions
+        &getzipnamecity
+        &getidcity
 
-                &GetFirstValidEmailAddress
+        &GetFirstValidEmailAddress
 
-		&GetAge 
-		&GetCities 
-		&GetRoadTypes 
-		&GetRoadTypeDetails 
-		&GetSortDetails
-		&GetTitles
+        &GetAge
+        &GetCities
+        &GetRoadTypes
+        &GetRoadTypeDetails
+        &GetSortDetails
+        &GetTitles
 
-    &GetPatronImage
-    &PutPatronImage
-    &RmPatronImage
+        &GetPatronImage
+        &PutPatronImage
+        &RmPatronImage
 
-                &GetHideLostItemsPreference
+        &GetHideLostItemsPreference
 
-		&IsMemberBlocked
-		&GetMemberAccountRecords
-		&GetBorNotifyAcctRecord
+        &IsMemberBlocked
+        &GetMemberAccountRecords
+        &GetBorNotifyAcctRecord
 
-		&GetborCatFromCatType 
-		&GetBorrowercategory
-    &GetBorrowercategoryList
+        &GetborCatFromCatType
+        &GetBorrowercategory
+        GetBorrowerCategorycode
+        &GetBorrowercategoryList
 
-		&GetBorrowersWhoHaveNotBorrowedSince
-		&GetBorrowersWhoHaveNeverBorrowed
-		&GetBorrowersWithIssuesHistoryOlderThan
+        &GetBorrowersWhoHaveNotBorrowedSince
+        &GetBorrowersWhoHaveNeverBorrowed
+        &GetBorrowersWithIssuesHistoryOlderThan
 
-		&GetExpiryDate
+        &GetExpiryDate
 
-		&AddMessage
-		&DeleteMessage
-		&GetMessages
-		&GetMessagesCount
-	);
+        &AddMessage
+        &DeleteMessage
+        &GetMessages
+        &GetMessagesCount
 
-	#Modify data
-	push @EXPORT, qw(
-		&ModMember
-		&changepassword
+        &IssueSlip
+        GetBorrowersWithEmail
+    );
+
+    #Modify data
+    push @EXPORT, qw(
+        &ModMember
+        &changepassword
          &ModPrivacy
-	);
+    );
 
-	#Delete data
-	push @EXPORT, qw(
-		&DelMember
-	);
+    #Delete data
+    push @EXPORT, qw(
+        &DelMember
+    );
 
-	#Insert data
-	push @EXPORT, qw(
-		&AddMember
-		&add_member_orgs
-		&MoveMemberToDeleted
-		&ExtendMemberSubscriptionTo
-	);
+    #Insert data
+    push @EXPORT, qw(
+        &AddMember
+        &add_member_orgs
+        &MoveMemberToDeleted
+        &ExtendMemberSubscriptionTo
+    );
 
-	#Check data
+    #Check data
     push @EXPORT, qw(
         &checkuniquemember
         &checkuserpassword
@@ -321,7 +331,7 @@ sub GetMemberDetails {
         $sth->execute($cardnumber);
     }
     else {
-        return undef;
+        return;
     }
     my $borrower = $sth->fetchrow_hashref;
     my ($amount) = GetMemberAccountRecords( $borrowernumber);
@@ -468,7 +478,7 @@ sub patronflags {
         $flaginfo{'message'} = $patroninformation->{'borrowernotes'};
         $flags{'NOTES'}      = \%flaginfo;
     }
-    my ( $odues, $itemsoverdue ) = checkoverdues($patroninformation->{'borrowernumber'});
+    my ( $odues, $itemsoverdue ) = C4::Overdues::checkoverdues($patroninformation->{'borrowernumber'});
     if ( $odues && $odues > 0 ) {
         my %flaginfo;
         $flaginfo{'message'}  = "Yes";
@@ -573,7 +583,7 @@ sub GetMemberRelatives {
     $sth->execute($borrowernumber);
     my $data = $sth->fetchrow_arrayref();
     push @glist, $data->[0] if $data->[0];
-    my $guarantor = $data->[0] if $data->[0];
+    my $guarantor = $data->[0] ? $data->[0] : undef;
 
     # Getting guarantees
     $query = "SELECT borrowernumber FROM borrowers WHERE guarantorid=?";
@@ -634,7 +644,7 @@ sub IsMemberBlocked {
         "SELECT COUNT(*) as latedocs
          FROM issues
          WHERE borrowernumber = ?
-         AND date_due < curdate()"
+         AND date_due < now()"
     );
     $sth->execute($borrowernumber);
     my $latedocs = $sth->fetchrow_hashref->{'latedocs'};
@@ -672,7 +682,7 @@ sub GetMemberIssuesAndFines {
     $sth = $dbh->prepare(
         "SELECT COUNT(*) FROM issues 
          WHERE borrowernumber = ? 
-         AND date_due < curdate()"
+         AND date_due < now()"
     );
     $sth->execute($borrowernumber);
     my $overdue_count = $sth->fetchrow_arrayref->[0];
@@ -791,6 +801,7 @@ sub Generate_Userid {
     $firstname =~ s/[[:digit:][:space:][:blank:][:punct:][:cntrl:]]//g;
     $surname =~ s/[[:digit:][:space:][:blank:][:punct:][:cntrl:]]//g;
     $newuid = lc(($firstname)? "$firstname.$surname" : $surname);
+    $newuid = unac_string('utf-8',$newuid);
     $newuid .= $offset unless $offset == 0;
     $offset++;
 
@@ -838,7 +849,7 @@ mode, to avoid database corruption.
 use vars qw( @weightings );
 my @weightings = ( 8, 4, 6, 3, 5, 2, 1 );
 
-sub fixup_cardnumber ($) {
+sub fixup_cardnumber {
     my ($cardnumber) = @_;
     my $autonumber_members = C4::Context->boolean_preference('autoMemberNum') || 0;
 
@@ -888,11 +899,8 @@ sub fixup_cardnumber ($) {
         return "V$cardnumber$rem";
      } else {
 
-     # MODIFIED BY JF: mysql4.1 allows casting as an integer, which is probably
-     # better. I'll leave the original in in case it needs to be changed for you
-     # my $sth=$dbh->prepare("select max(borrowers.cardnumber) from borrowers");
         my $sth = $dbh->prepare(
-            "select max(cast(cardnumber as signed)) from borrowers"
+            'SELECT MAX( CAST( cardnumber AS SIGNED ) ) FROM borrowers WHERE cardnumber REGEXP "^-?[0-9]+$"'
         );
         $sth->execute;
         my ($result) = $sth->fetchrow;
@@ -989,7 +997,6 @@ sub GetPendingIssues {
     # must avoid biblioitems.* to prevent large marc and marcxml fields from killing performance
     # FIXME: namespace collision: each table has "timestamp" fields.  Which one is "timestamp" ?
     # FIXME: circ/ciculation.pl tries to sort by timestamp!
-    # FIXME: C4::Print::printslip tries to sort by timestamp!
     # FIXME: namespace collision: other collisions possible.
     # FIXME: most of this data isn't really being used by callers.
     my $query =
@@ -1027,9 +1034,15 @@ sub GetPendingIssues {
     my $sth = C4::Context->dbh->prepare($query);
     $sth->execute(@borrowernumbers);
     my $data = $sth->fetchall_arrayref({});
-    my $today = C4::Dates->new->output('iso');
+    my $tz = C4::Context->tz();
+    my $today = DateTime->now( time_zone => $tz);
     foreach (@{$data}) {
-        if ($_->{date_due}  and $_->{date_due} lt $today) {
+        if ($_->{issuedate}) {
+            $_->{issuedate} = dt_from_string($_->{issuedate}, 'sql');
+        }
+        $_->{date_due} or next;
+        $_->{date_due} = DateTime::Format::DateParse->parse_datetime($_->{date_due}, $tz->name());
+        if ( DateTime->compare($_->{date_due}, $today) == -1 ) {
             $_->{overdue} = 1;
         }
     }
@@ -1059,10 +1072,9 @@ C<items> tables of the Koha database.
 sub GetAllIssues {
     my ( $borrowernumber, $order, $limit ) = @_;
 
-    #FIXME: sanity-check order and limit
-    my $dbh   = C4::Context->dbh;
+    my $dbh = C4::Context->dbh;
     my $query =
-  "SELECT *, issues.timestamp as issuestimestamp, issues.renewals AS renewals,items.renewals AS totalrenewals,items.timestamp AS itemstimestamp 
+'SELECT *, issues.timestamp as issuestimestamp, issues.renewals AS renewals,items.renewals AS totalrenewals,items.timestamp AS itemstimestamp
   FROM issues 
   LEFT JOIN items on items.itemnumber=issues.itemnumber
   LEFT JOIN biblio ON items.biblionumber=biblio.biblionumber
@@ -1075,20 +1087,14 @@ sub GetAllIssues {
   LEFT JOIN biblio ON items.biblionumber=biblio.biblionumber
   LEFT JOIN biblioitems ON items.biblioitemnumber=biblioitems.biblioitemnumber
   WHERE borrowernumber=? AND old_issues.itemnumber IS NOT NULL
-  order by $order";
-    if ( $limit != 0 ) {
+  order by ' . $order;
+    if ($limit) {
         $query .= " limit $limit";
     }
 
     my $sth = $dbh->prepare($query);
-    $sth->execute($borrowernumber, $borrowernumber);
-    my @result;
-    my $i = 0;
-    while ( my $data = $sth->fetchrow_hashref ) {
-        push @result, $data;
-    }
-
-    return \@result;
+    $sth->execute( $borrowernumber, $borrowernumber );
+    return $sth->fetchall_arrayref( {} );
 }
 
 
@@ -1170,6 +1176,11 @@ sub GetBorNotifyAcctRecord {
     $sth->execute( $borrowernumber, $notifyid );
     my $total = 0;
     while ( my $data = $sth->fetchrow_hashref ) {
+        if ( $data->{itemnumber} ) {
+            my $biblio = GetBiblioFromItemNumber( $data->{itemnumber} );
+            $data->{biblionumber} = $biblio->{biblionumber};
+            $data->{title}        = $biblio->{title};
+        }
         $acctlines[$numlines] = $data;
         $numlines++;
         $total += int(100 * $data->{'amountoutstanding'});
@@ -1395,10 +1406,6 @@ sub GetborCatFromCatType {
 Given the borrower's category code, the function returns the corresponding
 data hashref for a comprehensive information display.
 
-  $arrayref_hashref = &GetBorrowercategory;
-
-If no category code provided, the function returns all the categories.
-
 =cut
 
 sub GetBorrowercategory {
@@ -1418,6 +1425,26 @@ sub GetBorrowercategory {
     } 
     return;  
 }    # sub getborrowercategory
+
+
+=head2 GetBorrowerCategorycode
+
+    $categorycode = &GetBorrowerCategoryCode( $borrowernumber );
+
+Given the borrowernumber, the function returns the corresponding categorycode
+=cut
+
+sub GetBorrowerCategorycode {
+    my ( $borrowernumber ) = @_;
+    my $dbh = C4::Context->dbh;
+    my $sth = $dbh->prepare( qq{
+        SELECT categorycode
+        FROM borrowers
+        WHERE borrowernumber = ?
+    } );
+    $sth->execute( $borrowernumber );
+    return $sth->fetchrow;
+}
 
 =head2 GetBorrowercategoryList
 
@@ -2228,6 +2255,109 @@ sub DeleteMessage {
     $sth->execute( $message_id );
     logaction("MEMBERS", "DELCIRCMESSAGE", $message->{'borrowernumber'}, $message->{'message'}) if C4::Context->preference("BorrowersLog");
 }
+
+=head2 IssueSlip
+
+  IssueSlip($branchcode, $borrowernumber, $quickslip)
+
+  Returns letter hash ( see C4::Letters::GetPreparedLetter )
+
+  $quickslip is boolean, to indicate whether we want a quick slip
+
+=cut
+
+sub IssueSlip {
+    my ($branch, $borrowernumber, $quickslip) = @_;
+
+#   return unless ( C4::Context->boolean_preference('printcirculationslips') );
+
+    my $now       = POSIX::strftime("%Y-%m-%d", localtime);
+
+    my $issueslist = GetPendingIssues($borrowernumber);
+    foreach my $it (@$issueslist){
+        if ((substr $it->{'issuedate'}, 0, 10) eq $now) {
+            $it->{'now'} = 1;
+        }
+        elsif ((substr $it->{'date_due'}, 0, 10) le $now) {
+            $it->{'overdue'} = 1;
+        }
+
+        $it->{'date_due'}=format_date($it->{'date_due'});
+    }
+    my @issues = sort { $b->{'timestamp'} <=> $a->{'timestamp'} } @$issueslist;
+
+    my ($letter_code, %repeat);
+    if ( $quickslip ) {
+        $letter_code = 'ISSUEQSLIP';
+        %repeat =  (
+            'checkedout' => [ map {
+                'biblio' => $_,
+                'items'  => $_,
+                'issues' => $_,
+            }, grep { $_->{'now'} } @issues ],
+        );
+    }
+    else {
+        $letter_code = 'ISSUESLIP';
+        %repeat =  (
+            'checkedout' => [ map {
+                'biblio' => $_,
+                'items'  => $_,
+                'issues' => $_,
+            }, grep { !$_->{'overdue'} } @issues ],
+
+            'overdue' => [ map {
+                'biblio' => $_,
+                'items'  => $_,
+                'issues' => $_,
+            }, grep { $_->{'overdue'} } @issues ],
+
+            'news' => [ map {
+                $_->{'timestamp'} = $_->{'newdate'};
+                { opac_news => $_ }
+            } @{ GetNewsToDisplay("slip") } ],
+        );
+    }
+
+    return  C4::Letters::GetPreparedLetter (
+        module => 'circulation',
+        letter_code => $letter_code,
+        branchcode => $branch,
+        tables => {
+            'branches'    => $branch,
+            'borrowers'   => $borrowernumber,
+        },
+        repeat => \%repeat,
+    );
+}
+
+=head2 GetBorrowersWithEmail
+
+    ([$borrnum,$userid], ...) = GetBorrowersWithEmail('me@example.com');
+
+This gets a list of users and their basic details from their email address.
+As it's possible for multiple user to have the same email address, it provides
+you with all of them. If there is no userid for the user, there will be an
+C<undef> there. An empty list will be returned if there are no matches.
+
+=cut
+
+sub GetBorrowersWithEmail {
+    my $email = shift;
+
+    my $dbh = C4::Context->dbh;
+
+    my $query = "SELECT borrowernumber, userid FROM borrowers WHERE email=?";
+    my $sth=$dbh->prepare($query);
+    $sth->execute($email);
+    my @result = ();
+    while (my $ref = $sth->fetch) {
+        push @result, $ref;
+    }
+    die "Failure searching for borrowers by email address: $sth->errstr" if $sth->err;
+    return @result;
+}
+
 
 END { }    # module clean-up code here (global destructor)
 

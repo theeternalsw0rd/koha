@@ -1,7 +1,12 @@
-[% INCLUDE 'doc-head-open.inc' %][% LibraryName %] &rsaquo; Self Checkout </title>
+[% USE KohaDates %]
+[% INCLUDE 'doc-head-open.inc' %][% IF ( LibraryNameTitle ) %][% LibraryNameTitle %][% ELSE %]Koha [% END %] &rsaquo; Self checkout </title>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <meta name="generator" content="Koha [% Version %]" /> <!-- leave this for stats -->
 <link rel="shortcut icon" href="[% themelang %]/includes/favicon.ico" type="image/x-icon" />
+<!-- yui js -->
+<script type="text/javascript" src="[% yuipath %]/utilities/utilities.js"></script>
+<script type="text/javascript" src="[% yuipath %]/container/container-min.js"></script>
+<script type="text/javascript" src="[% yuipath %]/menu/menu-min.js"></script>
 <script type="text/javascript" src="[% themelang %]/lib/jquery/jquery.js"></script>
 <script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.tablesorter.min.js"></script>
 <script type="text/javascript">//<![CDATA[
@@ -33,6 +38,35 @@ function checkout_confirm(patronid) {
     return true;
 }
 
+// build Change Language menus
+YAHOO.util.Event.onContentReady("changelanguage", function () {
+  $(".sublangs").each(function(){
+    var menuid = $(this).attr("id");
+    var menuid = menuid.replace("show","");
+
+    var oMenu = new YAHOO.widget.Menu("sub"+menuid, { zindex: 2 });
+    function positionoMenu() {
+      oMenu.align("bl", "tl");
+    }
+    oMenu.subscribe("beforeShow", function () {
+    if (this.getRoot() == this) {
+      positionoMenu();
+    }
+    });
+    oMenu.render();
+    oMenu.cfg.setProperty("context", ["show"+menuid, "bl", "tl"]);
+    function onYahooClick(p_oEvent) {
+      // Position and display the menu
+      positionoMenu();
+      oMenu.show();
+      // Stop propagation and prevent the default "click" behavior
+      YAHOO.util.Event.stopEvent(p_oEvent);
+    }
+    YAHOO.util.Event.addListener("show"+menuid, "click", onYahooClick);
+    YAHOO.widget.Overlay.windowResizeEvent.subscribe(positionoMenu);
+  });
+});
+
 $.tablesorter.addParser({
     id: 'articles',
     is: function(s) {return false;  },
@@ -58,16 +92,23 @@ $(document).ready(function() {
     });
 });
 //]]>
+
 </script>
+[% IF ( opacuserjs ) %]<script type="text/javascript">[% opacuserjs %]</script>[% END %]
+
+
+<link rel="stylesheet" type="text/css" href="[% yuipath %]/reset-fonts-grids.css" />
+<link rel="stylesheet" type="text/css" href="[% yuipath %]/skin.css" />
 <link rel="stylesheet" type="text/css" href="[% themelang %]/css/sco.css" />
+[% IF ( OPACUserCSS ) %]<style type="text/css">[% OPACUserCSS %]</style>[% END %]
+
 </head>
 <body onload="dofocus();">
 
 <div id="doc" class="yui-t7">
 
-<div id="masthead"><h1>[% LibraryName %] Self Checkout System</h1></div>
+<div id="masthead"><h1>[% LibraryName %] Self checkout system</h1></div>
 <div id="bd">
-    <div class="yui-g">
 
 [% IF ( impossible ) %]<!-- We tried to issue, but failed. -->
 <div class="dialog alert"><h3>Item cannot be checked out.</h3><p>Sorry, This item cannot be checked out at this station.  </p>
@@ -129,22 +170,22 @@ $(document).ready(function() {
 <input type="hidden" name="confirmed" value="" />
 [% IF ( renew ) %]
 [% IF ( AllowSelfCheckReturns ) %]
-<input type="button" value="Return Item" name="confirm" class="return" onclick="this.form.op.value='returnbook';this.form.submit();"  />
+<input type="button" value="Return item" name="confirm" class="return" onclick="this.form.op.value='returnbook';this.form.submit();"  />
 [% END %]
 [% END %]
-[% UNLESS ( renew ) %]<input type="button" value="Renew Item" name="confirm" class="renew" onclick="this.form.confirmed.value='1';this.form.submit();" />
-[% ELSE %]<input type="button" value="Renew Item" class="renew" onclick="this.form.confirmed.value='1';this.form.submit();" />[% END %]
+[% UNLESS ( renew ) %]<input type="button" value="Renew item" name="confirm" class="renew" onclick="this.form.confirmed.value='1';this.form.submit();" />
+[% ELSE %]<input type="button" value="Renew item" class="renew" onclick="this.form.confirmed.value='1';this.form.submit();" />[% END %]
 <input type="button" value="Cancel" class="cancel" onclick="this.form.op.value='';this.form.submit();return true;"  />
 </form>
 </div>
 [% END %]
 
-[% IF ( nopermission ) %]<!-- This is what is displayed if user doesnt have permission --><div class="dialog alert"><h3>Access Denied</h3>
-Sorry, This Self-Checkout Station has lost authentication.  Please contact the administrator to resolve this problem. </div>
+[% IF ( nopermission ) %]<!-- This is what is displayed if user doesnt have permission --><div class="dialog alert"><h3>Access denied</h3>
+Sorry, this self-checkout station has lost authentication.  Please contact the administrator to resolve this problem. </div>
 [% END %]
 [% IF ( timed_out ) %]<!-- This is what is displayed if login has timed out -->
 <div class="dialog alert"><h3>Session timed out</h3>Sorry, your session has timed out, please log in again.</div>[% END %]
-[% IF ( different_ip ) %]<!-- This is what is displayed if user doesnt have permission --><div class="dialog alert"><h3>Session Lost</h3>You are accessing Self-Checkout from a different IP address! please log in again.</div>[% END %]
+[% IF ( different_ip ) %]<!-- This is what is displayed if user doesnt have permission --><div class="dialog alert"><h3>Session lost</h3>You are accessing self-checkout from a different IP address! please log in again.</div>[% END %]
 [% IF ( invalid_username_or_password ) %]
 <!-- This is what is displayed if user doesnt have permission --><div class="dialog alert"><h3>Record not found</h3><p>Your userid was not found in the database.  Please try again.</p></div>[% END %]
 
@@ -152,7 +193,7 @@ Sorry, This Self-Checkout Station has lost authentication.  Please contact the a
 [% UNLESS ( hide_main ) %]
 	<div class="sco_head">
 	[% UNLESS ( validuser ) %] 
-	<h3>Self Checkout</h3>
+    <h3>Self checkout</h3>
 	[% END %]
 
 	<div id="checkouthelp">
@@ -161,23 +202,21 @@ Sorry, This Self-Checkout Station has lost authentication.  Please contact the a
 
 	[% IF ( patronid ) %]
 	[% IF ( validuser ) %]
-	<h3 class="warning">You are logged in as [% borrowername %].</h3>
-    [% IF ( display_patron_image ) %]
-        <img src="/cgi-bin/koha/sco/sco-patron-image.pl?cardnumber=[% cardnumber %]" alt="" />
-    [% END %]
+    <h3 class="warning">You are logged in as [% borrowername %].</h3>
 	[% END %]
 	</div>
 	[% IF ( nouser ) %]
-	<div class="error"><h4>Sorry</h4><p>The userid <strong>[% patronid %]</strong> was not found in the database.  Please try again.</p></div>
+	<div class="dialog alert"><h4>Sorry</h4><p>The userid <strong>[% patronid %]</strong> was not found in the database.  Please try again.</p></div>
 	<br />
 	[% END %]
 	[% END %]
 
 	[% IF ( timedout ) %]
-	<div class="error"><h4>Sorry</h4><p>Your session has timed out due to inactivity.  Please sign in.</p></div>
+	<div class="dialog message"><h4>Sorry</h4><p>Your session has timed out due to inactivity.  Please sign in.</p></div>
 	<br />
 	[% END %]
 	[% IF ( validuser ) %]
+  [% IF ( display_patron_image ) %]<div class="yui-ge"><div class="yui-u first">[% END %]
 	<div id="newcheckout" class="sco_entry">
 	<form id="scan_form" name="scan_form" method="post" action="/cgi-bin/koha/sco/sco-main.pl" onsubmit="return checkout_confirm('[% patronid %]');">
 	<fieldset><legend> Check out[% IF ( AllowSelfCheckReturns ) %], return[% END %] or renew an item: </legend>
@@ -190,13 +229,20 @@ Sorry, This Self-Checkout Station has lost authentication.  Please contact the a
 	</form>
 	<div><form method="post" action="/cgi-bin/koha/sco/sco-main.pl?op=logout" ><input type="submit" value="Finish" class="finish" /></form></div>
 	</div> <!-- sco_entry --> <!-- newcheckout -->
-
+  [% IF ( display_patron_image ) %]</div> <!-- /yui-u first -->[% END %]
+  [% IF ( display_patron_image ) %]
+  <div class="yui-u">
+        <img src="/cgi-bin/koha/sco/sco-patron-image.pl?cardnumber=[% cardnumber %]" alt="" />
+  </div>
+  [% END %]
+  </div> <!-- /yui-ge -->
+  <div class="yui-g">
 	<div id="borrowerdetails">
 	[% IF ( issues_count ) %]
 	<table id="loanTable"><caption>Checkouts for [% borrowername %] <span class="count">([% issues_count %] total)</span></caption>
 	<!-- ISSUES TABLE ROWS -->
     <thead>
-	<tr><th>Title</th><th>Call No.</th><th>Due</th><th>Renew</th>[% UNLESS ( nofines ) %]<th>Fines</th>[% END %]</tr>
+        <tr><th>Title</th><th>Call no.</th><th>Due</th><th>Renew</th>[% UNLESS ( nofines ) %]<th>Fines</th>[% END %]</tr>
     </thead>
 
     <tbody>
@@ -206,7 +252,7 @@ Sorry, This Self-Checkout Station has lost authentication.  Please contact the a
 	<td>[% UNLESS ( ISSUE.noitemlinks ) %]<a href="/cgi-bin/koha/opac-detail.pl?bib=[% ISSUE.biblionumber %]">[% ISSUE.title |html %]</a>[% ELSE %]<strong>[% ISSUE.title |html %]</strong>[% END %]<span class="item-details">
 	[% ISSUE.author %]</span> ([% ISSUE.barcode %])</td>
 	<td>[% ISSUE.itemcallnumber %]</td>
-	[% IF ( ISSUE.overdue ) %]<td class="overdue">[% ISSUE.date_due_display %]</td>[% ELSE %]<td>[% ISSUE.date_due_display %]</td>[% END %]
+	[% IF ( ISSUE.overdue ) %]<td class="overdue">[% ISSUE.date_due | $KohaDates %]</td>[% ELSE %]<td>[% ISSUE.date_due | $KohaDates %]</td>[% END %]
 	<td>
     <form action="/cgi-bin/koha/sco/sco-main.pl" method="post">
     <input type="hidden" name="op" value="checkout" />
@@ -233,7 +279,7 @@ Sorry, This Self-Checkout Station has lost authentication.  Please contact the a
 	[% ELSE %]
 	<h3>You currently have nothing checked out.</h3>
 	[% END %]
-
+</div> <!-- /yui-g -->
 	[% ELSE %]<!-- not validuser -->
 	<div class="sco_entry" >
 	<form id="mainform" action="/cgi-bin/koha/sco/sco-main.pl" name="mainform" method="post">
@@ -256,7 +302,6 @@ Sorry, This Self-Checkout Station has lost authentication.  Please contact the a
 	[% END %]
 [% END %] <!-- ( / hide main) -->	
 	
-	</div>
 	</div>
 </div>
 [% INCLUDE 'opac-bottom.inc' %]

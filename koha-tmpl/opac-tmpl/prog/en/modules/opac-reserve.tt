@@ -1,6 +1,5 @@
-[% INCLUDE 'doc-head-open.inc' %][% LibraryNameTitle or "Koha Online" %] Catalog &rsaquo;  Placing a hold
+[% INCLUDE 'doc-head-open.inc' %][% LibraryNameTitle or "Koha online" %] catalog &rsaquo;  Placing a hold
 [% INCLUDE 'doc-head-close.inc' %]
-[% INCLUDE 'calendar.inc' %]
 <script type="text/javascript">
 // <![CDATA[
  var MSG_NO_COPY_SELECTED = _("Expecting a specific copy selection.");
@@ -240,21 +239,25 @@
                   <th>Hold</th>
                   <th>Title</th>
                   [% UNLESS ( item_level_itypes ) %]
-                    <th>Item Type</th>
+                    <th>Item type</th>
                   [% END %]
-                  [% IF ( showpriority ) %]
+                  [% IF showholds && showpriority %]
+                  <th>Holds and priority</th>
+                  [% ELSIF showholds %]
+                  <th>Holds</th>
+                  [% ELSIF showpriority %]
                   <th>Priority</th>
                   [% END %]
 		  [% IF ( reserve_in_future ) %]
-		  <th>Hold Starts on Date</th>
+        <th>Hold starts on date</th>
 		  [% END %]
-		  <th>Hold Not Needed After</th>
+        <th>Hold not needed after</th>
                   [% IF ( OPACItemHolds ) %]
-                    <th id="place_on_hdr" style="display:none">Place On</th>
+                    <th id="place_on_hdr" style="display:none">Place on</th>
                   [% END %]
                   [% UNLESS ( singleBranchMode ) %]
 		    [% IF ( choose_branch ) %]
-                        <th>Pickup Location</th>
+                        <th>Pickup location</th>
 		    [% END %]
                   [% END %]
                 </tr>[% ELSE %]<tr><th colspan="5">Title</th></tr>[% END %]
@@ -262,7 +265,7 @@
                 [% FOREACH bibitemloo IN bibitemloop %]
                   <tr>
                       [% IF ( bibitemloo.holdable ) %]
-					  <td>
+                                    <td class="hold">
                       <input class="reserve_mode" name="reserve_mode" type="hidden" value="single"/>
                       <input class="single_bib" name="single_bib" type="hidden" value="[% bibitemloo.biblionumber %]"/>
                         <span class="confirmjs_hold" title="[% bibitemloo.biblionumber %]"></span>
@@ -275,9 +278,9 @@
                         </span>
 					</td>
                       [% ELSE %]
-					  [% UNLESS ( none_available ) %]<td>&nbsp;</td>[% END %]
+                                      [% UNLESS ( none_available ) %]<td class="hold">&nbsp;</td>[% END %]
                       [% END %]
-                    [% IF ( bibitemloo.holdable ) %]<td>[% ELSE %]<td colspan="5">[% END %]
+                    [% IF ( bibitemloo.holdable ) %]<td class="title">[% ELSE %]<td class="title" colspan="5">[% END %]
                       <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=[% bibitemloo.biblionumber %]">[% bibitemloo.title |html %][% IF ( bibitemloo.subtitle ) %] [% FOREACH subtitl IN bibitemloo.subtitle %][% subtitl.subfield %][% END %][% END %]</a>
                       [% IF ( bibitemloo.author ) %],  by [% bibitemloo.author %][% END %]
 
@@ -297,88 +300,38 @@
                         [% END %]
 
                     </td>
-                    [% IF ( bibitemloo.holdable ) %][% UNLESS ( item_level_itypes ) %]
-                                          <td>
-                                            [% IF ( bibitemloo.imageurl ) %]<img src="[% bibitemloo.imageurl %]" alt="" />[% END %]
-                                [% bibitemloo.description %]
-                                          </td>
-                                        [% END %][% END %]
                     [% IF ( bibitemloo.holdable ) %]
-                    [% IF ( showpriority ) %]
-                    <td>
-                    [% bibitemloo.rank %] out of [% bibitemloo.reservecount %]
-                    </td>[% END %][% END %]
-		    [% IF ( reserve_in_future ) %]
-		    [% IF ( bibitemloo.holdable ) %]<td>
-              <input name="reserve_date_[% bibitemloo.biblionumber %]" id="reserve_date_[% bibitemloo.biblionumber %]" size="10">
+            <!-- HOLDABLE -->
+                        [% UNLESS ( item_level_itypes ) %]
+                        <td class="itype">
+                            [% IF ( bibitemloo.imageurl ) %]<img src="[% bibitemloo.imageurl %]" alt="" />[% END %]
+                            [% bibitemloo.description %]
+                        </td>
+                        [% END %]
+                        [% IF showholds || showpriority %]
+                        <td class="priority">
+                        [% IF showpriority %] [% bibitemloo.rank %] [% END %]
+                        [% IF showholds && showpriority %] out of [% END %]
+                        [% IF showholds %] [% bibitemloo.reservecount %] [% END %]
+                        </td>
+                        [% END %]
+                [% IF ( reserve_in_future ) %]
+                        <td class="reserve_date">
+              <input name="reserve_date_[% bibitemloo.biblionumber %]" id="from" size="10" class="datepickerfrom"/>
               <script language="JavaScript" type="text/javascript">
               //<![CDATA[
               $("#reserve_date_[% bibitemloo.biblionumber %]").attr( 'readonly', 'readonly' );
-
-              var cal_img = document.createElement('img');
-              cal_img.src = "[% themelang %]/lib/calendar/cal.gif";
-              cal_img.alt = "Show Calendar";
-              cal_img.border = "0";
-              cal_img.id = "CalendarReserveDate[% bibitemloo.biblionumber %]";
-              cal_img.style.cursor = "pointer";
-              document.getElementById("reserve_date_[% bibitemloo.biblionumber %]").parentNode.appendChild( cal_img );
-
-              function validate[% bibitemloo.biblionumber %](date) {
-                  var today = new Date();
-                        if ( (date > today) ||
-                                ( date.getDate() == today.getDate() &&
-                                  date.getMonth() == today.getMonth() &&
-                                  date.getFullYear() == today.getFullYear() ) ) {
-                            return false;
-                        } else {
-                            return true;
-                        }
-              };
-              Calendar.setup(
-              {
-                inputField : "reserve_date_[% bibitemloo.biblionumber %]",
-                ifFormat : "[% DHTMLcalendar_dateformat %]",
-                button : "CalendarReserveDate[% bibitemloo.biblionumber %]",
-                disableFunc : validate[% bibitemloo.biblionumber %],
-                dateStatusFunc : validate[% bibitemloo.biblionumber %]
-              }
-              );
               //]]>
               </script>
       <p style="margin:.3em 2em;">
-      <a href="#" style="font-size:85%;text-decoration:none;" onclick="document.getElementById('reserve_date_[% bibitemloo.biblionumber %]').value='';return false;">Clear Date</a></p>
+      <a href="#" style="font-size:85%;text-decoration:none;" onclick="document.getElementById('reserve_date_[% bibitemloo.biblionumber %]').value='';return false;">Clear date</a></p>
                 </td>[% END %]
 
 		    [% END %]
-	[% IF ( bibitemloo.holdable ) %]<td>
-        <input name="expiration_date_[% bibitemloo.biblionumber %]" id="expiration_date_[% bibitemloo.biblionumber %]" size="10" readonly="readonly" />
-        <img src="[% themelang %]/lib/calendar/cal.gif" alt="Show Calendar" border="0" id="CalendarExpirationDate_[% bibitemloo.biblionumber %]" style="cursor: pointer;" />
-        <script language="JavaScript" type="text/javascript">
-      //<![CDATA[
-      function validate1(date) {
-        var today = new Date();
-        if ( (date > today) ||
-                      ( date.getDate() == today.getDate() &&
-                        date.getMonth() == today.getMonth() &&
-                        date.getFullYear() == today.getFullYear() ) ) {
-          return false;
-        } else {
-          return true;
-        }
-      };
-      Calendar.setup(
-        {
-          inputField : "expiration_date_[% bibitemloo.biblionumber %]",
-          ifFormat : "[% DHTMLcalendar_dateformat %]",
-          button : "CalendarExpirationDate_[% bibitemloo.biblionumber %]",
-          disableFunc : validate1,
-          dateStatusFunc : validate1
-        }
-      );
-      //]]>
-        </script>
+        [% IF ( bibitemloo.holdable ) %]<td class="expiration_date">
+        <input name="expiration_date_[% bibitemloo.biblionumber %]" id="to" size="10" readonly="readonly" class="datepickerto" />
       <p style="margin:.3em 2em;">
-      <a href="#" style="font-size:85%;text-decoration:none;" onclick="document.getElementById('expiration_date_[% bibitemloo.biblionumber %]').value='';return false;">Clear Date</a></p>
+      <a href="#" style="font-size:85%;text-decoration:none;" onclick="document.getElementById('expiration_date_[% bibitemloo.biblionumber %]').value='';return false;">Clear date</a></p>
     </td>[% END %]
 
                     [% IF ( bibitemloo.holdable ) %]
@@ -429,7 +382,7 @@
                     [% UNLESS ( singleBranchMode ) %]
                         [% IF ( bibitemloo.holdable ) %]
 			    [% IF ( choose_branch ) %]
-			                   <td>
+                                          <td class="branch">
                          [% UNLESS ( bibitemloo.holdable ) %]
                             <select name="branch" id="branch_[% bibitemloo.biblionumber %]" disabled="disabled">
                               [% FOREACH branchChoicesLoo IN bibitemloo.branchChoicesLoop %]
@@ -467,49 +420,49 @@
                           <tr>
                             <th>Copy</th>
                             [% IF ( item_level_itypes ) %]
-                              <th>Item Type</th>
+                              <th>Item type</th>
                             [% END %]
                             <th>Barcode</th>
                             [% UNLESS ( singleBranchMode ) %]
-                              <th>Home Library</th>
-                              <th>Last Location</th>
+                              <th>Home library</th>
+                              <th>Last location</th>
                             [% END %]
-                            <th>Call Number</th>
+                            <th>Call number</th>
                             [% IF ( bibitemloo.itemdata_enumchron ) %]
-                              <th>Vol Info</th>
+                              <th>Vol info</th>
                             [% END %]
                             <th>Information</th>
                           </tr>
 
                           [% FOREACH itemLoo IN bibitemloo.itemLoop %]
                             <tr class="[% itemLoo.backgroundcolor %]">
-                              <td>
+                              <td class="copy">
                                 [% IF ( itemLoo.available ) %]
                                   <input type="radio" class="checkitem checkitem_[% bibitemloo.biblionumber %]" name="checkitem_[% bibitemloo.biblionumber %]"
                                          value="[% itemLoo.itemnumber %]" />
                                 [% ELSE %]
                                   <input disabled="disabled" type="radio" class="checkitem" name="checkitem" value="[% itemLoo.itemnumber %]" />
-                                  <img src="/opac-tmpl/[% theme %]/famfamfam/silk/cross.png" alt="Cannot be put on hold" title="Cannot be put on hold" />
+                                  <img src="/opac-tmpl/lib/famfamfam/silk/cross.png" alt="Cannot be put on hold" title="Cannot be put on hold" />
                                 [% END %] [% IF ( itemLoo.copynumber ) %][% itemLoo.copynumber %][% END %]
                               </td>
                               [% IF ( item_level_itypes ) %]
-                                <td>
+                                <td class="itype">
                                   [% UNLESS ( noItemTypeImages ) %]
                                   [% IF ( itemLoo.imageurl ) %]<img src="[% itemLoo.imageurl %]" alt="" />[% END %]
                                   [% END %]
 								[% itemLoo.description %]
                                 </td>
                               [% END %]
-                              <td>[% itemLoo.barcode %]</td>
+                              <td class="barcode">[% itemLoo.barcode %]</td>
                               [% UNLESS ( singleBranchMode ) %]
-                                <td>[% itemLoo.homeBranchName %]</td>
-                                <td>[% itemLoo.holdingBranchName %]</td>
+                                <td class="homebranch">[% itemLoo.homeBranchName %]</td>
+                                <td class="holdingbranch">[% itemLoo.holdingBranchName %]</td>
                               [% END %]
-                              <td>[% itemLoo.callNumber %]</td>
+                              <td class="call_no">[% itemLoo.callNumber %]</td>
                               [% IF ( itemLoo.itemdata_enumchron ) %]<!-- test -->
-                                <td>[% itemLoo.enumchron %]</td>
+                                <td class="vol_info">[% itemLoo.enumchron %]</td>
                               [% END %]
-                              <td>
+                              <td class="information">
                                 [% IF ( itemLoo.dateDue ) %]
                                   <span class="checkedout">Due [% itemLoo.dateDue %]</span>
                                 [% ELSIF ( itemLoo.transfertwhen ) %]

@@ -30,7 +30,7 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 
 BEGIN {
 	# set the version for version checking
-	$VERSION = 0.02;
+    $VERSION = 3.07.00.049;
 	require Exporter;
 	@ISA = qw(Exporter);
 	@EXPORT = qw(&ImportBreeding &BreedingSearch);
@@ -76,13 +76,7 @@ sub ImportBreeding {
     
     my $dbh = C4::Context->dbh;
     
-    my $batch_id = 0;
-    if ($batch_type eq 'z3950') {
-        $batch_id = GetZ3950BatchId($filename);
-    } else {
-        # create a new one
-        $batch_id = AddImportBatch('create_new', 'staging', 'batch', $filename, '');
-    }
+    my $batch_id = GetZ3950BatchId($filename);
     my $searchisbn = $dbh->prepare("select biblioitemnumber from biblioitems where isbn=?");
     my $searchissn = $dbh->prepare("select biblioitemnumber from biblioitems where issn=?");
     # FIXME -- not sure that this kind of checking is actually needed

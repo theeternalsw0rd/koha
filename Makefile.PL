@@ -226,6 +226,10 @@ command-line, e.g., READMEs.
 
 Directory for Apache and Zebra logs produced by Koha.
 
+=item BACKUP_DIR
+
+Directory for backup files produced by Koha.
+
 =item PAZPAR2_CONF_DIR
 
 Directory for PazPar2 configuration files.
@@ -290,8 +294,10 @@ my $target_map = {
   './rewrite-config.PL'         => 'NONE',
   './reviews'                   => 'INTRANET_CGI_DIR',
   './serials'                   => 'INTRANET_CGI_DIR',
+  './services'                  => 'INTRANET_CGI_DIR',
   './skel'                      => 'NONE',
   './skel/var/log/koha'         => { target => 'LOG_DIR', trimdir => -1 },
+  './skel/var/spool/koha'       => { target => 'BACKUP_DIR', trimdir => -1 },
   './skel/var/run/koha/zebradb' => { target => 'ZEBRA_RUN_DIR', trimdir => -1 },
   './skel/var/lock/koha/zebradb/authorities' => { target => 'ZEBRA_LOCK_DIR', trimdir => 6 },
   './skel/var/lib/koha/zebradb/authorities/key'  => { target => 'ZEBRA_DATA_DIR', trimdir => 6 },
@@ -408,8 +414,10 @@ my %config_defaults = (
   'INSTALL_SRU'       => 'yes',
   'INSTALL_PAZPAR2'   => 'no',
   'AUTH_INDEX_MODE'   => 'dom',
+  'BIB_INDEX_MODE'    => 'dom',
   'ZEBRA_MARC_FORMAT' => 'marc21',
   'ZEBRA_LANGUAGE'    => 'en',
+  'ZEBRA_TOKENIZER'   => 'chr',
   'ZEBRA_USER'        => 'kohauser',
   'ZEBRA_PASS'        => 'zebrastripes',
   'ZEBRA_SRU_HOST'    => 'localhost',
@@ -459,8 +467,10 @@ my %valid_config_values = (
   'INSTALL_ZEBRA' => { 'yes' => 1, 'no' => 1 },
   'INSTALL_SRU' => { 'yes' => 1, 'no' => 1 },
   'AUTH_INDEX_MODE' => { 'grs1' => 1, 'dom' => 1 },
+  'BIB_INDEX_MODE'  => { 'grs1' => 1, 'dom' => 1 },
   'ZEBRA_MARC_FORMAT' => { 'marc21' => 1, 'normarc' => 1, 'unimarc' => 1 }, # FIXME should generate from contents of distributation
   'ZEBRA_LANGUAGE'    => { 'en' => 1, 'fr' => 1, 'nb' => 1 }, # FIXME should generate from contents of distribution
+  'ZEBRA_TOKENIZER' => { chr => 1, icu => 1 },
   'RUN_DATABASE_TESTS' => { 'yes' => 1, 'no' => 1 },
   'USE_MEMCACHED'      => { 'yes' => 1, 'no' => 1 },
 );
@@ -487,23 +497,27 @@ my $pl_files = {
       'rewrite-config.PL' => [
          'blib/KOHA_CONF_DIR/koha-conf.xml',
          'blib/KOHA_CONF_DIR/koha-httpd.conf',
+         'blib/ZEBRA_CONF_DIR/etc/default.idx',
          'blib/MISC_DIR/koha-install-log'
          ],
 	  'fix-perl-path.PL' => [	# this script ensures the correct shebang line for the platform installed on...
 		 'blib'
-		 ]
+		 ],
 };
 
 if ($config{'INSTALL_ZEBRA'} eq "yes") {
     push @{ $pl_files->{'rewrite-config.PL'} }, (
         'blib/ZEBRA_CONF_DIR/etc/passwd',
         'blib/ZEBRA_CONF_DIR/zebra-biblios.cfg',
+        'blib/ZEBRA_CONF_DIR/zebra-biblios-dom.cfg',
         'blib/ZEBRA_CONF_DIR/zebra-authorities.cfg',
         'blib/ZEBRA_CONF_DIR/zebra-authorities-dom.cfg',
         'blib/ZEBRA_CONF_DIR/explain-authorities.xml',
         'blib/ZEBRA_CONF_DIR/explain-biblios.xml',
         'blib/ZEBRA_CONF_DIR/retrieval-info-auth-grs1.xml',
         'blib/ZEBRA_CONF_DIR/retrieval-info-auth-dom.xml',
+        'blib/ZEBRA_CONF_DIR/retrieval-info-bib-grs1.xml',
+        'blib/ZEBRA_CONF_DIR/retrieval-info-bib-dom.xml',
     );
     push @{ $pl_files->{'rewrite-config.PL'} }, (
         'blib/SCRIPT_DIR/koha-zebra-ctl.sh',
@@ -517,8 +531,11 @@ if ($config{'INSTALL_ZEBRA'} eq "yes") {
         );
     }
     $config{'ZEBRA_AUTH_CFG'} = $config{'AUTH_INDEX_MODE'} eq 'dom' ? 'zebra-authorities-dom.cfg' : 'zebra-authorities.cfg';
+    $config{'ZEBRA_BIB_CFG'}  = $config{'BIB_INDEX_MODE'}  eq 'dom' ? 'zebra-biblios-dom.cfg'     : 'zebra-biblios.cfg';
     $config{'AUTH_RETRIEVAL_CFG'} =
         $config{'AUTH_INDEX_MODE'} eq 'dom' ? 'retrieval-info-auth-dom.xml' : 'retrieval-info-auth-grs1.xml';
+    $config{'BIB_RETRIEVAL_CFG'}  =
+        $config{'BIB_INDEX_MODE'}  eq 'dom' ? 'retrieval-info-bib-dom.xml'  : 'retrieval-info-bib-grs1.xml';
 }
 
 if ($config{'INSTALL_MODE'} ne "dev") {
@@ -528,10 +545,15 @@ if ($config{'INSTALL_MODE'} ne "dev") {
     );
 }
 
+$config{ZEBRA_TOKENIZER_STMT} = $config{ZEBRA_TOKENIZER} eq 'icu'
+    ? 'icuchain words-icu.xml'
+    : 'charmap word-phrase-utf.chr';
+
 my %test_suite_override_dirs = (
     KOHA_CONF_DIR  => ['etc'],
     ZEBRA_CONF_DIR => ['etc', 'zebradb'],
     LOG_DIR        => ['var', 'log'],
+    BACKUP_DIR     => ['var', 'spool'],
     SCRIPT_DIR     => ['bin'],
     ZEBRA_LOCK_DIR => ['var', 'lock', 'zebradb'],
     ZEBRA_DATA_DIR => ['var', 'lib', 'zebradb'],
@@ -918,8 +940,8 @@ Since you've chosen to use Zebra with Koha,
 you must specify the primary MARC format of the
 records to be indexed by Zebra.
 
-Koha provides Zebra configuration files for MARC 21
-and UNIMARC.
+Koha provides Zebra configuration files for MARC21,
+NORMARC and UNIMARC.
 
 MARC format for Zebra indexing);
         $msg .= _add_valid_values_disp('ZEBRA_MARC_FORMAT', $valid_values);
@@ -935,6 +957,20 @@ Primary language for Zebra indexing);
 
         $msg = q(
 Koha can use one of  two different indexing modes
+for the MARC bibliographic records:
+
+grs1 - uses the Zebra GRS-1 filter, available
+       for legacy support
+dom  - uses the DOM XML filter; offers improved
+       functionality.
+
+Bibliographic indexing mode);
+        $msg .= _add_valid_values_disp('BIB_INDEX_MODE', $valid_values);
+        $config{'BIB_INDEX_MODE'} = _get_value('BIB_INDEX_MODE', $msg, $defaults->{'BIB_INDEX_MODE'}, $valid_values, $install_log_values);
+
+
+        $msg = q(
+Koha can use one of  two different indexing modes
 for the MARC authorities records:
 
 grs1 - uses the Zebra GRS-1 filter, available
@@ -945,6 +981,15 @@ dom  - uses the DOM XML filter; offers improved
 Authorities indexing mode);
         $msg .= _add_valid_values_disp('AUTH_INDEX_MODE', $valid_values);
         $config{'AUTH_INDEX_MODE'} = _get_value('AUTH_INDEX_MODE', $msg, $defaults->{'AUTH_INDEX_MODE'}, $valid_values, $install_log_values);
+
+        $msg = q(
+Zebra has two methods to perform records tokenization
+and characters normalization: CHR and ICU. ICU is
+recommended for catalogs containing non-Latin
+characters.);
+
+        $msg .= _add_valid_values_disp('ZEBRA_TOKENIZER', $valid_values);
+        $config{'ZEBRA_TOKENIZER'} = _get_value('ZEBRA_TOKENIZER', $msg, $defaults->{'ZEBRA_TOKENIZER'}, $valid_values, $install_log_values);
 
         $msg = q(
 Please specify Zebra database user);
@@ -1188,6 +1233,7 @@ sub get_target_directories {
         $dirmap{'DOC_DIR'} = File::Spec->catdir(@basedir, $package, 'doc');
         $dirmap{'ZEBRA_LOCK_DIR'} = File::Spec->catdir(@basedir, $package, 'var', 'lock', 'zebradb');
         $dirmap{'LOG_DIR'} =  File::Spec->catdir(@basedir, $package, 'var', 'log');
+        $dirmap{'BACKUP_DIR'} =  File::Spec->catdir(@basedir, $package, 'var', 'spool');
         $dirmap{'ZEBRA_DATA_DIR'} =  File::Spec->catdir(@basedir, $package, 'var', 'lib', 'zebradb');
         $dirmap{'ZEBRA_RUN_DIR'} =  File::Spec->catdir(@basedir, $package, 'var', 'run', 'zebradb');
     } elsif ($mode eq 'dev') {
@@ -1217,6 +1263,7 @@ sub get_target_directories {
         $dirmap{'DOC_DIR'} = File::Spec->catdir(@basedir, $package, 'doc');
         $dirmap{'ZEBRA_LOCK_DIR'} = File::Spec->catdir(@basedir, $package, 'var', 'lock', 'zebradb');
         $dirmap{'LOG_DIR'} =  File::Spec->catdir(@basedir, $package, 'var', 'log');
+        $dirmap{'BACKUP_DIR'} =  File::Spec->catdir(@basedir, $package, 'var', 'spool');
         $dirmap{'ZEBRA_DATA_DIR'} =  File::Spec->catdir(@basedir, $package, 'var', 'lib', 'zebradb');
         $dirmap{'ZEBRA_RUN_DIR'} =  File::Spec->catdir(@basedir, $package, 'var', 'run', 'zebradb');
     } else {
@@ -1238,6 +1285,7 @@ sub get_target_directories {
         $dirmap{'DOC_DIR'} = File::Spec->catdir(@basedir, $package, 'doc');
         $dirmap{'ZEBRA_LOCK_DIR'} = File::Spec->catdir(File::Spec->rootdir(), 'var', 'lock', $package, 'zebradb');
         $dirmap{'LOG_DIR'} =  File::Spec->catdir(File::Spec->rootdir(), 'var', 'log', $package);
+        $dirmap{'BACKUP_DIR'} =  File::Spec->catdir(File::Spec->rootdir(), 'var', 'spool', $package);
         $dirmap{'ZEBRA_DATA_DIR'} =  File::Spec->catdir(File::Spec->rootdir(), 'var', 'lib', $package, 'zebradb');
         $dirmap{'ZEBRA_RUN_DIR'} =  File::Spec->catdir(File::Spec->rootdir(), 'var', 'run', $package, 'zebradb');
     }

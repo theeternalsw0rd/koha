@@ -25,7 +25,7 @@ use C4::Reserves;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 
 BEGIN {
-	$VERSION = 2.11;
+    $VERSION = 3.07.00.049;
 	require Exporter;
 	@ISA = qw(Exporter);
 	@EXPORT_OK = qw();
@@ -86,7 +86,7 @@ sub new {
 	if (! $item) {
 		syslog("LOG_DEBUG", "new ILS::Item('%s'): not found", $item_id);
 		warn "new ILS::Item($item_id) : No item '$item_id'.";
-		return undef;
+        return;
 	}
     $item->{  'itemnumber'   } = $itemnumber;
     $item->{      'id'       } = $item->{barcode};     # to SIP, the barcode IS the id.
@@ -153,15 +153,22 @@ sub next_hold {
 }
 
 # hold_patron_id is NOT the barcode.  It's the borrowernumber.
-# That's because the reserving patron may not have a barcode, or may be from an different system entirely (ILL)!
+# If a return triggers capture for a hold the borrowernumber is passed
+# and saved so that other hold info can be retrieved
 sub hold_patron_id {
-    my $self = shift or return;
-    my $hold = $self->next_hold() or return;
-    return $hold->{borrowernumber};
+    my $self = shift;
+    my $id   = shift;
+    if ($id) {
+        $self->{hold}->{borrowernumber} = $id;
+    }
+    if ($self->{hold} ) {
+        return $self->{hold}->{borrowernumber};
+    }
+    return;
+
 }
 sub hold_patron_name {
     my $self = shift or return;
-    # return $self->{hold_patron_name} if $self->{hold_patron_name};    TODO: consider caching
     my $borrowernumber = (@_ ? shift: $self->hold_patron_id()) or return;
     my $holder = GetMember(borrowernumber=>$borrowernumber);
     unless ($holder) {
@@ -175,7 +182,6 @@ sub hold_patron_name {
                 "" ;                                         # neither populated, empty string
     my $name = $holder->{firstname} ? $holder->{firstname} . ' ' : '';
     $name .= $holder->{surname} . $extra;
-    # $self->{hold_patron_name} = $name;      # TODO: consider caching
     return $name;
 }
 
@@ -192,9 +198,15 @@ sub hold_patron_bcode {
 }
 
 sub destination_loc {
-    my $self = shift or return;
-    my $hold = $self->next_hold();
-    return ($hold ? $hold->{branchcode} : '');
+    my $self = shift;
+    my $set_loc = shift;
+    if ($set_loc) {
+        $self->{dest_loc} = $set_loc;
+    }
+    if ($self->{dest_loc} ) {
+        return $self->{dest_loc};
+    }
+    return q{};
 }
 
 our $AUTOLOAD;
@@ -335,25 +347,26 @@ sub available {
 	return 0;
 }
 
-sub _barcode_to_borrowernumber ($) {
+sub _barcode_to_borrowernumber {
     my $known = shift;
-    (defined($known)) or return undef;
-    my $member = GetMember(cardnumber=>$known) or return undef;
+    return unless defined $known;
+    my $member = GetMember(cardnumber=>$known) or return;
     return $member->{borrowernumber};
 }
-sub barcode_is_borrowernumber ($$$) {    # because hold_queue only has borrowernumber...
+sub barcode_is_borrowernumber {    # because hold_queue only has borrowernumber...
     my $self = shift;   # not really used
     my $barcode = shift;
-    my $number  = shift or return undef;    # can't be zero
-    (defined($barcode)) or return undef;    # might be 0 or 000 or 000000
-    my $converted = _barcode_to_borrowernumber($barcode) or return undef;
-    return ($number eq $converted); # even though both *should* be numbers, eq is safer.
+    my $number  = shift or return;    # can't be zero
+    return unless defined $barcode; # might be 0 or 000 or 000000
+    my $converted = _barcode_to_borrowernumber($barcode);
+    return unless $converted;
+    return ($number == $converted);
 }
-sub fill_reserve ($$) {
+sub fill_reserve {
     my $self = shift;
-    my $hold = shift or return undef;
+    my $hold = shift or return;
     foreach (qw(biblionumber borrowernumber reservedate)) {
-        $hold->{$_} or return undef;
+        $hold->{$_} or return;
     }
     return ModReserveFill($hold);
 }

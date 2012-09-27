@@ -28,7 +28,7 @@ use C4::Output;
 use C4::Circulation;
 use C4::Review;
 use C4::Biblio;
-use C4::Dates qw/format_date/;
+use C4::Dates;
 use C4::Members qw/GetMemberDetails/;
 use POSIX qw(ceil strftime);
 
@@ -101,8 +101,10 @@ for my $result (@$reviews){
 	$result->{size} = $bib->{'size'};
 	$result->{notes} = $bib->{'notes'};
 	$result->{timestamp} = $bib->{'timestamp'};
+    $result->{borrtitle} = $borr->{'title'};
 	$result->{firstname} = $borr->{'firstname'};
 	$result->{surname} = $borr->{'surname'};
+    $result->{userid} = $borr->{'userid'};
         if ($libravatar_enabled and $borr->{'email'}) {
             $result->{avatarurl} = libravatar_url(email => $borr->{'email'}, size => 40, https => $ENV{HTTPS});
         }
@@ -115,9 +117,6 @@ for my $result (@$reviews){
         my $rsstimestamp = C4::Dates->new($result->{datereviewed},"iso");
         my $rsstimestamp_output = $rsstimestamp->output("rfc822");
         $result->{timestamp} = $rsstimestamp_output;
-        $result->{datereviewed} = format_date($result->{datereviewed});
-    } else {
-        $result->{datereviewed} = format_date($result->{datereviewed});
     }
 }
 ## Build the page numbers on the bottom of the page
@@ -147,7 +146,8 @@ for my $result (@$reviews){
                     # the page number for this page
                     my $this_page_number = $i;
                     # it should only be highlighted if it's the current page
-                    my $highlight = 1 if ($this_page_number == $current_page_number);
+                    my $highlight;
+            $highlight = 1 if ($this_page_number == $current_page_number);
                     # put it in the array
                     push @page_numbers, { offset => $this_offset, pg => $this_page_number, highlight => $highlight };
 
@@ -159,7 +159,8 @@ for my $result (@$reviews){
                 for ($i=$current_page_number; $i<=($current_page_number + 20 );$i++) {
                     my $this_offset = ((($i-9)*$results_per_page)-$results_per_page);
                     my $this_page_number = $i-9;
-                    my $highlight = 1 if ($this_page_number == $current_page_number);
+                    my $highlight;
+            $highlight = 1 if ($this_page_number == $current_page_number);
                     if ($this_page_number <= $pages) {
                         push @page_numbers, { offset => $this_offset, pg => $this_page_number, highlight => $highlight };
                     }
