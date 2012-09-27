@@ -227,6 +227,7 @@ INSERT INTO `marc_tag_structure` (`tagfield`, `liblibrarian`, `libopac`, `repeat
 ('931', 'ancienne cote', '', 0, 0, '', ''),
 ('932', 'future cote', '', 0, 0, NULL, ''),
 ('936', 'numéro d''inventaire', '', 0, 0, NULL, ''),
+('942', 'total des prêts', '', 0, 0, NULL, ''),
 ('950', 'forme rejetée des zones 5XX', '', 0, 0, NULL, ''),
 ('955', 'état de collection des publications en série', 'état de collection', 0, 0, NULL, ''),
 ('956', 'état de collection des publications en série : supplément et matériel d''accompagnement', 'suppléments', 0, 0, NULL, ''),
@@ -318,7 +319,7 @@ INSERT INTO `marc_subfield_structure` (`tagfield`, `tagsubfield`, `liblibrarian`
 ('072', 'c', 'Numéro additionnels suivant le code normalisé', '', 0, 0, '', 0, '', '', '', 0, 0, '', NULL, '', ''),
 ('072', 'd', 'Mention de disponibilité et/ou de prix', '', 0, 0, '', 0, '', '', '', 0, 0, '', NULL, '', ''),
 ('072', 'z', 'Numéro ou code erroné', '', 0, 0, '', 0, '', '', '', 0, 0, '', NULL, '', ''),
-('073', 'a', 'Numéro', '', 0, 0, '', 0, '', '', '', NULL, 0, '', '', NULL, ''),
+('073', 'a', 'Numéro', '', 0, 0, 'biblioitems.ean', 0, '', '', '', NULL, 0, '', '', NULL, ''),
 ('073', 'b', 'Qualificatif', '', 0, 0, '', 0, '', '', '', NULL, 0, '', '', NULL, ''),
 ('073', 'c', 'Numéros additionnels', '', 0, 0, '', 0, '', '', '', NULL, 0, '', '', NULL, ''),
 ('073', 'd', 'Prix et disponibilité', '', 0, 0, '', 0, '', '', '', NULL, 0, '', '', NULL, ''),
@@ -1867,6 +1868,7 @@ INSERT INTO `marc_subfield_structure` (`tagfield`, `tagsubfield`, `liblibrarian`
 ('936', 'b', 'qualificatif', '', 0, 1, NULL, -1, NULL, NULL, '', NULL, NULL, '', NULL, NULL, ''),
 ('936', 'c', 'type de la Bibliothèque', '', 0, 1, NULL, -1, NULL, NULL, '', NULL, NULL, '', NULL, NULL, ''),
 ('936', 'd', 'signle de la Bibliothèque', '', 0, 1, NULL, -1, NULL, NULL, '', NULL, NULL, '', NULL, NULL, ''),
+('942', '0', 'Total des prêts', '', 0, 1, NULL, -1, NULL, NULL, '', NULL, NULL, '', NULL, NULL, ''),
 ('950', '2', 'code système', '', 0, 0, NULL, -1, NULL, NULL, '', NULL, NULL, '', NULL, NULL, ''),
 ('950', '3', 'numéro de la notice d''autorité', '', 0, 0, NULL, -1, NULL, NULL, '', NULL, NULL, '', NULL, NULL, ''),
 ('950', '9', 'numéro d''occurrence de l''étiquette', '', 0, 1, NULL, -1, NULL, NULL, '', NULL, NULL, '', NULL, NULL, ''),
@@ -2033,3 +2035,5 @@ INSERT INTO `marc_subfield_structure` (`tagfield`, `tagsubfield`, `liblibrarian`
 ('995', 's', 'élément de tri', '', 0, 1, '', -1, '', '', '', NULL, 0, '', NULL, NULL, ''),
 ('995', 'u', 'note', '', 0, 0, 'items.itemnotes', 10, '', '', '', NULL, 0, '', NULL, NULL, '');
 
+UPDATE `marc_subfield_structure` SET maxlength=24 WHERE tagfield='000';
+UPDATE `marc_subfield_structure` SET maxlength=36 WHERE tagfield='100';

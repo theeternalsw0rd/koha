@@ -46,7 +46,6 @@ use C4::Auth;
 use C4::Contract qw/GetContract/;
 use C4::Biblio;
 use C4::Output;
-use C4::Dates qw/format_date /;
 use CGI;
 
 use C4::Bookseller qw( GetBookSellerFromId DelBookseller );
@@ -68,21 +67,11 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
         debug           => 1,
     }
 );
-my $seller_gstrate = $supplier->{'gstrate'};
 
-# ensure the scalar isn't flagged as a string
-$seller_gstrate = ( defined $seller_gstrate ) ? $seller_gstrate + 0 : undef;
-my $tax_rate = $seller_gstrate // C4::Context->preference('gist') // 0;
-$tax_rate *= 100;
 #build array for currencies
 if ( $op eq 'display' ) {
 
     my $contracts = GetContract( { booksellerid => $booksellerid } );
-
-    for ( @{$contracts} ) {
-        $_->{contractstartdate} = format_date( $_->{contractstartdate} );
-        $_->{contractenddate}   = format_date( $_->{contractenddate} );
-    }
 
     $template->param(
         booksellerid  => $booksellerid,
@@ -108,16 +97,22 @@ if ( $op eq 'display' ) {
         gstreg        => $supplier->{'gstreg'},
         listincgst    => $supplier->{'listincgst'},
         invoiceincgst => $supplier->{'invoiceincgst'},
+        gstrate       => $supplier->{'gstrate'} + 0.0,
         discount      => $supplier->{'discount'},
+        deliverytime  => $supplier->{deliverytime},
         invoiceprice  => $supplier->{'invoiceprice'},
         listprice     => $supplier->{'listprice'},
-        GST           => $tax_rate,
-        default_tax   => defined($seller_gstrate),
         basketcount   => $supplier->{'basketcount'},
+        subscriptioncount   => $supplier->{'subscriptioncount'},
         contracts     => $contracts,
+        dateformat    => C4::Context->preference("dateformat"),
     );
 } elsif ( $op eq 'delete' ) {
-    DelBookseller($booksellerid);
+    # no further message needed for the user
+    # the DELETE button only appears in the template if basketcount == 0
+    if ( $supplier->{'basketcount'} == 0 ) {
+        DelBookseller($booksellerid);
+    }
     print $query->redirect('/cgi-bin/koha/acqui/acqui-home.pl');
     exit;
 } else {
@@ -141,9 +136,11 @@ if ( $op eq 'display' ) {
             };
     }
 
-    my $default_gst_rate = (C4::Context->preference('gist') * 100) || '0.0';
+    # get option values from gist syspref
+    my @gst_values = map {
+        option => $_
+    }, split( '\|', C4::Context->preference("gist") );
 
-    my $gstrate = defined $supplier->{gstrate} ? $supplier->{gstrate} * 100 : '';
     $template->param(
         booksellerid => $booksellerid,
         name         => $supplier->{'name'},
@@ -169,12 +166,12 @@ if ( $op eq 'display' ) {
         gstreg        => $supplier->{'gstreg'},
         listincgst    => $supplier->{'listincgst'},
         invoiceincgst => $supplier->{'invoiceincgst'},
-        gstrate       => $gstrate,
+        gstrate       => $supplier->{gstrate} ? $supplier->{'gstrate'}+0.0 : 0,
+        gst_values    => \@gst_values,
         discount      => $supplier->{'discount'},
+        deliverytime  => $supplier->{deliverytime},
         loop_currency => $loop_currency,
-        GST           => $tax_rate,
         enter         => 1,
-        default_gst_rate => $default_gst_rate,
     );
 }
 

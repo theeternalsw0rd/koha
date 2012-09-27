@@ -1,9 +1,9 @@
-<?xml version="1.0" encoding="utf-8"?>
+[% USE KohaDates # XML declaration should have no white space before it %]<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 <channel>
-     <title><![CDATA[[% IF ( LibraryNameTitle ) %][% LibraryNameTitle %][% ELSE %]Koha Online[% END %] Catalog Recent Comments]]></title>
+     <title><![CDATA[[% IF ( LibraryNameTitle ) %][% LibraryNameTitle %][% ELSE %]Koha online[% END %] Catalog Recent Comments]]></title>
      <link>[% OPACBaseURL %]/cgi-bin/koha/opac-showreviews.pl&amp;format=rss2</link>
-     <description><![CDATA[ The most recent comments from [% IF ( LibraryNameTitle ) %][% LibraryNameTitle %][% ELSE %]Koha Online[% END %] Catalog. Comments can be made by logged in users and are moderated by library staff.]]></description>
+     <description><![CDATA[ The most recent comments from [% IF ( LibraryNameTitle ) %][% LibraryNameTitle %][% ELSE %]Koha online[% END %] Catalog. Comments can be made by logged in users and are moderated by library staff.]]></description>
      <atom:link href="[% OPACBaseURL %]/cgi-bin/koha/opac-showreviews.pl&amp;format=rss2" rel="self" type="application/rss+xml" />
      <lastBuildDate>[% timestamp %]</lastBuildDate>
 	 [% FOREACH review IN reviews %]
@@ -11,7 +11,7 @@
        <title>New comment on [% review.title |html %] [% FOREACH subtitl IN review.subtitle %], [% subtitl.subfield |html %][% END %]</title>
        <link>[% OPACBaseURL %]/cgi-bin/koha/opac-detail.pl?biblionumber=[% review.biblionumber %]#comments</link>
        <description><![CDATA[
-[% IF ( OPACAmazonEnabled ) %][% IF ( OPACAmazonCoverImages ) %][% IF ( review.normalized_isbn ) %]<img src="http://images.amazon.com/images/P/[% review.normalized_isbn %].01.TZZZZZZZ.jpg" alt="" />[% END %][% END %][% END %]
+[% IF ( OPACAmazonCoverImages ) %][% IF ( review.normalized_isbn ) %]<img src="http://images.amazon.com/images/P/[% review.normalized_isbn %].01.TZZZZZZZ.jpg" alt="" />[% END %][% END %]
 
 [% IF ( SyndeticsEnabled ) %][% IF ( SyndeticsCoverImages ) %][% IF ( review.content_identifier_exists ) %][% IF ( using_https ) %]<img src="https://secure.syndetics.com/index.aspx?isbn=[% review.normalized_isbn %]/SC.GIF&amp;client=[% SyndeticsClientCode %]&amp;type=xw10&amp;upc=[% review.normalized_upc %]&amp;oclc=[% review.normalized_oclc %]" alt="" />
 [% ELSE %]
@@ -26,7 +26,7 @@
                         [% IF ( review.notes ) %], [% review.notes |html %][% END %]
                         [% IF ( review.size ) %] [% review.size |html %]. [% END %]
                         [% IF ( review.isbn ) %] [% review.isbn |html %][% END %] </p>
-<p>[% review.firstname %] [% review.surname %] commented on [% review.datereviewed %]: [% review.review |html %]</p>
+<p>[% IF ( review.borrowernumber && ShowReviewer ) %][% review.firstname %] [% review.surname %] commented[% ELSE %]Comment[% END %] on [% review.datereviewed | $KohaDates %]: [% review.review |html %]</p>
 						]]></description>
        <guid>[% OPACBaseURL %]/cgi-bin/koha/opac-detail.pl?biblionumber=[% review.biblionumber %]&amp;reviewid=[% review.reviewid %]</guid>
        <pubDate>[% review.timestamp %]</pubDate>

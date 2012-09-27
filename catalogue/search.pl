@@ -147,7 +147,7 @@ use C4::Search;
 use C4::Languages qw(getAllLanguages);
 use C4::Koha;
 use C4::Members qw(GetMember);
-use C4::VirtualShelves qw(GetRecentShelves);
+use C4::VirtualShelves;
 use POSIX qw(ceil floor);
 use C4::Branch; # GetBranches
 
@@ -239,44 +239,50 @@ my $categories = GetBranchCategories(undef,'searchdomain');
 $template->param(branchloop => \@branch_loop, searchdomainloop => $categories);
 
 # load the Type stuff
-# load the Type stuff
 my $itemtypes = GetItemTypes;
 # the index parameter is different for item-level itemtypes
 my $itype_or_itemtype = (C4::Context->preference("item-level_itypes"))?'itype':'itemtype';
-my @itemtypesloop;
-my $selected=1;
+my @advancedsearchesloop;
 my $cnt;
-my $advanced_search_types = C4::Context->preference("AdvancedSearchTypes");
+my $advanced_search_types = C4::Context->preference("AdvancedSearchTypes") || "itemtypes";
+my @advanced_search_types = split(/\|/, $advanced_search_types);
 
-if (!$advanced_search_types or $advanced_search_types eq 'itemtypes') {                                                                 foreach my $thisitemtype ( sort {$itemtypes->{$a}->{'description'} cmp $itemtypes->{$b}->{'description'} } keys %$itemtypes ) {
-    my %row =(  number=>$cnt++,
-                ccl => qq($itype_or_itemtype,phr),
+foreach my $advanced_srch_type (@advanced_search_types) {
+   if ($advanced_srch_type eq 'itemtypes') {
+   # itemtype is a special case, since it's not defined in authorized values
+        my @itypesloop;
+	foreach my $thisitemtype ( sort {$itemtypes->{$a}->{'description'} cmp $itemtypes->{$b}->{'description'} } keys %$itemtypes ) {
+	    my %row =(  number=>$cnt++,
+		ccl => "$itype_or_itemtype,phr",
                 code => $thisitemtype,
-                selected => $selected,
                 description => $itemtypes->{$thisitemtype}->{'description'},
-                count5 => $cnt % 4,
                 imageurl=> getitemtypeimagelocation( 'intranet', $itemtypes->{$thisitemtype}->{'imageurl'} ),
             );
-        $selected = 0 if ($selected) ;
-        push @itemtypesloop, \%row;
-    }
-    $template->param(itemtypeloop => \@itemtypesloop);
-} else {
-    my $advsearchtypes = GetAuthorisedValues($advanced_search_types);
-    for my $thisitemtype (sort {$a->{'lib'} cmp $b->{'lib'}} @$advsearchtypes) {
-        my %row =(
-                number=>$cnt++,
-                ccl => $advanced_search_types,
+	    push @itypesloop, \%row;
+	}
+        my %search_code = (  advanced_search_type => $advanced_srch_type,
+                             code_loop => \@itypesloop );
+        push @advancedsearchesloop, \%search_code;
+    } else {
+    # covers all the other cases: non-itemtype authorized values
+       my $advsearchtypes = GetAuthorisedValues($advanced_srch_type);
+        my @authvalueloop;
+	for my $thisitemtype (@$advsearchtypes) {
+		my %row =(
+				number=>$cnt++,
+				ccl => $advanced_srch_type,
                 code => $thisitemtype->{authorised_value},
-                selected => $selected,
                 description => $thisitemtype->{'lib'},
-                count5 => $cnt % 4,
-                imageurl=> getitemtypeimagelocation( 'intranet', $thisitemtype->{'imageurl'} ),
-            );
-        push @itemtypesloop, \%row;
+                imageurl => getitemtypeimagelocation( 'intranet', $thisitemtype->{'imageurl'} ),
+                );
+		push @authvalueloop, \%row;
+	}
+        my %search_code = (  advanced_search_type => $advanced_srch_type,
+                             code_loop => \@authvalueloop );
+        push @advancedsearchesloop, \%search_code;
     }
-    $template->param(itemtypeloop => \@itemtypesloop);
 }
+$template->param(advancedsearchesloop => \@advancedsearchesloop);
 
 # The following should only be loaded if we're bringing up the advanced search template
 if ( $template_type eq 'advsearch' ) {
@@ -366,7 +372,7 @@ if (   C4::Context->preference('defaultSortField')
       . C4::Context->preference('defaultSortOrder');
 }
 
-@sort_by = split("\0",$params->{'sort_by'}) if $params->{'sort_by'};
+@sort_by = $cgi->param('sort_by');
 $sort_by[0] = $default_sort_by unless $sort_by[0];
 foreach my $sort (@sort_by) {
     $template->param($sort => 1) if $sort;
@@ -374,8 +380,7 @@ foreach my $sort (@sort_by) {
 $template->param('sort_by' => $sort_by[0]);
 
 # Use the servers defined, or just search our local catalog(default)
-my @servers;
-@servers = split("\0",$params->{'server'}) if $params->{'server'};
+my @servers = $cgi->param('server');
 unless (@servers) {
     #FIXME: this should be handled using Context.pm
     @servers = ("biblioserver");
@@ -383,13 +388,11 @@ unless (@servers) {
 }
 # operators include boolean and proximity operators and are used
 # to evaluate multiple operands
-my @operators;
-@operators = split("\0",$params->{'op'}) if $params->{'op'};
+my @operators = $cgi->param('op');
 
 # indexes are query qualifiers, like 'title', 'author', etc. They
 # can be single or multiple parameters separated by comma: kw,right-Truncation 
-my @indexes;
-@indexes = split("\0",$params->{'idx'});
+my @indexes = $cgi->param('idx');
 
 # if a simple index (only one)  display the index used in the top search box
 if ($indexes[0] && (!$indexes[1] || $params->{'scan'})) {
@@ -400,12 +403,10 @@ if ($indexes[0] && (!$indexes[1] || $params->{'scan'})) {
 
 
 # an operand can be a single term, a phrase, or a complete ccl query
-my @operands;
-@operands = split("\0",$params->{'q'}) if $params->{'q'};
+my @operands = $cgi->param('q');
 
 # limits are use to limit to results to a pre-defined category such as branch or language
-my @limits;
-@limits = split("\0",$params->{'limit'}) if $params->{'limit'};
+my @limits = $cgi->param('limit');
 
 if($params->{'multibranchlimit'}) {
     push @limits, '('.join( " or ", map { "branch: $_ " } @{ GetBranchesInCategory( $params->{'multibranchlimit'} ) } ).')';
@@ -523,7 +524,7 @@ if (C4::Context->preference('NoZebra')) {
     };
 } else {
     eval {
-        ($error, $results_hashref, $facets) = getRecords($query,$simple_query,\@sort_by,\@servers,$results_per_page,$offset,$expanded_facet,$branches,$query_type,$scan);
+        ($error, $results_hashref, $facets) = getRecords($query,$simple_query,\@sort_by,\@servers,$results_per_page,$offset,$expanded_facet,$branches,$itemtypes,$query_type,$scan);
     };
 }
 # This sorts the facets into alphabetical order
@@ -695,21 +696,13 @@ if ($query_desc || $limit_desc) {
 # VI. BUILD THE TEMPLATE
 
 # Build drop-down list for 'Add To:' menu...
-
-my $row_count = 10; # FIXME:This probably should be a syspref
-my ($pubshelves, $total) = GetRecentShelves(2, $row_count, undef);
-my ($barshelves, $total) = GetRecentShelves(1, $row_count, $borrowernumber);
-
-if (@{$pubshelves}) {
-        $template->param( addpubshelves     => scalar @{$pubshelves});
-        $template->param( addpubshelvesloop => $pubshelves);
-}
-
-if (@{$barshelves}) {
-        $template->param( addbarshelves     => scalar @{$barshelves});
-        $template->param( addbarshelvesloop => $barshelves);
-}
-
-
+my ($totalref, $pubshelves, $barshelves)=
+	C4::VirtualShelves::GetSomeShelfNames($borrowernumber,'COMBO',1);
+$template->param(
+        addbarshelves     => $totalref->{bartotal},
+        addbarshelvesloop => $barshelves,
+	addpubshelves     => $totalref->{pubtotal},
+	addpubshelvesloop => $pubshelves,
+	);
 
 output_html_with_http_headers $cgi, $cookie, $template->output;

@@ -13,6 +13,8 @@ use ILS;
 use ILS::Transaction;
 
 use C4::Circulation;
+use C4::Reserves qw( ModReserveAffect );
+use C4::Items qw( ModItemTransfer );
 use C4::Debug;
 
 our @ISA = qw(ILS::Transaction);
@@ -44,7 +46,10 @@ sub new {
 
 sub do_checkin {
     my $self = shift;
-    my $branch = @_ ? shift : 'SIP2' ;
+    my $branch = shift;
+    if (!$branch) {
+        $branch = 'SIP2';
+    }
     my $barcode = $self->{item}->id;
     $debug and warn "do_checkin() calling AddReturn($barcode, $branch)";
     my ($return, $messages, $iteminformation, $borrower) = AddReturn($barcode, $branch);
@@ -75,8 +80,23 @@ sub do_checkin {
     }
     if ($messages->{ResFound}) {
         $self->hold($messages->{ResFound});
-        $debug and warn "Item returned at $branch reserved at $messages->{ResFound}->{branchcode}";
-        $self->alert_type(($branch eq $messages->{ResFound}->{branchcode}) ? '01' : '02');
+        if ($branch eq $messages->{ResFound}->{branchcode}) {
+            $self->alert_type('01');
+            ModReserveAffect( $messages->{ResFound}->{itemnumber},
+                $messages->{ResFound}->{borrowernumber}, 0);
+
+        } else {
+            $self->alert_type('02');
+            ModReserveAffect( $messages->{ResFound}->{itemnumber},
+                $messages->{ResFound}->{borrowernumber}, 1);
+            ModItemTransfer( $messages->{ResFound}->{itemnumber},
+                $branch,
+                $messages->{ResFound}->{branchcode}
+            );
+
+        }
+        $self->{item}->hold_patron_id( $messages->{ResFound}->{borrowernumber} );
+        $self->{item}->destination_loc( $messages->{ResFound}->{branchcode} );
     }
     $self->alert(1) if defined $self->alert_type;  # alert_type could be "00", hypothetically
     $self->ok($return);

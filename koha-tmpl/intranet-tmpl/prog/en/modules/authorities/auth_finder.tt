@@ -1,11 +1,12 @@
 [% INCLUDE 'doc-head-open.inc' %]
-<title>Koha &rsaquo; Cataloging Authority Plugin</title>
+<title>Koha &rsaquo; Cataloging authority plugin</title>
 [% INCLUDE 'doc-head-close.inc' %]
 <style type="text/css">
 #custom-doc { width:51.46em;*width:50.17em;min-width:675px; margin:auto; text-align:left; } 
 </style>
+
 </head>
-<body>
+<body id="auth_auth_finder" class="auth">
 <div id="custom-doc" class="yui-t7">
    
    <div id="bd">

@@ -55,6 +55,7 @@ my $nomatch_action = $input->param('nomatch_action');
 my $parse_items = $input->param('parse_items');
 my $item_action = $input->param('item_action');
 my $comments = $input->param('comments');
+my $record_type = $input->param('record_type');
 my $encoding = $input->param('encoding');
 my ($template, $loggedinuser, $cookie)
 	= get_template_and_user({template_name => "tools/stage-marc-import.tmpl",
@@ -115,7 +116,7 @@ if ($completedJobID) {
             # close STDOUT to signal to Apache that
             # we're now running in the background
             close STDOUT;
-            close STDERR;
+            # close STDERR; # there is no good reason to close STDERR
         } else {
             # fork failed, so exit immediately
             warn "fork failed while attempting to run $ENV{'SCRIPT_NAME'} as a background job";
@@ -130,7 +131,7 @@ if ($completedJobID) {
     }
 
     # FIXME branch code
-    my ($batch_id, $num_valid, $num_items, @import_errors) = BatchStageMarcRecords($encoding, $marcrecord, $filename, $comments, '', $parse_items, 0, 50, staging_progress_callback($job, $dbh));
+    my ($batch_id, $num_valid, $num_items, @import_errors) = BatchStageMarcRecords($record_type, $encoding, $marcrecord, $filename, $comments, '', $parse_items, 0, 50, staging_progress_callback($job, $dbh));
 
     $dbh->commit();
 
@@ -143,7 +144,7 @@ if ($completedJobID) {
         if (defined $matcher) {
             $checked_matches = 1;
             $matcher_code = $matcher->code();
-            $num_with_matches = BatchFindBibDuplicates($batch_id, $matcher, 
+            $num_with_matches = BatchFindDuplicates($batch_id, $matcher,
                                                        10, 50, matching_progress_callback($job, $dbh));
             SetImportBatchMatcher($batch_id, $matcher_id);
             SetImportBatchOverlayAction($batch_id, $overlay_action);

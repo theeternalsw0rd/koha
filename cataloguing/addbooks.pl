@@ -49,7 +49,7 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
         query           => $input,
         type            => "intranet",
         authnotrequired => 0,
-        flagsrequired   => { editcatalogue => 'edit_catalogue' },
+        flagsrequired   => { editcatalogue => '*' },
         debug           => 1,
     }
 );
@@ -70,8 +70,7 @@ if ($query) {
 
     # build query
     my @operands = $query;
-    my (@operators, @indexes, @sort_by, @limits) = ();
-    my ( $builterror,$builtquery,$simple_query,$query_cgi,$query_desc,$limit,$limit_cgi,$limit_desc,$stopwords_removed,$query_type) = buildQuery(\@operators,\@operands,\@indexes,@limits,\@sort_by,undef,undef);
+    my ( $builterror,$builtquery,$simple_query,$query_cgi,$query_desc,$limit,$limit_cgi,$limit_desc,$stopwords_removed,$query_type) = buildQuery(undef,\@operands);
 
     # find results
     my ( $error, $marcresults, $total_hits ) = SimpleSearch($builtquery, $results_per_page * ($page - 1), $results_per_page);

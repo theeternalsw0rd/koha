@@ -197,7 +197,42 @@ our $PERL_DEPS = {
     'DateTime' => {
         'usage'    => 'Core',
         'required' => '1',
-        'min_ver'  => '0.51'
+        'min_ver'  => '0.58'
+    },
+    'DateTime::TimeZone' => {
+        'usage'    => 'Core',
+        'required' => '1',
+        'min_ver'  => '1.26'
+    },
+    'DateTime::Format::DateParse' => {
+        'usage'    => 'Core',
+        'required' => '1',
+        'min_ver'  => '0.04'
+    },
+    'DateTime::Format::MySQL' => {
+        'usage'    => 'Core',
+        'required' => '1',
+        'min_ver'  => '0.04'
+    },
+    'DateTime::Set' => {
+        'usage'    => 'Core',
+        'required' => '1',
+        'min_ver'  => '0.28'
+    },
+    'DateTime::Event::ICal' => {
+        'usage'    => 'Core',
+        'required' => '1',
+        'min_ver'  => '0.08'
+    },
+    'Readonly' => {
+        'usage'    => 'Core',
+        'required' => '1',
+        'min_ver'  => '1.03'
+    },
+    'Readonly::XS' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '1.02'
     },
     'Graphics::Magick' => {
         'usage'    => 'Patron Card Creator Feature',
@@ -213,6 +248,21 @@ our $PERL_DEPS = {
         'usage'    => 'Memcached Feature (Experimental)',
         'required' => '0',
         'min_ver'  => '0.03'
+    },
+    'Cache::Memcached::Fast' => {
+        'usage'    => 'Caching',
+        'required' => '0',
+        'min_ver'  => '0.17'
+    },
+    'CHI' => {
+        'usage'    => 'Caching',
+        'required' => '0',
+        'min_ver'  => '0.36'
+    },
+    'CHI::Driver::Memcached' => {
+        'usage'    => 'Caching',
+        'required' => '0',
+        'min_ver'  => '0.12'
     },
     'Net::LDAP::Filter' => {
         'usage'    => 'LDAP Interface Feature',
@@ -483,7 +533,83 @@ our $PERL_DEPS = {
         'usage'    => 'Core',
         'required' => '1',
         'min_ver'  => '0.09',
-      },
+    },
+    'Template::Plugin::HtmlToText' => {
+        'usage'    => 'Core',
+        'required' => '1',
+        'min_ver'  => '0.03',
+    },
+    'Data::Paginator' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '0.04',
+    },
+    'Data::Pagination' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '0.44',
+    },
+    'JSON::Any' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '1.28',
+    },
+    'MooseX::Storage' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '0.30',
+    },
+    'MooseX::Types' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '0.30',
+    },
+    'String::RewritePrefix' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '0.006',
+    },
+    'Time::Progress' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '1.7',
+    },
+    'DBD::Mock' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '1.39'
+    },
+    'Test::MockModule' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '0.05',
+    },
+    'Test::Warn' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '0.21',
+    },
+    'Test::Strict' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '0.14',
+
+    },
+    'Test::YAML::Valid' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '0.04',
+    },
+    'Text::Unaccent' => {
+        'usage'    => 'Core',
+        'required' => '1',
+        'min_ver'  => '1.08',
+    },
+    'HTML::FormatText' => {
+        'usage'    => 'Core',
+        'required' => '1',
+        'min_ver'  => '1.23',
+    },
 };
 
 1;
@@ -506,7 +632,7 @@ end of the outer hash and follow the key/value pattern used in the other depende
 =head2 Debian
 
 If you change the list of dependencies, and you use Debian, please also
-run the debian/update-control script and commit the modifed version of
+run the debian/update-control script and commit the modified version of
 debian/control into git as well. If you're not running Debian, don't
 worry about it.
 

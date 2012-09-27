@@ -29,12 +29,13 @@ use MARC::File::USMARC;
 use C4::Context;
 use C4::Koha;
 use C4::Auth;
+use C4::AuthoritiesMarc;
 use C4::Output;
 use C4::Biblio;
 use C4::ImportBatch;
 use C4::Matcher;
 use C4::BackgroundJob;
-use C4::Labels::Batch 1.000000;
+use C4::Labels::Batch;
 use C4::Branch qw(get_branch_code_from_name);
 
 my $script_name = "/cgi-bin/koha/tools/manage-marc-import.pl";
@@ -42,7 +43,7 @@ my $script_name = "/cgi-bin/koha/tools/manage-marc-import.pl";
 my $input = new CGI;
 my $op = $input->param('op') || '';
 my $completedJobID = $input->param('completedJobID');
-my $runinbackground = $input->param('runinbackground');
+our $runinbackground = $input->param('runinbackground');
 my $import_batch_id = $input->param('import_batch_id') || '';
 
 # record list displays
@@ -59,8 +60,8 @@ my ($template, $loggedinuser, $cookie)
                  });
 
 my %cookies = parse CGI::Cookie($cookie);
-my $sessionID = $cookies{'CGISESSID'}->value;
-my $dbh = C4::Context->dbh;
+our $sessionID = $cookies{'CGISESSID'}->value;
+our $dbh = C4::Context->dbh;
 
 # Frameworks selection loop
 {
@@ -99,7 +100,7 @@ if ($op eq "") {
     if ($import_batch_id eq '') {
         import_batches_list($template, $offset, $results_per_page);
     } else {
-        import_biblios_list($template, $import_batch_id, $offset, $results_per_page);
+        import_records_list($template, $import_batch_id, $offset, $results_per_page);
     }
 } elsif ($op eq "commit-batch") {
     if ($completedJobID) {
@@ -108,14 +109,14 @@ if ($op eq "") {
         my $framework = $input->param('framework');
         commit_batch($template, $import_batch_id, $framework);
     }
-    import_biblios_list($template, $import_batch_id, $offset, $results_per_page);
+    import_records_list($template, $import_batch_id, $offset, $results_per_page);
 } elsif ($op eq "revert-batch") {
     if ($completedJobID) {
         add_saved_job_results_to_template($template, $completedJobID);
     } else {
         revert_batch($template, $import_batch_id);
     }
-    import_biblios_list($template, $import_batch_id, $offset, $results_per_page);
+    import_records_list($template, $import_batch_id, $offset, $results_per_page);
 } elsif ($op eq "clean-batch") {
     CleanBatch($import_batch_id);
     import_batches_list($template, $offset, $results_per_page);
@@ -131,7 +132,7 @@ if ($op eq "") {
     my $item_action = $input->param('item_action');
     redo_matching($template, $import_batch_id, $new_matcher_id, $current_matcher_id, 
                   $overlay_action, $nomatch_action, $item_action);
-    import_biblios_list($template, $import_batch_id, $offset, $results_per_page);
+    import_records_list($template, $import_batch_id, $offset, $results_per_page);
 } 
 
 output_html_with_http_headers $input, $cookie, $template->output;
@@ -163,21 +164,17 @@ sub redo_matching {
         $template->param('changed_item_action' => 1);
     }
 
-    if ($new_matcher_id eq $current_matcher_id) {
-        return;
-    } 
-
     my $num_with_matches = 0;
     if (defined $new_matcher_id and $new_matcher_id ne "") {
         my $matcher = C4::Matcher->fetch($new_matcher_id);
         if (defined $matcher) {
-            $num_with_matches = BatchFindBibDuplicates($import_batch_id, $matcher);
+            $num_with_matches = BatchFindDuplicates($import_batch_id, $matcher);
             SetImportBatchMatcher($import_batch_id, $new_matcher_id);
         } else {
             $rematch_failed = 1;
         }
     } else {
-        $num_with_matches = BatchFindBibDuplicates($import_batch_id, undef);
+        $num_with_matches = BatchFindDuplicates($import_batch_id, undef);
         SetImportBatchMatcher($import_batch_id, undef);
         SetImportBatchOverlayAction('create_new');
     }
@@ -214,13 +211,14 @@ sub import_batches_list {
     foreach my $batch (@$batches) {
         push @list, {
             import_batch_id => $batch->{'import_batch_id'},
-            num_biblios => $batch->{'num_biblios'},
+            num_records => $batch->{'num_records'},
             num_items => $batch->{'num_items'},
             upload_timestamp => $batch->{'upload_timestamp'},
             import_status => $batch->{'import_status'},
-            file_name => $batch->{'file_name'},
+            file_name => $batch->{'file_name'} || "($batch->{'batch_type'})",
             comments => $batch->{'comments'},
             can_clean => ($batch->{'import_status'} ne 'cleaned') ? 1 : 0,
+            record_type => $batch->{'record_type'},
         };
     }
     $template->param(batch_list => \@list); 
@@ -244,7 +242,7 @@ sub commit_batch {
         $callback = progress_callback($job, $dbh);
     }
     my ($num_added, $num_updated, $num_items_added, $num_items_errored, $num_ignored) = 
-        BatchCommitBibRecords($import_batch_id, $framework, 50, $callback);
+        BatchCommitRecords($import_batch_id, $framework, 50, $callback);
     $dbh->commit();
 
     my $results = {
@@ -273,7 +271,7 @@ sub revert_batch {
         $callback = progress_callback($job, $dbh);
     }
     my ($num_deleted, $num_errors, $num_reverted, $num_items_deleted, $num_ignored) = 
-        BatchRevertBibRecords($import_batch_id, 50, $callback);
+        BatchRevertRecords($import_batch_id, 50, $callback);
     $dbh->commit();
 
     my $results = {
@@ -295,7 +293,7 @@ sub put_in_background {
     my $import_batch_id = shift;
 
     my $batch = GetImportBatch($import_batch_id);
-    my $job = C4::BackgroundJob->new($sessionID, $batch->{'file_name'}, $ENV{'SCRIPT_NAME'}, $batch->{'num_biblios'});
+    my $job = C4::BackgroundJob->new($sessionID, $batch->{'file_name'}, $ENV{'SCRIPT_NAME'}, $batch->{'num_records'});
     my $jobID = $job->id();
 
     # fork off
@@ -350,46 +348,53 @@ sub add_saved_job_results_to_template {
     add_results_to_template($template, $results);
 }
 
-sub import_biblios_list {
+sub import_records_list {
     my ($template, $import_batch_id, $offset, $results_per_page) = @_;
 
     my $batch = GetImportBatch($import_batch_id);
-    my $biblios = GetImportBibliosRange($import_batch_id, $offset, $results_per_page);
+    my $records = GetImportRecordsRange($import_batch_id, $offset, $results_per_page);
     my @list = ();
-    foreach my $biblio (@$biblios) {
-        my $citation = $biblio->{'title'};
-        $citation .= " $biblio->{'author'}" if $biblio->{'author'};
-        $citation .= " (" if $biblio->{'issn'} or $biblio->{'isbn'};
-        $citation .= $biblio->{'isbn'} if $biblio->{'isbn'};
-        $citation .= ", " if $biblio->{'issn'} and $biblio->{'isbn'};
-        $citation .= $biblio->{'issn'} if $biblio->{'issn'};
-        $citation .= ")" if $biblio->{'issn'} or $biblio->{'isbn'};
+    foreach my $record (@$records) {
+        my $citation = $record->{'title'} || $record->{'authorized_heading'};
+        $citation .= " $record->{'author'}" if $record->{'author'};
+        $citation .= " (" if $record->{'issn'} or $record->{'isbn'};
+        $citation .= $record->{'isbn'} if $record->{'isbn'};
+        $citation .= ", " if $record->{'issn'} and $record->{'isbn'};
+        $citation .= $record->{'issn'} if $record->{'issn'};
+        $citation .= ")" if $record->{'issn'} or $record->{'isbn'};
 
-        my $match = GetImportRecordMatches($biblio->{'import_record_id'}, 1);
+        my $match = GetImportRecordMatches($record->{'import_record_id'}, 1);
         my $match_citation = '';
         if ($#$match > -1) {
-            $match_citation .= $match->[0]->{'title'} if defined($match->[0]->{'title'});
-            $match_citation .= ' ' . $match->[0]->{'author'} if defined($match->[0]->{'author'});
+            if ($match->[0]->{'record_type'} eq 'biblio') {
+                $match_citation .= $match->[0]->{'title'} if defined($match->[0]->{'title'});
+                $match_citation .= ' ' . $match->[0]->{'author'} if defined($match->[0]->{'author'});
+            } elsif ($match->[0]->{'record_type'} eq 'auth') {
+                $match_citation .= $match->[0]->{'authorized_heading'} if defined($match->[0]->{'authorized_heading'});
+            }
         }
 
         push @list,
-          { import_record_id         => $biblio->{'import_record_id'},
-            final_match_biblionumber => $biblio->{'matched_biblionumber'},
+          { import_record_id         => $record->{'import_record_id'},
+            final_match_id           => $record->{'matched_biblionumber'} || $record->{'matched_authid'},
             citation                 => $citation,
-            status                   => $biblio->{'status'},
-            record_sequence          => $biblio->{'record_sequence'},
-            overlay_status           => $biblio->{'overlay_status'},
-            match_biblionumber       => $#$match > -1 ? $match->[0]->{'biblionumber'} : 0,
+            status                   => $record->{'status'},
+            record_sequence          => $record->{'record_sequence'},
+            overlay_status           => $record->{'overlay_status'},
+            # Sorry about the match_id being from the "biblionumber" field;
+            # as it turns out, any match id will go in biblionumber
+            match_id                 => $#$match > -1 ? $match->[0]->{'biblionumber'} : 0,
             match_citation           => $match_citation,
             match_score              => $#$match > -1 ? $match->[0]->{'score'} : 0,
+            record_type              => $record->{'record_type'},
           };
     }
-    my $num_biblios = $batch->{'num_biblios'};
-    $template->param(biblio_list => \@list); 
-    add_page_numbers($template, $offset, $results_per_page, $num_biblios);
+    my $num_records = $batch->{'num_records'};
+    $template->param(record_list => \@list);
+    add_page_numbers($template, $offset, $results_per_page, $num_records);
     $template->param(offset => $offset);
     $template->param(range_top => $offset + $results_per_page - 1);
-    $template->param(num_results => $num_biblios);
+    $template->param(num_results => $num_records);
     $template->param(results_per_page => $results_per_page);
     $template->param(import_batch_id => $import_batch_id);
     my $overlay_action = GetImportBatchOverlayAction($import_batch_id);
@@ -412,12 +417,13 @@ sub batch_info {
     $template->param(comments => $batch->{'comments'});
     $template->param(import_status => $batch->{'import_status'});
     $template->param(upload_timestamp => $batch->{'upload_timestamp'});
-    $template->param(num_biblios => $batch->{'num_biblios'});
-    $template->param(num_items => $batch->{'num_biblios'});
+    $template->{VARS}->{'record_type'} = $batch->{'record_type'};
+    $template->param(num_records => $batch->{'num_records'});
+    $template->param(num_items => $batch->{'num_items'});
     if ($batch->{'import_status'} ne 'cleaned') {
         $template->param(can_clean => 1);
     }
-    if ($batch->{'num_biblios'} > 0) {
+    if ($batch->{'num_records'} > 0) {
         if ($batch->{'import_status'} eq 'staged' or $batch->{'import_status'} eq 'reverted') {
             $template->param(can_commit => 1);
         }
@@ -433,11 +439,11 @@ sub batch_info {
             $template->param('current_matcher_description' => $matcher->description());
         }
     }
-    add_matcher_list($batch->{'matcher_id'});
+    add_matcher_list($template,$batch->{'matcher_id'});
 }
 
 sub add_matcher_list {
-    my $current_matcher_id = shift;
+    my ($template,$current_matcher_id) = @_;
     my @matchers = C4::Matcher::GetMatcherList();
     if (defined $current_matcher_id) {
         for (my $i = 0; $i <= $#matchers; $i++) {

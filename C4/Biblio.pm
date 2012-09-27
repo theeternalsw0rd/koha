@@ -34,11 +34,13 @@ use C4::Dates qw/format_date/;
 use C4::Log;    # logaction
 use C4::ClassSource;
 use C4::Charset;
+use C4::Linker;
+use C4::OAI::Sets;
 
 use vars qw($VERSION @ISA @EXPORT);
 
 BEGIN {
-    $VERSION = 1.00;
+    $VERSION = 3.07.00.049;
 
     require Exporter;
     @ISA = qw( Exporter );
@@ -81,6 +83,7 @@ BEGIN {
       &GetXmlBiblio
       &GetCOinSBiblio
       &GetMarcPrice
+      &MungeMarcPrice
       &GetMarcQuantity
 
       &GetAuthorisedValueDesc
@@ -101,6 +104,8 @@ BEGIN {
       &ModBiblio
       &ModBiblioframework
       &ModZebra
+      &UpdateTotalIssues
+      &RemoveAllNsb
     );
 
     # To delete something
@@ -111,6 +116,7 @@ BEGIN {
     # To link headings in a bib record
     # to authority records.
     push @EXPORT, qw(
+      &BiblioAutoLink
       &LinkBibHeadingsToAuthorities
     );
 
@@ -129,6 +135,7 @@ BEGIN {
       &TransformHtmlToMarc
       &TransformHtmlToXml
       &GetNoZebraIndexes
+      prepare_host_field
     );
 }
 
@@ -266,6 +273,11 @@ sub AddBiblio {
     # now add the record
     ModBiblioMarc( $record, $biblionumber, $frameworkcode ) unless $defer_marc_save;
 
+    # update OAI-PMH sets
+    if(C4::Context->preference("OAI-PMH:AutoUpdateSets")) {
+        C4::OAI::Sets::UpdateOAISetsBiblio($biblionumber, $record);
+    }
+
     logaction( "CATALOGUING", "ADD", $biblionumber, "biblio" ) if C4::Context->preference("CataloguingLog");
     return ( $biblionumber, $biblioitemnumber );
 }
@@ -337,6 +349,12 @@ sub ModBiblio {
     # modify the other koha tables
     _koha_modify_biblio( $dbh, $oldbiblio, $frameworkcode );
     _koha_modify_biblioitem_nonmarc( $dbh, $oldbiblio );
+
+    # update OAI-PMH sets
+    if(C4::Context->preference("OAI-PMH:AutoUpdateSets")) {
+        C4::OAI::Sets::UpdateOAISetsBiblio($biblionumber, $record);
+    }
+
     return 1;
 }
 
@@ -415,6 +433,13 @@ sub DelBiblio {
         C4::Serials::DelSubscription( $subscription->{subscriptionid} );
     }
 
+    # We delete any existing holds
+    require C4::Reserves;
+    my ($count, $reserves) = C4::Reserves::GetReservesFromBiblionumber($biblionumber);
+    foreach my $res ( @$reserves ) {
+        C4::Reserves::CancelReserve( $res->{'biblionumber'}, $res->{'itemnumber'}, $res->{'borrowernumber'} );
+    }
+
     # Delete in Zebra. Be careful NOT to move this line after _koha_delete_biblio
     # for at least 2 reasons :
     # - we need to read the biblio if NoZebra is set (to remove it from the indexes
@@ -450,9 +475,42 @@ sub DelBiblio {
     return;
 }
 
+
+=head2 BiblioAutoLink
+
+  my $headings_linked = BiblioAutoLink($record, $frameworkcode)
+
+Automatically links headings in a bib record to authorities.
+
+=cut
+
+sub BiblioAutoLink {
+    my $record        = shift;
+    my $frameworkcode = shift;
+    my ( $num_headings_changed, %results );
+
+    my $linker_module =
+      "C4::Linker::" . ( C4::Context->preference("LinkerModule") || 'Default' );
+    eval { eval {require $linker_module}; };
+    if ($@) {
+        $linker_module = 'C4::Linker::Default';
+        eval {require $linker_module};
+    }
+    if ($@) {
+        return 0, 0;
+    }
+
+    my $linker = $linker_module->new(
+        { 'options' => C4::Context->preference("LinkerOptions") } );
+    my ( $headings_changed, undef ) =
+      LinkBibHeadingsToAuthorities( $linker, $record, $frameworkcode, C4::Context->preference("CatalogModuleRelink") || '' );
+    # By default we probably don't want to relink things when cataloging
+    return $headings_changed;
+}
+
 =head2 LinkBibHeadingsToAuthorities
 
-  my $headings_linked = LinkBibHeadingsToAuthorities($marc);
+  my $num_headings_changed, %results = LinkBibHeadingsToAuthorities($linker, $marc, $frameworkcode, [$allowrelink]);
 
 Links bib headings to authority records by checking
 each authority-controlled field in the C<MARC::Record>
@@ -460,9 +518,9 @@ object C<$marc>, looking for a matching authority record,
 and setting the linking subfield $9 to the ID of that
 authority record.  
 
-If no matching authority exists, or if multiple
-authorities match, no $9 will be added, and any 
-existing one inthe field will be deleted.
+If $allowrelink is false, existing authids will never be
+replaced, regardless of the values of LinkerKeepStale and
+LinkerRelink.
 
 Returns the number of heading links changed in the
 MARC record.
@@ -470,38 +528,112 @@ MARC record.
 =cut
 
 sub LinkBibHeadingsToAuthorities {
+    my $linker        = shift;
+    my $bib           = shift;
+    my $frameworkcode = shift;
+    my $allowrelink = shift;
+    my %results;
     require C4::Heading;
-    my $bib = shift;
+    require C4::AuthoritiesMarc;
 
+    $allowrelink = 1 unless defined $allowrelink;
     my $num_headings_changed = 0;
     foreach my $field ( $bib->fields() ) {
-        my $heading = C4::Heading->new_from_bib_field($field);
+        my $heading = C4::Heading->new_from_bib_field( $field, $frameworkcode );
         next unless defined $heading;
 
         # check existing $9
         my $current_link = $field->subfield('9');
 
-        # look for matching authorities
-        my $authorities = $heading->authorities();
+        if ( defined $current_link && (!$allowrelink || !C4::Context->preference('LinkerRelink')) )
+        {
+            $results{'linked'}->{ $heading->display_form() }++;
+            next;
+        }
 
-        # want only one exact match
-        if ( $#{$authorities} == 0 ) {
-            my $authority = MARC::Record->new_from_usmarc( $authorities->[0] );
-            my $authid    = $authority->field('001')->data();
-            next if defined $current_link and $current_link eq $authid;
+        my ( $authid, $fuzzy ) = $linker->get_link($heading);
+        if ($authid) {
+            $results{ $fuzzy ? 'fuzzy' : 'linked' }
+              ->{ $heading->display_form() }++;
+            next if defined $current_link and $current_link == $authid;
 
             $field->delete_subfield( code => '9' ) if defined $current_link;
             $field->add_subfields( '9', $authid );
             $num_headings_changed++;
-        } else {
-            if ( defined $current_link ) {
+        }
+        else {
+            if ( defined $current_link
+                && (!$allowrelink || C4::Context->preference('LinkerKeepStale')) )
+            {
+                $results{'fuzzy'}->{ $heading->display_form() }++;
+            }
+            elsif ( C4::Context->preference('AutoCreateAuthorities') ) {
+                my $authtypedata =
+                  C4::AuthoritiesMarc::GetAuthType( $heading->auth_type() );
+                my $marcrecordauth = MARC::Record->new();
+                if ( C4::Context->preference('marcflavour') eq 'MARC21' ) {
+                    $marcrecordauth->leader('     nz  a22     o  4500');
+                    SetMarcUnicodeFlag( $marcrecordauth, 'MARC21' );
+                }
+                my $authfield =
+                  MARC::Field->new( $authtypedata->{auth_tag_to_report},
+                    '', '', "a" => "" . $field->subfield('a') );
+                map {
+                    $authfield->add_subfields( $_->[0] => $_->[1] )
+                      if ( $_->[0] =~ /[A-z]/ && $_->[0] ne "a" )
+                } $field->subfields();
+                $marcrecordauth->insert_fields_ordered($authfield);
+
+# bug 2317: ensure new authority knows it's using UTF-8; currently
+# only need to do this for MARC21, as MARC::Record->as_xml_record() handles
+# automatically for UNIMARC (by not transcoding)
+# FIXME: AddAuthority() instead should simply explicitly require that the MARC::Record
+# use UTF-8, but as of 2008-08-05, did not want to introduce that kind
+# of change to a core API just before the 3.0 release.
+
+                if ( C4::Context->preference('marcflavour') eq 'MARC21' ) {
+                    $marcrecordauth->insert_fields_ordered(
+                        MARC::Field->new(
+                            '667', '', '',
+                            'a' => "Machine generated authority record."
+                        )
+                    );
+                    my $cite =
+                        $bib->author() . ", "
+                      . $bib->title_proper() . ", "
+                      . $bib->publication_date() . " ";
+                    $cite =~ s/^[\s\,]*//;
+                    $cite =~ s/[\s\,]*$//;
+                    $cite =
+                        "Work cat.: ("
+                      . C4::Context->preference('MARCOrgCode') . ")"
+                      . $bib->subfield( '999', 'c' ) . ": "
+                      . $cite;
+                    $marcrecordauth->insert_fields_ordered(
+                        MARC::Field->new( '670', '', '', 'a' => $cite ) );
+                }
+
+           #          warn "AUTH RECORD ADDED : ".$marcrecordauth->as_formatted;
+
+                $authid =
+                  C4::AuthoritiesMarc::AddAuthority( $marcrecordauth, '',
+                    $heading->auth_type() );
+                $field->add_subfields( '9', $authid );
+                $num_headings_changed++;
+                $results{'added'}->{ $heading->display_form() }++;
+            }
+            elsif ( defined $current_link ) {
                 $field->delete_subfield( code => '9' );
                 $num_headings_changed++;
+                $results{'unlinked'}->{ $heading->display_form() }++;
+            }
+            else {
+                $results{'unlinked'}->{ $heading->display_form() }++;
             }
         }
 
     }
-    return $num_headings_changed;
+    return $num_headings_changed, \%results;
 }
 
 =head2 GetRecordValue
@@ -758,7 +890,7 @@ Return the ISBD view which can be included in opac and intranet
 sub GetISBDView {
     my ( $biblionumber, $template ) = @_;
     my $record   = GetMarcBiblio($biblionumber, 1);
-    return undef unless defined $record;
+    return unless defined $record;
     my $itemtype = &GetFrameworkCode($biblionumber);
     my ( $holdingbrtagf, $holdingbrtagsubf ) = &GetMarcFromKohaField( "items.holdingbranch", $itemtype );
     my $tagslib = &GetMarcStructure( 1, $itemtype );
@@ -867,7 +999,7 @@ sub GetISBDView {
 
 =head2 GetBiblio
 
-  ( $count, @results ) = &GetBiblio($biblionumber);
+  my $biblio = &GetBiblio($biblionumber);
 
 =cut
 
@@ -878,12 +1010,10 @@ sub GetBiblio {
     my $count          = 0;
     my @results;
     $sth->execute($biblionumber);
-    while ( my $data = $sth->fetchrow_hashref ) {
-        $results[$count] = $data;
-        $count++;
-    }    # while
-    $sth->finish;
-    return ( $count, @results );
+    if ( my $data = $sth->fetchrow_hashref ) {
+        return $data;
+    }
+    return;
 }    # sub GetBiblio
 
 =head2 GetBiblioItemInfosOf
@@ -952,7 +1082,7 @@ sub GetMarcStructure {
     }
 
     $sth = $dbh->prepare(
-        "SELECT tagfield,tagsubfield,liblibrarian,libopac,tab,mandatory,repeatable,authorised_value,authtypecode,value_builder,kohafield,seealso,hidden,isurl,link,defaultvalue 
+        "SELECT tagfield,tagsubfield,liblibrarian,libopac,tab,mandatory,repeatable,authorised_value,authtypecode,value_builder,kohafield,seealso,hidden,isurl,link,defaultvalue,maxlength
          FROM   marc_subfield_structure 
          WHERE  frameworkcode=? 
          ORDER BY tagfield,tagsubfield
@@ -971,10 +1101,12 @@ sub GetMarcStructure {
     my $isurl;
     my $link;
     my $defaultvalue;
+    my $maxlength;
 
     while (
         (   $tag,          $subfield,      $liblibrarian, $libopac, $tab,    $mandatory, $repeatable, $authorised_value,
-            $authtypecode, $value_builder, $kohafield,    $seealso, $hidden, $isurl,     $link,       $defaultvalue
+            $authtypecode, $value_builder, $kohafield,    $seealso, $hidden, $isurl,     $link,       $defaultvalue,
+            $maxlength
         )
         = $sth->fetchrow
       ) {
@@ -991,6 +1123,7 @@ sub GetMarcStructure {
         $res->{$tag}->{$subfield}->{isurl}            = $isurl;
         $res->{$tag}->{$subfield}->{'link'}           = $link;
         $res->{$tag}->{$subfield}->{defaultvalue}     = $defaultvalue;
+        $res->{$tag}->{$subfield}->{maxlength}        = $maxlength;
     }
 
     $marc_structure_cache->{$forlibrarian}->{$frameworkcode} = $res;
@@ -1012,7 +1145,7 @@ C<$frameworkcode> is the framework code.
 
 =cut
 
-sub GetUsedMarcStructure($) {
+sub GetUsedMarcStructure {
     my $frameworkcode = shift || '';
     my $query = qq/
         SELECT *
@@ -1077,7 +1210,7 @@ sub GetMarcBiblio {
 
         return $record;
     } else {
-        return undef;
+        return;
     }
 }
 
@@ -1273,11 +1406,55 @@ sub GetMarcPrice {
     for my $field ( $record->field(@listtags) ) {
         for my $subfield_value  ($field->subfield($subfield)){
             #check value
+            $subfield_value = MungeMarcPrice( $subfield_value );
             return $subfield_value if ($subfield_value);
         }
     }
     return 0; # no price found
 }
+
+=head2 MungeMarcPrice
+
+Return the best guess at what the actual price is from a price field.
+=cut
+
+sub MungeMarcPrice {
+    my ( $price ) = @_;
+
+    return unless ( $price =~ m/\d/ ); ## No digits means no price.
+
+    ## Look for the currency symbol of the active currency, if it's there,
+    ## start the price string right after the symbol. This allows us to prefer
+    ## this native currency price over other currency prices, if possible.
+    my $active_currency = C4::Context->dbh->selectrow_hashref( 'SELECT * FROM currency WHERE active = 1', {} );
+    my $symbol = quotemeta( $active_currency->{'symbol'} );
+    if ( $price =~ m/$symbol/ ) {
+        my @parts = split(/$symbol/, $price );
+        $price = $parts[1];
+    }
+
+    ## Grab the first number in the string ( can use commas or periods for thousands separator and/or decimal separator )
+    ( $price ) = $price =~ m/([\d\,\.]+[[\,\.]\d\d]?)/;
+
+    ## Split price into array on periods and commas
+    my @parts = split(/[\,\.]/, $price);
+
+    ## If the last grouping of digits is more than 2 characters, assume there is no decimal value and put it back.
+    my $decimal = pop( @parts );
+    if ( length( $decimal ) > 2 ) {
+        push( @parts, $decimal );
+        $decimal = '';
+    }
+
+    $price = join('', @parts );
+
+    if ( $decimal ) {
+     $price .= ".$decimal";
+    }
+
+    return $price;
+}
+
 
 =head2 GetMarcQuantity
 
@@ -1503,65 +1680,75 @@ The subjects are stored in different fields depending on MARC flavour
 
 sub GetMarcSubjects {
     my ( $record, $marcflavour ) = @_;
-    my ( $mintag, $maxtag );
+    my ( $mintag, $maxtag, $fields_filter );
     if ( $marcflavour eq "UNIMARC" ) {
         $mintag = "600";
         $maxtag = "611";
-    } else {    # assume marc21 if not unimarc
+        $fields_filter = '6..';
+    } else { # marc21/normarc
         $mintag = "600";
         $maxtag = "699";
+        $fields_filter = '6..';
     }
 
     my @marcsubjects;
-    my $subject  = "";
-    my $subfield = "";
-    my $marcsubject;
 
     my $subject_limit = C4::Context->preference("TraceCompleteSubfields") ? 'su,complete-subfield' : 'su';
+    my $authoritysep = C4::Context->preference('authoritysep');
 
-    foreach my $field ( $record->field('6..') ) {
-        next unless $field->tag() >= $mintag && $field->tag() <= $maxtag;
+    foreach my $field ( $record->field($fields_filter) ) {
+        next unless ($field->tag() >= $mintag && $field->tag() <= $maxtag);
         my @subfields_loop;
         my @subfields = $field->subfields();
-        my $counter   = 0;
         my @link_loop;
 
-        # if there is an authority link, build the link with an= subfield9
-        my $found9 = 0;
+        # if there is an authority link, build the links with an= subfield9
+        my $subfield9 = $field->subfield('9');
+        my $authoritylink;
+        if ($subfield9) {
+            my $linkvalue = $subfield9;
+            $linkvalue =~ s/(\(|\))//g;
+            @link_loop = ( { limit => 'an', 'link' => $linkvalue } );
+            $authoritylink = $linkvalue
+        }
+
+        # other subfields
         for my $subject_subfield (@subfields) {
+            next if ( $subject_subfield->[0] eq '9' );
 
             # don't load unimarc subfields 3,4,5
             next if ( ( $marcflavour eq "UNIMARC" ) and ( $subject_subfield->[0] =~ /2|3|4|5/ ) );
-
             # don't load MARC21 subfields 2 (FIXME: any more subfields??)
             next if ( ( $marcflavour eq "MARC21" ) and ( $subject_subfield->[0] =~ /2/ ) );
+
             my $code      = $subject_subfield->[0];
             my $value     = $subject_subfield->[1];
             my $linkvalue = $value;
             $linkvalue =~ s/(\(|\))//g;
-            my $operator;
-            if ( $counter != 0 ) {
-                $operator = ' and ';
+            # if no authority link, build a search query
+            unless ($subfield9) {
+                push @link_loop, {
+                    limit    => $subject_limit,
+                    'link'   => $linkvalue,
+                    operator => (scalar @link_loop) ? ' and ' : undef
+                };
             }
-            if ( $code eq 9 ) {
-                $found9 = 1;
-                @link_loop = ( { 'limit' => 'an', link => "$linkvalue" } );
-            }
-            if ( not $found9 ) {
-                push @link_loop, { 'limit' => $subject_limit, link => $linkvalue, operator => $operator };
-            }
-            my $separator;
-            if ( $counter != 0 ) {
-                $separator = C4::Context->preference('authoritysep');
-            }
-
-            # ignore $9
             my @this_link_loop = @link_loop;
-            push @subfields_loop, { code => $code, value => $value, link_loop => \@this_link_loop, separator => $separator } unless ( $subject_subfield->[0] eq 9 );
-            $counter++;
+            # do not display $0
+            unless ( $code eq '0' ) {
+                push @subfields_loop, {
+                    code      => $code,
+                    value     => $value,
+                    link_loop => \@this_link_loop,
+                    separator => (scalar @subfields_loop) ? $authoritysep : ''
+                };
+            }
         }
 
-        push @marcsubjects, { MARCSUBJECT_SUBFIELDS_LOOP => \@subfields_loop };
+        push @marcsubjects, {
+            MARCSUBJECT_SUBFIELDS_LOOP => \@subfields_loop,
+            authoritylink => $authoritylink,
+        };
 
     }
     return \@marcsubjects;
@@ -1578,7 +1765,7 @@ The authors are stored in different fields depending on MARC flavour
 
 sub GetMarcAuthors {
     my ( $record, $marcflavour ) = @_;
-    my ( $mintag, $maxtag );
+    my ( $mintag, $maxtag, $fields_filter );
 
     # tagslib useful for UNIMARC author reponsabilities
     my $tagslib =
@@ -1586,15 +1773,17 @@ sub GetMarcAuthors {
     if ( $marcflavour eq "UNIMARC" ) {
         $mintag = "700";
         $maxtag = "712";
-    } elsif ( $marcflavour eq "MARC21" || $marcflavour eq "NORMARC" ) { # assume marc21 or normarc if not unimarc
+        $fields_filter = '7..';
+    } else { # marc21/normarc
         $mintag = "700";
         $maxtag = "720";
-    } else {
-        return;
+        $fields_filter = '7..';
     }
-    my @marcauthors;
 
-    foreach my $field ( $record->fields ) {
+    my @marcauthors;
+    my $authoritysep = C4::Context->preference('authoritysep');
+
+    foreach my $field ( $record->field($fields_filter) ) {
         next unless $field->tag() >= $mintag && $field->tag() <= $maxtag;
         my @subfields_loop;
         my @link_loop;
@@ -1603,48 +1792,52 @@ sub GetMarcAuthors {
 
         # if there is an authority link, build the link with Koha-Auth-Number: subfield9
         my $subfield9 = $field->subfield('9');
+        if ($subfield9) {
+            my $linkvalue = $subfield9;
+            $linkvalue =~ s/(\(|\))//g;
+            @link_loop = ( { 'limit' => 'an', 'link' => $linkvalue } );
+        }
+
+        # other subfields
         for my $authors_subfield (@subfields) {
+            next if ( $authors_subfield->[0] eq '9' );
 
             # don't load unimarc subfields 3, 5
             next if ( $marcflavour eq 'UNIMARC' and ( $authors_subfield->[0] =~ /3|5/ ) );
-            my $subfieldcode = $authors_subfield->[0];
+
+            my $code = $authors_subfield->[0];
             my $value        = $authors_subfield->[1];
             my $linkvalue    = $value;
             $linkvalue =~ s/(\(|\))//g;
-            my $operator;
-            if ( $count_auth != 0 ) {
-                $operator = ' and ';
+            # UNIMARC author responsibility
+            if ( $marcflavour eq 'UNIMARC' and $code eq '4' ) {
+                $value = GetAuthorisedValueDesc( $field->tag(), $code, $value, '', $tagslib );
+                $linkvalue = "($value)";
             }
-
-            # if we have an authority link, use that as the link, otherwise use standard searching
-            if ($subfield9) {
-                @link_loop = ( { 'limit' => 'an', link => "$subfield9" } );
-            } else {
-
-                # reset $linkvalue if UNIMARC author responsibility
-                if ( $marcflavour eq 'UNIMARC' and ( $authors_subfield->[0] eq "4" ) ) {
-                    $linkvalue = "(" . GetAuthorisedValueDesc( $field->tag(), $authors_subfield->[0], $authors_subfield->[1], '', $tagslib ) . ")";
-                }
-                push @link_loop, { 'limit' => 'au', link => $linkvalue, operator => $operator };
+            # if no authority link, build a search query
+            unless ($subfield9) {
+                push @link_loop, {
+                    limit    => 'au',
+                    'link'   => $linkvalue,
+                    operator => (scalar @link_loop) ? ' and ' : undef
+                };
             }
-            $value = GetAuthorisedValueDesc( $field->tag(), $authors_subfield->[0], $authors_subfield->[1], '', $tagslib )
-              if ( $marcflavour eq 'UNIMARC' and ( $authors_subfield->[0] =~ /4/ ) );
             my @this_link_loop = @link_loop;
-            my $separator;
-            if ( $count_auth != 0 ) {
-                $separator = C4::Context->preference('authoritysep');
+            # do not display $0
+            unless ( $code eq '0') {
+                push @subfields_loop, {
+                    tag       => $field->tag(),
+                    code      => $code,
+                    value     => $value,
+                    link_loop => \@this_link_loop,
+                    separator => (scalar @subfields_loop) ? $authoritysep : ''
+                };
             }
-            push @subfields_loop,
-              { tag       => $field->tag(),
-                code      => $subfieldcode,
-                value     => $value,
-                link_loop => \@this_link_loop,
-                separator => $separator
-              }
-              unless ( $authors_subfield->[0] eq '9' );
-            $count_auth++;
         }
-        push @marcauthors, { MARCAUTHOR_SUBFIELDS_LOOP => \@subfields_loop };
+        push @marcauthors, {
+            MARCAUTHOR_SUBFIELDS_LOOP => \@subfields_loop,
+            authoritylink => $subfield9,
+        };
     }
     return \@marcauthors;
 }
@@ -1715,76 +1908,63 @@ The series are stored in different fields depending on MARC flavour
 
 sub GetMarcSeries {
     my ( $record, $marcflavour ) = @_;
-    my ( $mintag, $maxtag );
+    my ( $mintag, $maxtag, $fields_filter );
     if ( $marcflavour eq "UNIMARC" ) {
         $mintag = "600";
         $maxtag = "619";
-    } else {    # assume marc21 if not unimarc
+        $fields_filter = '6..';
+    } else {    # marc21/normarc
         $mintag = "440";
         $maxtag = "490";
+        $fields_filter = '4..';
     }
 
     my @marcseries;
-    my $subjct   = "";
-    my $subfield = "";
-    my $marcsubjct;
+    my $authoritysep = C4::Context->preference('authoritysep');
 
-    foreach my $field ( $record->field('440'), $record->field('490') ) {
+    foreach my $field ( $record->field($fields_filter) ) {
+        next unless $field->tag() >= $mintag && $field->tag() <= $maxtag;
         my @subfields_loop;
-
-        #my $value = $field->subfield('a');
-        #$marcsubjct = {MARCSUBJCT => $value,};
         my @subfields = $field->subfields();
-
-        #warn "subfields:".join " ", @$subfields;
-        my $counter = 0;
         my @link_loop;
+
         for my $series_subfield (@subfields) {
+
+            # ignore $9, used for authority link
+            next if ( $series_subfield->[0] eq '9' );
+
             my $volume_number;
-            undef $volume_number;
-
-            # see if this is an instance of a volume
-            if ( $series_subfield->[0] eq 'v' ) {
-                $volume_number = 1;
-            }
-
             my $code      = $series_subfield->[0];
             my $value     = $series_subfield->[1];
             my $linkvalue = $value;
             $linkvalue =~ s/(\(|\))//g;
-            if ( $counter != 0 ) {
-                push @link_loop, { link => $linkvalue, operator => ' and ', };
-            } else {
-                push @link_loop, { link => $linkvalue, operator => undef, };
+
+            # see if this is an instance of a volume
+            if ( $code eq 'v' ) {
+                $volume_number = 1;
             }
-            my $separator;
-            if ( $counter != 0 ) {
-                $separator = C4::Context->preference('authoritysep');
-            }
+
+            push @link_loop, {
+                'link' => $linkvalue,
+                operator => (scalar @link_loop) ? ' and ' : undef
+            };
+
             if ($volume_number) {
                 push @subfields_loop, { volumenum => $value };
             } else {
-                if ( $series_subfield->[0] ne '9' ) {
-                    push @subfields_loop, {
-                        code      => $code,
-                        value     => $value,
-                        link_loop => \@link_loop,
-                        separator => $separator,
-                        volumenum => $volume_number,
-                    };
+                push @subfields_loop, {
+                    code      => $code,
+                    value     => $value,
+                    link_loop => \@link_loop,
+                    separator => (scalar @subfields_loop) ? $authoritysep : '',
+                    volumenum => $volume_number,
                 }
             }
-            $counter++;
         }
         push @marcseries, { MARCSERIES_SUBFIELDS_LOOP => \@subfields_loop };
 
-        #$marcsubjct = {MARCSUBJCT => $field->as_string(),};
-        #push @marcsubjcts, $marcsubjct;
-        #$subjct = $value;
-
     }
-    my $marcseriessarray = \@marcseries;
-    return $marcseriessarray;
+    return \@marcseries;
 }    #end getMARCseriess
 
 =head2 GetMarcHosts
@@ -1864,6 +2044,7 @@ sub TransformKohaToMarc {
     my $db_to_marc = C4::Context->marcfromkohafield;
     while ( my ($name, $value) = each %$hash ) {
         next unless my $dtm = $db_to_marc->{''}->{$name};
+        next unless ( scalar( @$dtm ) );
         my ($tag, $letter) = @$dtm;
         foreach my $value ( split(/\s?\|\s?/, $value, -1) ) {
             if ( my $field = $record->field($tag) ) {
@@ -1891,6 +2072,7 @@ sub PrepHostMarcField {
     my ($hostbiblionumber,$hostitemnumber, $marcflavour) = @_;
     $marcflavour ||="MARC21";
     
+    require C4::Items;
     my $hostrecord = GetMarcBiblio($hostbiblionumber);
 	my $item = C4::Items::GetItem($hostitemnumber);
 	
@@ -2610,16 +2792,17 @@ sub GetNoZebraIndexes {
 
 =head2 EmbedItemsInMarcBiblio
 
-    EmbedItemsInMarcBiblio($marc, $biblionumber);
+    EmbedItemsInMarcBiblio($marc, $biblionumber, $itemnumbers);
 
 Given a MARC::Record object containing a bib record,
 modify it to include the items attached to it as 9XX
 per the bib's MARC framework.
+if $itemnumbers is defined, only specified itemnumbers are embedded
 
 =cut
 
 sub EmbedItemsInMarcBiblio {
-    my ($marc, $biblionumber) = @_;
+    my ($marc, $biblionumber, $itemnumbers) = @_;
     croak "No MARC record" unless $marc;
 
     my $frameworkcode = GetFrameworkCode($biblionumber);
@@ -2632,6 +2815,7 @@ sub EmbedItemsInMarcBiblio {
     my @item_fields;
     my ( $itemtag, $itemsubfield ) = GetMarcFromKohaField( "items.itemnumber", $frameworkcode );
     while (my ($itemnumber) = $sth->fetchrow_array) {
+        next if $itemnumbers and not grep { $_ == $itemnumber } @$itemnumbers;
         require C4::Items;
         my $item_marc = C4::Items::GetMarcItem($biblionumber, $itemnumber);
         push @item_fields, $item_marc->field($itemtag);
@@ -2923,7 +3107,7 @@ sub _koha_marc_update_bib_ids {
     my ( $biblio_tag,     $biblio_subfield )     = GetMarcFromKohaField( "biblio.biblionumber",          $frameworkcode );
     die qq{No biblionumber tag for framework "$frameworkcode"} unless $biblio_tag;
     my ( $biblioitem_tag, $biblioitem_subfield ) = GetMarcFromKohaField( "biblioitems.biblioitemnumber", $frameworkcode );
-    die qq{No biblioitemnumber tag for framework "$frameworkcode"} unless $biblio_tag;
+    die qq{No biblioitemnumber tag for framework "$frameworkcode"} unless $biblioitem_tag;
 
     if ( $biblio_tag == $biblioitem_tag ) {
 
@@ -3137,7 +3321,9 @@ sub _koha_modify_biblioitem_nonmarc {
         cn_item         = ?,
         cn_suffix       = ?,
         cn_sort         = ?,
-        totalissues     = ?
+        totalissues     = ?,
+        ean             = ?,
+        agerestriction  = ?
         where biblioitemnumber = ?
         ";
     my $sth = $dbh->prepare($query);
@@ -3149,7 +3335,7 @@ sub _koha_modify_biblioitem_nonmarc {
         $biblioitem->{'pages'},            $biblioitem->{'bnotes'},           $biblioitem->{'size'},                  $biblioitem->{'place'},
         $biblioitem->{'lccn'},             $biblioitem->{'url'},              $biblioitem->{'biblioitems.cn_source'}, $biblioitem->{'cn_class'},
         $biblioitem->{'cn_item'},          $biblioitem->{'cn_suffix'},        $cn_sort,                               $biblioitem->{'totalissues'},
-        $biblioitem->{'biblioitemnumber'}
+        $biblioitem->{'ean'},              $biblioitem->{'agerestriction'},   $biblioitem->{'biblioitemnumber'}
     );
     if ( $dbh->errstr ) {
         $error .= "ERROR in _koha_modify_biblioitem_nonmarc $query" . $dbh->errstr;
@@ -3200,7 +3386,9 @@ sub _koha_add_biblioitem {
         cn_item         = ?,
         cn_suffix       = ?,
         cn_sort         = ?,
-        totalissues     = ?
+        totalissues     = ?,
+        ean             = ?,
+        agerestriction  = ?
         ";
     my $sth = $dbh->prepare($query);
     $sth->execute(
@@ -3211,7 +3399,7 @@ sub _koha_add_biblioitem {
         $biblioitem->{'pages'},            $biblioitem->{'bnotes'},           $biblioitem->{'size'},                  $biblioitem->{'place'},
         $biblioitem->{'lccn'},             $biblioitem->{'marc'},             $biblioitem->{'url'},                   $biblioitem->{'biblioitems.cn_source'},
         $biblioitem->{'cn_class'},         $biblioitem->{'cn_item'},          $biblioitem->{'cn_suffix'},             $cn_sort,
-        $biblioitem->{'totalissues'}
+        $biblioitem->{'totalissues'},      $biblioitem->{'ean'},              $biblioitem->{'agerestriction'}
     );
     my $bibitemnum = $dbh->{'mysql_insertid'};
 
@@ -3270,7 +3458,7 @@ sub _koha_delete_biblio {
         $sth2->finish;
     }
     $sth->finish;
-    return undef;
+    return;
 }
 
 =head2 _koha_delete_biblioitems
@@ -3319,7 +3507,7 @@ sub _koha_delete_biblioitems {
         $sth2->finish;
     }
     $sth->finish;
-    return undef;
+    return;
 }
 
 =head1 UNEXPORTED FUNCTIONS
@@ -3335,9 +3523,12 @@ Function exported, but should NOT be used, unless you really know what you're do
 =cut
 
 sub ModBiblioMarc {
-
-    # pass the MARC::Record to this function, and it will create the records in the marc field
+    # pass the MARC::Record to this function, and it will create the records in
+    # the marc field
     my ( $record, $biblionumber, $frameworkcode ) = @_;
+
+    # Clone record as it gets modified
+    $record = $record->clone();
     my $dbh    = C4::Context->dbh;
     my @fields = $record->fields();
     if ( !$frameworkcode ) {
@@ -3518,8 +3709,224 @@ sub GetHolds {
     return ($holds);
 }
 
+=head2 prepare_host_field
+
+$marcfield = prepare_host_field( $hostbiblioitem, $marcflavour );
+Generate the host item entry for an analytic child entry
+
+=cut
+
+sub prepare_host_field {
+    my ( $hostbiblio, $marcflavour ) = @_;
+    $marcflavour ||= C4::Context->preference('marcflavour');
+    my $host = GetMarcBiblio($hostbiblio);
+    # unfortunately as_string does not 'do the right thing'
+    # if field returns undef
+    my %sfd;
+    my $field;
+    my $host_field;
+    if ( $marcflavour eq 'MARC21' || $marcflavour eq 'NORMARC' ) {
+        if ( $field = $host->field('100') || $host->field('110') || $host->field('11') ) {
+            my $s = $field->as_string('ab');
+            if ($s) {
+                $sfd{a} = $s;
+            }
+        }
+        if ( $field = $host->field('245') ) {
+            my $s = $field->as_string('a');
+            if ($s) {
+                $sfd{t} = $s;
+            }
+        }
+        if ( $field = $host->field('260') ) {
+            my $s = $field->as_string('abc');
+            if ($s) {
+                $sfd{d} = $s;
+            }
+        }
+        if ( $field = $host->field('240') ) {
+            my $s = $field->as_string();
+            if ($s) {
+                $sfd{b} = $s;
+            }
+        }
+        if ( $field = $host->field('022') ) {
+            my $s = $field->as_string('a');
+            if ($s) {
+                $sfd{x} = $s;
+            }
+        }
+        if ( $field = $host->field('020') ) {
+            my $s = $field->as_string('a');
+            if ($s) {
+                $sfd{z} = $s;
+            }
+        }
+        if ( $field = $host->field('001') ) {
+            $sfd{w} = $field->data(),;
+        }
+        $host_field = MARC::Field->new( 773, '0', ' ', %sfd );
+        return $host_field;
+    }
+    elsif ( $marcflavour eq 'UNIMARC' ) {
+        #author
+        if ( $field = $host->field('700') || $host->field('710') || $host->field('720') ) {
+            my $s = $field->as_string('ab');
+            if ($s) {
+                $sfd{a} = $s;
+            }
+        }
+        #title
+        if ( $field = $host->field('200') ) {
+            my $s = $field->as_string('a');
+            if ($s) {
+                $sfd{t} = $s;
+            }
+        }
+        #place of publicaton
+        if ( $field = $host->field('210') ) {
+            my $s = $field->as_string('a');
+            if ($s) {
+                $sfd{c} = $s;
+            }
+        }
+        #date of publication
+        if ( $field = $host->field('210') ) {
+            my $s = $field->as_string('d');
+            if ($s) {
+                $sfd{d} = $s;
+            }
+        }
+        #edition statement
+        if ( $field = $host->field('205') ) {
+            my $s = $field->as_string();
+            if ($s) {
+                $sfd{a} = $s;
+            }
+        }
+        #URL
+        if ( $field = $host->field('856') ) {
+            my $s = $field->as_string('u');
+            if ($s) {
+                $sfd{u} = $s;
+            }
+        }
+        #ISSN
+        if ( $field = $host->field('011') ) {
+            my $s = $field->as_string('a');
+            if ($s) {
+                $sfd{x} = $s;
+            }
+        }
+        #ISBN
+        if ( $field = $host->field('010') ) {
+            my $s = $field->as_string('a');
+            if ($s) {
+                $sfd{y} = $s;
+            }
+        }
+        if ( $field = $host->field('001') ) {
+            $sfd{0} = $field->data(),;
+        }
+        $host_field = MARC::Field->new( 461, '0', ' ', %sfd );
+        return $host_field;
+    }
+    return;
+}
+
+
+=head2 UpdateTotalIssues
+
+  UpdateTotalIssues($biblionumber, $increase, [$value])
+
+Update the total issue count for a particular bib record.
+
+=over 4
+
+=item C<$biblionumber> is the biblionumber of the bib to update
+
+=item C<$increase> is the amount to increase (or decrease) the total issues count by
+
+=item C<$value> is the absolute value that total issues count should be set to. If provided, C<$increase> is ignored.
+
+=back
+
+=cut
+
+sub UpdateTotalIssues {
+    my ($biblionumber, $increase, $value) = @_;
+    my $totalissues;
+
+    my $data = GetBiblioData($biblionumber);
+
+    if (defined $value) {
+        $totalissues = $value;
+    } else {
+        $totalissues = $data->{'totalissues'} + $increase;
+    }
+     my ($totalissuestag, $totalissuessubfield) = GetMarcFromKohaField('biblioitems.totalissues', $data->{'frameworkcode'});
+
+     my $record = GetMarcBiblio($biblionumber);
+
+     my $field = $record->field($totalissuestag);
+     if (defined $field) {
+         $field->update( $totalissuessubfield => $totalissues );
+     } else {
+         $field = MARC::Field->new($totalissuestag, '0', '0',
+                 $totalissuessubfield => $totalissues);
+         $record->insert_grouped_field($field);
+     }
+
+     ModBiblio($record, $biblionumber, $data->{'frameworkcode'});
+     return;
+}
+
+=head2 RemoveAllNsb
+
+    &RemoveAllNsb($record);
+
+Removes all nsb/nse chars from a record
+
+=cut
+
+sub RemoveAllNsb {
+    my $record = shift;
+
+    SetUTF8Flag($record);
+
+    foreach my $field ($record->fields()) {
+        if ($field->is_control_field()) {
+            $field->update(nsb_clean($field->data()));
+        } else {
+            my @subfields = $field->subfields();
+            my @new_subfields;
+            foreach my $subfield (@subfields) {
+                push @new_subfields, $subfield->[0] => nsb_clean($subfield->[1]);
+            }
+            if (scalar(@new_subfields) > 0) {
+                my $new_field;
+                eval {
+                    $new_field = MARC::Field->new(
+                        $field->tag(),
+                        $field->indicator(1),
+                        $field->indicator(2),
+                        @new_subfields
+                    );
+                };
+                if ($@) {
+                    warn "error in RemoveAllNsb : $@";
+                } else {
+                    $field->replace_with($new_field);
+                }
+            }
+        }
+    }
+
+    return $record;
+}
 
 1;
+
 
 __END__
 

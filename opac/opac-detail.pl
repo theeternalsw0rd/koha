@@ -2,6 +2,7 @@
 
 # Copyright 2000-2002 Katipo Communications
 # Copyright 2010 BibLibre
+# Copyright 2011 KohaAloha, NZ
 #
 # This file is part of Koha.
 #
@@ -32,11 +33,11 @@ use C4::Biblio;
 use C4::Items;
 use C4::Circulation;
 use C4::Tags qw(get_tags);
-use C4::Dates qw/format_date/;
 use C4::XISBN qw(get_xisbns get_biblionumber_from_isbn);
 use C4::External::Amazon;
 use C4::External::Syndetics qw(get_syndetics_index get_syndetics_summary get_syndetics_toc get_syndetics_excerpt get_syndetics_reviews get_syndetics_anotes );
 use C4::Review;
+use C4::Ratings;
 use C4::Members;
 use C4::VirtualShelves;
 use C4::XSLT;
@@ -47,6 +48,7 @@ use MARC::Record;
 use MARC::Field;
 use List::MoreUtils qw/any none/;
 use C4::Images;
+use Koha::DateUtils;
 
 BEGIN {
 	if (C4::Context->preference('BakerTaylorEnabled')) {
@@ -88,14 +90,19 @@ if($query->cookie("bib_list")){
 
 
 SetUTF8Flag($record);
+my $marcflavour      = C4::Context->preference("marcflavour");
+my $ean = GetNormalizedEAN( $record, $marcflavour );
 
 # XSLT processing of some stuff
 if (C4::Context->preference("OPACXSLTDetailsDisplay") ) {
-    $template->param( 'XSLTBloc' => XSLTParse4Display($biblionumber, $record, 'Detail', 'opac') );
+    $template->param( 'XSLTBloc' => XSLTParse4Display($biblionumber, $record, "OPACXSLTDetailsDisplay" ) );
 }
 
+my $OpacBrowseResults = C4::Context->preference("OpacBrowseResults");
+$template->{VARS}->{'OpacBrowseResults'} = $OpacBrowseResults;
 
 # We look for the busc param to build the simple paging from the search
+if ($OpacBrowseResults) {
 my $session = get_session($query->cookie("CGISESSID"));
 my %paging = (previous => {}, next => {});
 if ($session->param('busc')) {
@@ -136,8 +143,10 @@ if ($session->param('busc')) {
         my @servers;
         @servers = @{$arrParamsBusc->{'server'}} if $arrParamsBusc->{'server'};
         @servers = ("biblioserver") unless (@servers);
-        my $default_sort_by = C4::Context->preference('OPACdefaultSortField')."_".C4::Context->preference('OPACdefaultSortOrder') if (C4::Context->preference('OPACdefaultSortField') && C4::Context->preference('OPACdefaultSortOrder'));
-        my @sort_by = @{$arrParamsBusc->{'sort_by'}} if $arrParamsBusc->{'sort_by'};
+
+        my ($default_sort_by, @sort_by);
+        $default_sort_by = C4::Context->preference('OPACdefaultSortField')."_".C4::Context->preference('OPACdefaultSortOrder') if (C4::Context->preference('OPACdefaultSortField') && C4::Context->preference('OPACdefaultSortOrder'));
+        @sort_by = @{$arrParamsBusc->{'sort_by'}} if $arrParamsBusc->{'sort_by'};
         $sort_by[0] = $default_sort_by if !$sort_by[0] && defined($default_sort_by);
         my ($error, $results_hashref, $facets);
         eval {
@@ -148,7 +157,7 @@ if ($session->param('busc')) {
         for (my $i=0;$i<@servers;$i++) {
             my $server = $servers[$i];
             $hits = $results_hashref->{$server}->{"hits"};
-            @newresults = searchResults('opac', '', $hits, $results_per_page, $offset, $arrParamsBusc->{'scan'}, @{$results_hashref->{$server}->{"RECORDS"}},, C4::Context->preference('hidelostitems'));
+            @newresults = searchResults('opac', '', $hits, $results_per_page, $offset, $arrParamsBusc->{'scan'}, $results_hashref->{$server}->{"RECORDS"});
         }
         return \@newresults;
     }#searchAgain
@@ -374,6 +383,7 @@ if ($session->param('busc')) {
     $template->param('listResults' => \@listResults) if (@listResults);
     $template->param('indexPag' => 1 + $offset, 'totalPag' => $arrParamsBusc{'total'}, 'indexPagEnd' => scalar(@arrBiblios) + $offset);
 }
+}
 
 
 
@@ -382,12 +392,12 @@ $template->param( 'ItemsIssued' => CountItemsIssued( $biblionumber ) );
 
 
 
-$template->param('OPACShowCheckoutName' => C4::Context->preference("OPACShowCheckoutName") ); 
+$template->param('OPACShowCheckoutName' => C4::Context->preference("OPACShowCheckoutName") );
+$template->param('OPACShowBarcode' => C4::Context->preference("OPACShowBarcode") );
 # change back when ive fixed request.pl
 my @all_items = GetItemsInfo( $biblionumber );
 
 # adding items linked via host biblios
-my $marcflavour  = C4::Context->preference("marcflavour");
 
 my $analyticfield = '773';
 if ($marcflavour eq 'MARC21' || $marcflavour eq 'NORMARC'){
@@ -412,7 +422,8 @@ my @items;
 my @hiddenitems = GetHiddenItemnumbers(@all_items);
 
 # Are there items to hide?
-my $hideitems = 1 if C4::Context->preference('hidelostitems') or scalar(@hiddenitems) > 0;
+my $hideitems;
+$hideitems = 1 if C4::Context->preference('hidelostitems') or scalar(@hiddenitems) > 0;
 
 # Hide items
 if ($hideitems) {
@@ -439,10 +450,11 @@ if ( $itemtype ) {
 }
 my $shelflocations =GetKohaAuthorisedValues('items.location',$dat->{'frameworkcode'}, 'opac');
 my $collections =  GetKohaAuthorisedValues('items.ccode',$dat->{'frameworkcode'}, 'opac');
+my $copynumbers = GetKohaAuthorisedValues('items.copynumber',$dat->{'frameworkcode'}, 'opac');
 
 #coping with subscriptions
 my $subscriptionsnumber = CountSubscriptionFromBiblionumber($biblionumber);
-my @subscriptions       = GetSubscriptions( undef, undef, $biblionumber );
+my @subscriptions       = GetSubscriptions($dat->{'title'}, $dat->{'issn'}, $ean, $biblionumber );
 
 my @subs;
 $dat->{'serial'}=1 if $subscriptionsnumber;
@@ -453,8 +465,8 @@ foreach my $subscription (@subscriptions) {
     $cell{subscriptionnotes} = $subscription->{notes};
     $cell{missinglist}       = $subscription->{missinglist};
     $cell{opacnote}          = $subscription->{opacnote};
-    $cell{histstartdate}     = format_date($subscription->{histstartdate});
-    $cell{histenddate}       = format_date($subscription->{histenddate});
+    $cell{histstartdate}     = $subscription->{histstartdate};
+    $cell{histenddate}       = $subscription->{histenddate};
     $cell{branchcode}        = $subscription->{branchcode};
     $cell{branchname}        = GetBranchName($subscription->{branchcode});
     $cell{hasalert}          = $subscription->{hasalert};
@@ -479,10 +491,34 @@ if ($dat->{'count'} >= 50 && !$viewallitems) {
 
 my $biblio_authorised_value_images = C4::Items::get_authorised_value_images( C4::Biblio::get_biblio_authorised_values( $biblionumber, $record ) );
 
+my (%item_reserves, %priority);
+my ($show_holds_count, $show_priority);
+for ( C4::Context->preference("OPACShowHoldQueueDetails") ) {
+    m/holds/o and $show_holds_count = 1;
+    m/priority/ and $show_priority = 1;
+}
+my $has_hold;
+if ( $show_holds_count || $show_priority) {
+    my ($reserve_count,$reserves) = GetReservesFromBiblionumber($biblionumber);
+    $template->param( holds_count  => $reserve_count ) if $show_holds_count;
+    foreach (@$reserves) {
+        $item_reserves{ $_->{itemnumber} }++ if $_->{itemnumber};
+        if ($show_priority && $_->{borrowernumber} == $borrowernumber) {
+            $has_hold = 1;
+            $_->{itemnumber}
+                ? ($priority{ $_->{itemnumber} } = $_->{priority})
+                : ($template->param( priority => $_->{priority} ));
+        }
+    }
+}
+$template->param( show_priority => $has_hold ) ;
+
 my $norequests = 1;
 my $branches = GetBranches();
 my %itemfields;
 for my $itm (@items) {
+    $itm->{holds_count} = $item_reserves{ $itm->{itemnumber} };
+    $itm->{priority} = $priority{ $itm->{itemnumber} };
     $norequests = 0
        if ( (not $itm->{'wthdrawn'} )
          && (not $itm->{'itemlost'} )
@@ -494,13 +530,12 @@ for my $itm (@items) {
         # I can't actually find any case in which this is defined. --amoore 2008-12-09
         $itm->{ $itm->{'publictype'} } = 1;
     }
-    $itm->{datedue}      = format_date($itm->{datedue});
-    $itm->{datelastseen} = format_date($itm->{datelastseen});
 
     # get collection code description, too
-    if ( my $ccode = $itm->{'ccode'} ) {
-        $itm->{'ccode'} = $collections->{$ccode} if ( defined($collections) && exists( $collections->{$ccode} ) );
-    }
+    my $ccode = $itm->{'ccode'};
+    $itm->{'ccode'} = $collections->{$ccode} if ( defined($collections) && exists( $collections->{$ccode} ) );
+    my $copynumber = $itm->{'copynumber'};
+    $itm->{'copynumber'} = $copynumbers->{$copynumber} if ( defined($copynumbers) && defined($copynumber) && exists( $copynumbers->{$copynumber} ) );
     if ( defined $itm->{'location'} ) {
         $itm->{'location_description'} = $shelflocations->{ $itm->{'location'} };
     }
@@ -527,7 +562,7 @@ for my $itm (@items) {
     
      my ( $transfertwhen, $transfertfrom, $transfertto ) = GetTransfers($itm->{itemnumber});
      if ( defined( $transfertwhen ) && $transfertwhen ne '' ) {
-        $itm->{transfertwhen} = format_date($transfertwhen);
+        $itm->{transfertwhen} = $transfertwhen;
         $itm->{transfertfrom} = $branches->{$transfertfrom}{branchname};
         $itm->{transfertto}   = $branches->{$transfertto}{branchname};
      }
@@ -550,7 +585,8 @@ my $subtitle         = GetRecordValue('subtitle', $record, GetFrameworkCode($bib
                      MARCAUTHORS             => $marcauthorsarray,
                      MARCSERIES              => $marcseriesarray,
                      MARCURLS                => $marcurlsarray,
-		     MARCHOSTS               => $marchostsarray,
+                     MARCISBNS               => $marcisbnsarray,
+                     MARCHOSTS               => $marchostsarray,
                      norequests              => $norequests,
                      RequestOnOpac           => C4::Context->preference("RequestOnOpac"),
                      itemdata_ccode          => $itemfields{ccode},
@@ -560,6 +596,7 @@ my $subtitle         = GetRecordValue('subtitle', $record, GetFrameworkCode($bib
                      itemdata_itemnotes          => $itemfields{itemnotes},
                      authorised_value_images => $biblio_authorised_value_images,
                      subtitle                => $subtitle,
+                     OpacStarRatings         => C4::Context->preference("OpacStarRatings"),
     );
 
 if (C4::Context->preference("AlternateHoldingsField") && scalar @items == 0) {
@@ -597,7 +634,6 @@ foreach ( keys %{$dat} ) {
 # in each case, we're grabbing the first value we find in
 # the record and normalizing it
 my $upc = GetNormalizedUPC($record,$marcflavour);
-my $ean = GetNormalizedEAN($record,$marcflavour);
 my $oclc = GetNormalizedOCLCNumber($record,$marcflavour);
 my $isbn = GetNormalizedISBN(undef,$record,$marcflavour);
 my $content_identifier_exists;
@@ -630,6 +666,10 @@ if ( C4::Context->preference('ShowReviewer') and C4::Context->preference('ShowRe
 
 my $reviews = getreviews( $biblionumber, 1 );
 my $loggedincommenter;
+
+
+
+
 foreach ( @$reviews ) {
     my $borrowerData   = GetMember('borrowernumber' => $_->{borrowernumber});
     # setting some borrower info into this hash
@@ -641,7 +681,7 @@ foreach ( @$reviews ) {
     }
     $_->{userid}    = $borrowerData->{'userid'};
     $_->{cardnumber}    = $borrowerData->{'cardnumber'};
-    $_->{datereviewed} = format_date($_->{datereviewed});
+
     if ($borrowerData->{'borrowernumber'} eq $borrowernumber) {
 		$_->{your_comment} = 1;
 		$loggedincommenter = 1;
@@ -682,6 +722,9 @@ if (C4::Context->preference("OPACFRBRizeEditions")==1) {
 
 # Serial Collection
 my @sc_fields = $record->field(955);
+my @lc_fields = $marcflavour eq 'UNIMARC'
+    ? $record->field(930)
+    : $record->field(852);
 my @serialcollections = ();
 
 foreach my $sc_field (@sc_fields) {
@@ -689,9 +732,15 @@ foreach my $sc_field (@sc_fields) {
 
     $row_data{text}    = $sc_field->subfield('r');
     $row_data{branch}  = $sc_field->subfield('9');
+    foreach my $lc_field (@lc_fields) {
+        $row_data{itemcallnumber} = $marcflavour eq 'UNIMARC'
+            ? $lc_field->subfield('a') # 930$a
+            : $lc_field->subfield('h') # 852$h
+            if ($sc_field->subfield('5') eq $lc_field->subfield('5'));
+    }
 
     if ($row_data{text} && $row_data{branch}) { 
-	push (@serialcollections, \%row_data);
+        push (@serialcollections, \%row_data);
     }
 }
 
@@ -704,49 +753,6 @@ if (scalar(@serialcollections) > 0) {
 # Local cover Images stuff
 if (C4::Context->preference("OPACLocalCoverImages")){
 		$template->param(OPACLocalCoverImages => 1);
-}
-
-# Amazon.com Stuff
-if ( C4::Context->preference("OPACAmazonEnabled") ) {
-    $template->param( AmazonTld => get_amazon_tld() );
-    my $amazon_reviews  = C4::Context->preference("OPACAmazonReviews");
-    my $amazon_similars = C4::Context->preference("OPACAmazonSimilarItems");
-    my @services;
-    if ( $amazon_reviews ) {
-        push( @services, 'EditorialReview', 'Reviews' );
-    }
-    if ( $amazon_similars ) {
-        push( @services, 'Similarities' );
-    }
-    my $amazon_details = &get_amazon_details( $isbn, $record, $marcflavour, \@services );
-    my $similar_products_exist;
-    if ( $amazon_reviews ) {
-        my $item = $amazon_details->{Items}->{Item}->[0];
-        my $customer_reviews = \@{ $item->{CustomerReviews}->{Review} };
-        for my $one_review ( @$customer_reviews ) {
-            $one_review->{Date} = format_date($one_review->{Date});
-        }
-        my $editorial_reviews = \@{ $item->{EditorialReviews}->{EditorialReview} };
-        my $average_rating = $item->{CustomerReviews}->{AverageRating} || 0;
-        $template->param( amazon_average_rating    => $average_rating * 20);
-        $template->param( AMAZON_CUSTOMER_REVIEWS  => $customer_reviews );
-        $template->param( AMAZON_EDITORIAL_REVIEWS => $editorial_reviews );
-    }
-    if ( $amazon_similars ) {
-        my $item = $amazon_details->{Items}->{Item}->[0];
-        my @similar_products;
-        for my $similar_product (@{ $item->{SimilarProducts}->{SimilarProduct} }) {
-            # do we have any of these isbns in our collection?
-            my $similar_biblionumbers = get_biblionumber_from_isbn($similar_product->{ASIN});
-            # verify that there is at least one similar item
-            if (scalar(@$similar_biblionumbers)){
-                $similar_products_exist++ if ($similar_biblionumbers && $similar_biblionumbers->[0]);
-                push @similar_products, +{ similar_biblionumbers => $similar_biblionumbers, title => $similar_product->{Title}, ASIN => $similar_product->{ASIN}  };
-            }
-        }
-        $template->param( OPACAmazonSimilarItems => $similar_products_exist );
-        $template->param( AMAZON_SIMILAR_PRODUCTS => \@similar_products );
-    }
 }
 
 my $syndetics_elements;
@@ -836,7 +842,14 @@ $template->param(NovelistSelectView => C4::Context->preference('NovelistSelectVi
 if ( C4::Context->preference("Babeltheque") ) {
     $template->param( 
         Babeltheque => 1,
+        Babeltheque_url_js => C4::Context->preference("Babeltheque_url_js"),
     );
+}
+
+# Social Networks
+if ( C4::Context->preference( "SocialNetworks" ) ) {
+    $template->param( current_url => C4::Context->preference('OPACBaseURL') . "/cgi-bin/koha/opac-detail.pl?biblionumber=$biblionumber" );
+    $template->param( SocialNetworks => 1 );
 }
 
 # Shelf Browser Stuff
@@ -861,6 +874,8 @@ if (C4::Context->preference("OPACShelfBrowser")) {
         );
     }
 }
+
+$template->param( AmazonTld => get_amazon_tld() ) if ( C4::Context->preference("OPACAmazonCoverImages"));
 
 if (C4::Context->preference("BakerTaylorEnabled")) {
 	$template->param(
@@ -906,6 +921,17 @@ my $OpacExportOptions=C4::Context->preference("OpacExportOptions");
 my @export_options = split(/\|/,$OpacExportOptions);
 $template->{VARS}->{'export_options'} = \@export_options;
 
+if ( C4::Context->preference('OpacStarRatings') !~ /disable/ ) {
+    my $rating = GetRating( $biblionumber, $borrowernumber );
+    $template->param(
+        rating_value   => $rating->{'rating_value'},
+        rating_total   => $rating->{'rating_total'},
+        rating_avg     => $rating->{'rating_avg'},
+        rating_avg_int => $rating->{'rating_avg_int'},
+        borrowernumber => $borrowernumber
+    );
+}
+
 #Search for title in links
 my $marccontrolnumber   = GetMarcControlnumber ($record, $marcflavour);
 my $marcissns = GetMarcISSN ( $record, $marcflavour );
@@ -942,6 +968,10 @@ $template->param('defaulttab' => $defaulttab);
 if (C4::Context->preference('OPACLocalCoverImages') == 1) {
     my @images = ListImagesForBiblio($biblionumber);
     $template->{VARS}->{localimages} = \@images;
+}
+
+if (C4::Context->preference('OpacHighlightedWords')) {
+    $template->{VARS}->{query_desc} = $query->param('query_desc');
 }
 
 output_html_with_http_headers $query, $cookie, $template->output;

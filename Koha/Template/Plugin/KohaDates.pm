@@ -17,13 +17,19 @@ package Koha::Template::Plugin::KohaDates;
 # with Koha; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+use strict;
+use warnings;
+
 use Template::Plugin::Filter;
 use base qw( Template::Plugin::Filter );
+use warnings;
+use strict;
 
 use C4::Dates;
 
 sub filter {
     my ($self,$text) = @_;
+    return "" if not $text;
     my $date = C4::Dates->new( $text, 'iso' );
     return $date->output("syspref");
 }

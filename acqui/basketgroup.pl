@@ -53,14 +53,14 @@ use C4::Output;
 use CGI;
 
 use C4::Bookseller qw/GetBookSellerFromId/;
-use C4::Acquisition qw/CloseBasketgroup ReOpenBasketgroup GetOrders GetBasketsByBasketgroup GetBasketsByBookseller ModBasketgroup NewBasketgroup DelBasketgroup GetBasketgroups ModBasket GetBasketgroup GetBasket/;
+use C4::Acquisition qw/CloseBasketgroup ReOpenBasketgroup GetOrders GetBasketsByBasketgroup GetBasketsByBookseller ModBasketgroup NewBasketgroup DelBasketgroup GetBasketgroups ModBasket GetBasketgroup GetBasket GetBasketGroupAsCSV/;
 use C4::Bookseller qw/GetBookSellerFromId/;
 use C4::Branch qw/GetBranches/;
 use C4::Members qw/GetMember/;
 
-my $input=new CGI;
+our $input=new CGI;
 
-my ($template, $loggedinuser, $cookie)
+our ($template, $loggedinuser, $cookie)
     = get_template_and_user({template_name => "acqui/basketgroup.tmpl",
 			     query => $input,
 			     type => "intranet",
@@ -277,7 +277,7 @@ sub printbasketgrouppdf{
 
 }
 
-my $op = $input->param('op');
+my $op = $input->param('op') || 'display';
 my $booksellerid = $input->param('booksellerid');
 $template->param(booksellerid => $booksellerid);
 
@@ -328,30 +328,11 @@ if ( $op eq "add" ) {
         my $borrower = GetMember( ( 'borrowernumber' => $loggedinuser ) );
         $billingplace  = $billingplace  || $borrower->{'branchcode'};
         $deliveryplace = $deliveryplace || $borrower->{'branchcode'};
-        
-        my $branches = GetBranches;
-        
-        # Build the combobox to select the billing place
-        my @billingplaceloop;
-        for (sort keys %$branches) {
-            push @billingplaceloop, {
-                value      => $_,
-                selected   => $_ eq $billingplace,
-                branchname => $branches->{$_}->{branchname},
-            };
-        }
-        $template->param( billingplaceloop => \@billingplaceloop );
-        
-        # Build the combobox to select the delivery place
-        my @deliveryplaceloop;
-        for (sort keys %$branches) {
-            push @deliveryplaceloop, {
-                value      => $_,
-                selected   => $_ eq $deliveryplace,
-                branchname => $branches->{$_}->{branchname},
-            };
-        }
-        $template->param( deliveryplaceloop => \@deliveryplaceloop );
+
+        my $branches = C4::Branch::GetBranchesLoop( $billingplace );
+        $template->param( billingplaceloop => $branches );
+        $branches = C4::Branch::GetBranchesLoop( $deliveryplace );
+        $template->param( deliveryplaceloop => $branches );
 
         $template->param( booksellerid => $booksellerid );
     }
@@ -416,6 +397,14 @@ if ( $op eq "add" ) {
     my $basketgroupid = $input->param('basketgroupid');
     
     printbasketgrouppdf($basketgroupid);
+    exit;
+}elsif ( $op eq "export" ) {
+    my $basketgroupid = $input->param('basketgroupid');
+    print $input->header(
+        -type       => 'text/csv',
+        -attachment => 'basketgroup' . $basketgroupid . '.csv',
+    );
+    print GetBasketGroupAsCSV( $basketgroupid, $input );
     exit;
 }elsif( $op eq "delete"){
     my $basketgroupid = $input->param('basketgroupid');

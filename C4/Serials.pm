@@ -30,12 +30,13 @@ use C4::Debug;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 
 BEGIN {
-    $VERSION = 3.01;    # set version for version checking
+    $VERSION = 3.07.00.049;    # set version for version checking
     require Exporter;
     @ISA    = qw(Exporter);
     @EXPORT = qw(
       &NewSubscription    &ModSubscription    &DelSubscription    &GetSubscriptions
       &GetSubscription    &CountSubscriptionFromBiblionumber      &GetSubscriptionsFromBiblionumber
+      &SearchSubscriptions
       &GetFullSubscriptionsFromBiblionumber   &GetFullSubscription &ModSubscriptionHistory
       &HasSubscriptionStrictlyExpired &HasSubscriptionExpired &GetExpirationDate &abouttoexpire
 
@@ -53,6 +54,7 @@ BEGIN {
       &check_routing &updateClaim &removeMissingIssue
       &CountIssues
       HasItems
+      &GetSubscriptionsFromBorrower
 
     );
 }
@@ -158,7 +160,7 @@ After this function, don't forget to execute it by using $sth->execute($subscrip
 
 =cut
 
-sub GetSubscriptionHistoryFromSubscriptionId() {
+sub GetSubscriptionHistoryFromSubscriptionId {
     my $dbh   = C4::Context->dbh;
     my $query = qq|
         SELECT *
@@ -178,7 +180,7 @@ $sth = $dbh->prepare($query).
 
 =cut
 
-sub GetSerialStatusFromSerialId() {
+sub GetSerialStatusFromSerialId {
     my $dbh   = C4::Context->dbh;
     my $query = qq|
         SELECT status
@@ -545,15 +547,15 @@ sub GetFullSubscriptionsFromBiblionumber {
 
 =head2 GetSubscriptions
 
-@results = GetSubscriptions($title,$ISSN,$biblionumber);
-this function gets all subscriptions which have title like $title,ISSN like $ISSN and biblionumber like $biblionumber.
+@results = GetSubscriptions($title,$ISSN,$ean,$biblionumber);
+this function gets all subscriptions which have title like $title,ISSN like $ISSN,EAN like $ean and biblionumber like $biblionumber.
 return:
 a table of hashref. Each hash containt the subscription.
 
 =cut
 
 sub GetSubscriptions {
-    my ( $string, $issn, $biblionumber ) = @_;
+    my ( $string, $issn, $ean, $biblionumber ) = @_;
 
     #return unless $title or $ISSN or $biblionumber;
     my $dbh = C4::Context->dbh;
@@ -566,7 +568,7 @@ sub GetSubscriptions {
             LEFT JOIN biblioitems ON biblio.biblionumber = biblioitems.biblionumber
     );
     my @bind_params;
-    my $sqlwhere;
+    my $sqlwhere = q{};
     if ($biblionumber) {
         $sqlwhere = "   WHERE biblio.biblionumber=?";
         push @bind_params, $biblionumber;
@@ -597,6 +599,20 @@ sub GetSubscriptions {
         }
         $sqlwhere .= ( $sqlwhere ? " AND " : " WHERE " ) . "((" . join( ") OR (", @sqlstrings ) . "))";
     }
+    if ($ean) {
+        my @sqlstrings;
+        my @strings_to_search;
+        @strings_to_search = map { "$_" } split( / /, $ean );
+        foreach my $index ( qw(biblioitems.ean) ) {
+            push @bind_params, @strings_to_search;
+            my $tmpstring = "OR $index = ? " x scalar(@strings_to_search);
+            $debug && warn "$tmpstring";
+            $tmpstring =~ s/^OR //;
+            push @sqlstrings, $tmpstring;
+        }
+        $sqlwhere .= ( $sqlwhere ? " AND " : " WHERE " ) . "((" . join( ") OR (", @sqlstrings ) . "))";
+    }
+
     $sql .= "$sqlwhere ORDER BY title";
     $debug and warn "GetSubscriptions query: $sql params : ", join( " ", @bind_params );
     $sth = $dbh->prepare($sql);
@@ -615,6 +631,74 @@ sub GetSubscriptions {
     }
     return @results;
 }
+
+=head2 SearchSubscriptions
+
+@results = SearchSubscriptions($args);
+$args is a hashref. Its keys can be contained: title, issn, ean, publisher, bookseller and branchcode
+
+this function gets all subscriptions which have title like $title, ISSN like $issn, EAN like $ean, publisher like $publisher, bookseller like $bookseller AND branchcode eq $branch.
+
+return:
+a table of hashref. Each hash containt the subscription.
+
+=cut
+
+sub SearchSubscriptions {
+    my ( $args ) = @_;
+
+    my $query = qq{
+        SELECT subscription.*, subscriptionhistory.*, biblio.*, biblioitems.issn
+        FROM subscription
+            LEFT JOIN subscriptionhistory USING(subscriptionid)
+            LEFT JOIN biblio ON biblio.biblionumber = subscription.biblionumber
+            LEFT JOIN biblioitems ON biblioitems.biblionumber = subscription.biblionumber
+            LEFT JOIN aqbooksellers ON subscription.aqbooksellerid = aqbooksellers.id
+    };
+    my @where_strs;
+    my @where_args;
+    if( $args->{biblionumber} ) {
+        push @where_strs, "biblio.biblionumber = ?";
+        push @where_args, $args->{biblionumber};
+    }
+    if( $args->{title} ){
+        push @where_strs, "biblio.title LIKE ?";
+        push @where_args, "%$args->{title}%";
+    }
+    if( $args->{issn} ){
+        push @where_strs, "biblioitems.issn LIKE ?";
+        push @where_args, "%$args->{issn}%";
+    }
+    if( $args->{ean} ){
+        push @where_strs, "biblioitems.ean LIKE ?";
+        push @where_args, "%$args->{ean}%";
+    }
+    if( $args->{publisher} ){
+        push @where_strs, "biblioitems.publishercode LIKE ?";
+        push @where_args, "%$args->{publisher}%";
+    }
+    if( $args->{bookseller} ){
+        push @where_strs, "aqbooksellers.name LIKE ?";
+        push @where_args, "%$args->{bookseller}%";
+    }
+    if( $args->{branch} ){
+        push @where_strs, "subscription.branchcode = ?";
+        push @where_args, "$args->{branch}";
+    }
+
+    if(@where_strs){
+        $query .= " WHERE " . join(" AND ", @where_strs);
+    }
+
+    my $dbh = C4::Context->dbh;
+    my $sth = $dbh->prepare($query);
+    $sth->execute(@where_args);
+    my $results = $sth->fetchall_arrayref( {} );
+    $sth->finish;
+
+    return @$results;
+}
+
 
 =head2 GetSerials
 
@@ -741,7 +825,7 @@ sub GetLatestSerials {
                         FROM     serial
                         WHERE    subscriptionid = ?
                         AND      (status =2 or status=4)
-                        ORDER BY planneddate DESC LIMIT 0,$limit
+                        ORDER BY publisheddate DESC LIMIT 0,$limit
                 ";
     my $sth = $dbh->prepare($strsth);
     $sth->execute($subscriptionid);
@@ -1073,7 +1157,8 @@ sub ModSerialStatus {
 
 # check if an alert must be sent... (= a letter is defined & status became "arrived"
         if ( $val->{letter} && $status == 2 && $oldstatus != 2 ) {
-            SendAlerts( 'issue', $val->{subscriptionid}, $val->{letter} );
+            require C4::Letters;
+            C4::Letters::SendAlerts( 'issue', $val->{subscriptionid}, $val->{letter} );
         }
     }
     return;
@@ -1094,7 +1179,7 @@ $nextexepected = {
 
 =cut
 
-sub GetNextExpected($) {
+sub GetNextExpected {
     my ($subscriptionid) = @_;
     my $dbh              = C4::Context->dbh;
     my $sth              = $dbh->prepare('SELECT serialid, planneddate FROM serial WHERE subscriptionid=? AND status=?');
@@ -1129,7 +1214,7 @@ returns 0
 
 =cut
 
-sub ModNextExpected($$) {
+sub ModNextExpected {
     my ( $subscriptionid, $date ) = @_;
     my $dbh = C4::Context->dbh;
 
@@ -1287,7 +1372,7 @@ sub NewSubscription {
     logaction( "SERIAL", "ADD", $subscriptionid, "" ) if C4::Context->preference("SubscriptionLog");
 
     #set serial flag on biblio if not already set.
-    my ( $null, ($bib) ) = GetBiblio($biblionumber);
+    my $bib = GetBiblio($biblionumber);
     if ( !$bib->{'serial'} ) {
         my $record = GetMarcBiblio($biblionumber);
         my ( $tag, $subf ) = GetMarcFromKohaField( 'biblio.serial', $bib->{'frameworkcode'} );
@@ -2160,6 +2245,40 @@ sub in_array {    # used in next sub down
     return 0;
 }
 
+=head2 GetSubscriptionsFromBorrower
+
+($count,@routinglist) = GetSubscriptionsFromBorrower($borrowernumber)
+
+this gets the info from subscriptionroutinglist for each $subscriptionid
+
+return :
+a count of the serial subscription routing lists to which a patron belongs,
+with the titles of those serial subscriptions as an array. Each element of the array
+contains a hash_ref with subscriptionID and title of subscription.
+
+=cut
+
+sub GetSubscriptionsFromBorrower {
+    my ($borrowernumber) = @_;
+    my $dbh              = C4::Context->dbh;
+    my $sth              = $dbh->prepare(
+        "SELECT subscription.subscriptionid, biblio.title
+            FROM subscription
+            JOIN biblio ON biblio.biblionumber = subscription.biblionumber
+            JOIN subscriptionroutinglist USING (subscriptionid)
+            WHERE subscriptionroutinglist.borrowernumber = ? ORDER BY title ASC
+                               "
+    );
+    $sth->execute($borrowernumber);
+    my @routinglist;
+    my $count = 0;
+    while ( my $line = $sth->fetchrow_hashref ) {
+        $count++;
+        push( @routinglist, $line );
+    }
+    return ( $count, @routinglist );
+}
+
 =head2 GetNextDate
 
 $resultdate = GetNextDate($planneddate,$subscription)
@@ -2176,7 +2295,7 @@ Return 0 if periodicity==0
 
 =cut
 
-sub GetNextDate(@) {
+sub GetNextDate {
     my ( $planneddate, $subscription ) = @_;
     my @irreg = split( /\,/, $subscription->{irregularity} );
 

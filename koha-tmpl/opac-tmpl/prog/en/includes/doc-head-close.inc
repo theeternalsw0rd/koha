@@ -2,26 +2,34 @@
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <meta name="generator" content="Koha [% Version %]" /> <!-- leave this for stats -->
 <link rel="shortcut icon" href="[% IF ( OpacFavicon ) %][% OpacFavicon %][% ELSE %][% themelang %]/includes/favicon.ico[% END %]" type="image/x-icon" />
-[% IF ( opacstylesheet ) %]<link rel="stylesheet" type="text/css" href="[% opacstylesheet %]" />[% ELSE %]
-[% IF ( opaclayoutstylesheet ) %]<link rel="stylesheet" type="text/css" href="[% themelang %]/css/[% opaclayoutstylesheet %]" />[% ELSE %]<link rel="stylesheet" type="text/css" href="[% themelang %]/css/opac.css" />[% END %][% END %]
-[% IF ( opaccolorstylesheet ) %]
-    <link rel="stylesheet" type="text/css" href="[% themelang %]/css/[% opaccolorstylesheet %]" />
+<link rel="stylesheet" type="text/css" href="[% themelang %]/lib/jquery/jquery-ui.css" />
+<link rel="stylesheet" type="text/css" href="[% yuipath %]/reset-fonts-grids.css" />
+<link rel="stylesheet" type="text/css" href="[% yuipath %]/skin.css" />
+[% SET opaclayoutstylesheet='opac.css' UNLESS opaclayoutstylesheet %]
+[% IF (opaclayoutstylesheet.match('^https?:|^\/')) %]
+    <link rel="stylesheet" type="text/css" href="[% opaclayoutstylesheet %]" />
+[% ELSE %]
+    <link rel="stylesheet" type="text/css" href="[% themelang %]/css/[% opaclayoutstylesheet %]" />
 [% END %]
-[% IF ( opacexternalsheet ) %]
-    <link rel="stylesheet" type="text/css" href="[% opacexternalsheet %]" />
+[% IF ( opaccolorstylesheet ) %]
+    [% IF (opaccolorstylesheet.match('^https?:|^\/')) %]
+        <link rel="stylesheet" type="text/css" href="[% opaccolorstylesheet %]" />
+    [% ELSE %]
+        <link rel="stylesheet" type="text/css" href="[% themelang %]/css/[% opaccolorstylesheet %]" />
+    [% END %]
 [% END %]
 [% IF ( opac_css_override ) %]
     <link rel="stylesheet" type="text/css" href="[% themelang %]/css/[% opac_css_override %]" />
 [% END %]
 <link rel="stylesheet" type="text/css" media="print" href="[% themelang %]/css/print.css" />
-<link rel="stylesheet" type="text/css" href="[% themelang %]/lib/jquery/plugins/ui.tabs.css" />
+[% IF ( OPACMobileUserCSS ) %]<style type="text/css" media="screen and (max-width:700px)">[% OPACMobileUserCSS %]</style>[% END %]
 [% IF ( OPACUserCSS ) %]<style type="text/css">[% OPACUserCSS %]</style>[% END %]
 <!-- yui js --> 
 <script type="text/javascript" src="[% yuipath %]/utilities/utilities.js"></script> 
 <script type="text/javascript" src="[% yuipath %]/container/container-min.js"></script> 
 <script type="text/javascript" src="[% yuipath %]/menu/menu-min.js"></script> 
 <script type="text/javascript" src="[% themelang %]/lib/jquery/jquery.js"></script>
-<script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/ui.tabs.js"></script>
+<script type="text/javascript" src="[% themelang %]/lib/jquery/jquery-ui.js"></script>
 <script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.hoverIntent.minified.js"></script>
 <script type="text/javascript" language="javascript" src="[% themelang %]/js/script.js"></script>
 [% IF ( OPACAmazonCoverImages ) %]
@@ -56,6 +64,7 @@
     var MSG_CONFIRM_DEL_BASKET = _("Are you sure you want to empty your cart?");
     var MSG_CONFIRM_DEL_RECORDS = _("Are you sure you want to remove the selected items?");
     var MSG_ITEM_IN_CART = _("In your cart");
+    var MSG_IN_YOUR_CART = _("Items in your cart: ");
     var MSG_ITEM_NOT_IN_CART = _("Add to your cart");
 	$("#cartDetails").ready(function(){ $("#cmspan").html("<a href=\"#\" id=\"cartmenulink\" class=\"\"><i><\/i><span><i><\/i><span><\/span><span id=\"carticon\"></span> "+_("Cart")+"<span id=\"basketcount\"><\/span><\/span><\/a>"); }); [% ELSE %][% IF ( virtualshelves ) %]
     var MSG_NO_RECORD_SELECTED = _("No item was selected");[% END %][% END %]

@@ -60,6 +60,20 @@ $apacheVersion = `httpd2 -v` unless $apacheVersion;
 $apacheVersion = (`/usr/sbin/apache2 -V`)[0] unless $apacheVersion;
 my $zebraVersion = `zebraidx -V`;
 
+# Additional system information for warnings
+my $prefNoZebra = C4::Context->preference('nozebra');
+my $prefAutoCreateAuthorities = C4::Context->preference('AutoCreateAuthorities');
+my $prefBiblioAddsAuthorities = C4::Context->preference('BiblioAddsAuthorities');
+my $warnPrefBiblioAddsAuthorities = ( $prefAutoCreateAuthorities && ( !$prefBiblioAddsAuthorities) );
+
+my $prefEasyAnalyticalRecords  = C4::Context->preference('EasyAnalyticalRecords');
+my $prefUseControlNumber  = C4::Context->preference('UseControlNumber');
+my $warnPrefEasyAnalyticalRecords  = ( $prefEasyAnalyticalRecords  && $prefUseControlNumber );
+
+my $errZebraConnection = C4::Context->Zconn("biblioserver",0)->errcode();
+
+my $warnIsRootUser   = (! $loggedinuser);
+
 $template->param(
     kohaVersion   => $kohaVersion,
     osVersion     => $osVersion,
@@ -69,6 +83,13 @@ $template->param(
     mysqlVersion  => $mysqlVersion,
     apacheVersion => $apacheVersion,
     zebraVersion  => $zebraVersion,
+    prefNoZebra   => $prefNoZebra,
+    prefBiblioAddsAuthorities => $prefBiblioAddsAuthorities,
+    prefAutoCreateAuthorities => $prefAutoCreateAuthorities,
+    warnPrefBiblioAddsAuthorities => $warnPrefBiblioAddsAuthorities,
+    warnPrefEasyAnalyticalRecords  => $warnPrefEasyAnalyticalRecords,
+    errZebraConnection => $errZebraConnection,
+    warnIsRootUser => $warnIsRootUser,
 );
 
 my @components = ();
@@ -108,6 +129,13 @@ foreach (@components) {
         $row = [];
     }
 }
+# Processing the last line (if there are any modules left)
+if (scalar(@$row) > 0) {
+    # Extending $row to the table size
+    $$row[3] = '';
+    # Pushing the last line
+    push (@$table, {row => $row});
+}
 ## ## $table
 
 $template->param( table => $table );
@@ -131,6 +159,9 @@ shift @lines; #remove header row
 
 foreach (@lines) {
     my ( $date, $desc, $tag ) = split(/\t/);
+    if(!$desc && $date=~ /(?<=\d{4})\s+/) {
+        ($date, $desc)= ($`, $');
+    }
     push(
         @rows2,
         {

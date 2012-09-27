@@ -9,7 +9,7 @@
 <p>To create a new matching rule:</p>
 
 <ul>
-	<li>Click 'New Record Matching Rule'
+    <li>Click 'New Record Matching Rule'
 <ul>
 	<li>Choose a unique name and enter it in the 'Matching rule code' field</li>
 	<li>'Description' can be anything you want to make it clear to you what rule you're picking</li>
@@ -43,9 +43,9 @@
 	<li>Offset: 0</li>
 	<li>Length: 0</li>
 	<li>Normalization rule: Control-number</li>
-	<li>Required Match checks: none (remove the blank one)</li>
+   <li>Required Match checks: none (remove the blank one)</li>
 </ul>
 
-<p><strong>See the full documentation for Record Matching Rules in the <a href="http://manual.koha-community.org/3.6/en/catadmin.html#recordmatchingrules">manual</a> (online).</strong></p>
+<p><strong>See the full documentation for Record Matching Rules in the <a href="http://manual.koha-community.org/3.8/en/catadmin.html#recordmatchingrules">manual</a> (online).</strong></p>
 
 [% INCLUDE 'help-bottom.inc' %]

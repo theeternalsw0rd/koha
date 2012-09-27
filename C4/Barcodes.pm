@@ -28,13 +28,14 @@ use C4::Dates;
 use C4::Barcodes::hbyymmincr;
 use C4::Barcodes::annual;
 use C4::Barcodes::incremental;
+use C4::Barcodes::EAN13;
 
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use vars qw($debug $cgi_debug);	# from C4::Debug, of course
 use vars qw($max $prefformat);
 
 BEGIN {
-    $VERSION = 0.01;
+    $VERSION = 3.07.00.049;
 	require Exporter;
     @ISA = qw(Exporter);
     @EXPORT_OK = qw();
@@ -54,23 +55,23 @@ sub initial {
 	return '0000001';
 }
 sub width {
-	return undef;
+	return;
 }
-sub process_head($$;$$) {	# (self,head,whole,specific)
+sub process_head {	# (self,head,whole,specific)
 	my $self = shift;
 	return shift;			# Default: just return the head unchanged.
 }
-sub process_tail($$;$$) {	# (self,tail,whole,specific)
+sub process_tail {	# (self,tail,whole,specific)
 	my $self = shift;
 	return shift;			# Default: just return the tail unchanged.
 }
-sub is_max ($;$) {
+sub is_max {
 	my $self = shift;
 	ref($self) or carp "Called is_max on a non-object: '$self'";
 	(@_) and $self->{is_max} = shift;
 	return $self->{is_max} || 0;
 }
-sub value ($;$) {
+sub value {
 	my $self = shift;
 	if (@_) {
 		my $value = shift;
@@ -83,14 +84,14 @@ sub value ($;$) {
 	}
 	return $self->{value};
 }
-sub autoBarcode (;$) {
+sub autoBarcode {
 	(@_) or return _prefformat;
 	my $self = shift;
 	my $value = $self->{autoBarcode} or return _prefformat;
 	$value =~ s/^.*:://;	# in case we get C4::Barcodes::incremental, we just want 'incremental'
 	return $value;
 }
-sub parse ($;$) {	# return 3 parts of barcode: non-incrementing, incrementing, non-incrementing
+sub parse {	# return 3 parts of barcode: non-incrementing, incrementing, non-incrementing
 	my $self = shift;
 	my $barcode = (@_) ? shift : $self->value;
 	unless ($barcode =~ /(.*?)(\d+)$/) {	# non-greedy match in first part
@@ -100,7 +101,7 @@ sub parse ($;$) {	# return 3 parts of barcode: non-incrementing, incrementing, n
 	$debug and warn "Barcode '$barcode' parses into: '$1', '$2', ''";
 	return ($1,$2,'');	# the third part is in anticipation of barcodes that include checkdigits
 }
-sub max ($;$) {
+sub max {
 	my $self = shift;
 	if ($self->{is_max}) {
 		$debug and print STDERR "max taken from Barcodes value $self->value\n";
@@ -109,14 +110,14 @@ sub max ($;$) {
 	$debug and print STDERR "Retrieving max database query.\n";
 	return $self->db_max;
 }
-sub db_max () {
+sub db_max {
 	my $self = shift;
 	my $query = "SELECT max(abs(barcode)) FROM items LIMIT 1"; # Possible problem if multiple barcode types populated
 	my $sth = C4::Context->dbh->prepare($query);
 	$sth->execute();
 	return $sth->fetchrow_array || $self->initial;
 }
-sub next_value ($;$) {
+sub next_value {
 	my $self = shift;
 	my $specific = (scalar @_) ? 1 : 0;
 	my $max = $specific ? shift : $self->max;		# optional argument, i.e. next_value after X
@@ -128,7 +129,7 @@ sub next_value ($;$) {
 	my ($head,$incr,$tail) = $self->parse($max);	# for incremental, you'd get ('',the_whole_barcode,'')
 	unless (defined $incr) {
 		warn "No incrementing part of barcode ($max) returned by parse.";
-		return undef;
+		return;
 	}
 	my $x = length($incr);		# number of digits
 	$incr =~ /^9+$/ and $x++;	# if they're all 9's, we need an extra.
@@ -138,27 +139,27 @@ sub next_value ($;$) {
 
 	$debug and warn "$incr";
 	$head = $self->process_head($head,$max,$specific);
-	$tail = $self->process_tail($tail,$max,$specific);
+    $tail = $self->process_tail($tail,$incr,$specific); # XXX use $incr and not $max!
 	my $next_value = $head . $incr . $tail;
 	$debug and print STDERR "(  next ) max barcode found: $next_value\n";
 	return $next_value;
 }
-sub next ($;$) {
-	my $self = shift or return undef;
+sub next {
+	my $self = shift or return;
 	(@_) and $self->{next} = shift;
 	return $self->{next};
 }
-sub previous ($;$) {
-	my $self = shift or return undef;
+sub previous {
+	my $self = shift or return;
 	(@_) and $self->{previous} = shift;
 	return $self->{previous};
 }
-sub serial ($;$) {
-	my $self = shift or return undef;
+sub serial {
+	my $self = shift or return;
 	(@_) and $self->{serial} = shift;
 	return $self->{serial};
 }
-sub default_self (;$) {
+sub default_self {
 	(@_) or carp "default_self called with no argument.  Reverting to _prefformat.";
 	my $autoBarcode = (@_) ? shift : _prefformat;
 	$autoBarcode =~ s/^.*:://;  # in case we get C4::Barcodes::incremental, we just want 'incremental'
@@ -177,6 +178,7 @@ our $types = {
 	incremental => sub {C4::Barcodes::incremental->new_object(@_);},
 	hbyymmincr  => sub {C4::Barcodes::hbyymmincr->new_object(@_); },
 	OFF         => sub {C4::Barcodes::OFF->new_object(@_);        },
+    EAN13       => sub {C4::Barcodes::EAN13->new_object(@_);      },
 };
 
 sub new {
@@ -190,11 +192,11 @@ sub new {
 	$autoBarcodeType =~ s/^.*:://;	# in case we get C4::Barcodes::incremental, we just want 'incremental'
 	unless ($autoBarcodeType) {
 		carp "No autoBarcode format found.";
-		return undef;
+		return;
 	}
 	unless (defined $types->{$autoBarcodeType}) {
 		carp "The autoBarcode format '$autoBarcodeType' is unrecognized.";
-		return undef;
+		return;
 	}
 	carp "autoBarcode format = $autoBarcodeType" if $debug;
 	my $self;
@@ -225,7 +227,7 @@ sub new {
 		return $self;
 	}
 	carp "Failed new C4::Barcodes::$autoBarcodeType";
-	return undef;
+	return;
 }
 
 sub new_object {

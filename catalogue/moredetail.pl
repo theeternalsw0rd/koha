@@ -27,14 +27,15 @@ use C4::Biblio;
 use C4::Items;
 use C4::Branch;
 use C4::Acquisition;
+use C4::Bookseller qw(GetBookSellerFromId);
 use C4::Output;
 use C4::Auth;
 use C4::Serials;
-use C4::Dates qw/format_date/;
 use C4::Circulation;  # to use itemissues
 use C4::Members; # to use GetMember
 use C4::Search;		# enabled_staff_search_views
 use C4::Members qw/GetHideLostItemsPreference/;
+use Koha::DateUtils;
 
 my $query=new CGI;
 
@@ -60,6 +61,8 @@ if($query->cookie("holdfor")){
         holdfor_cardnumber => $holdfor_patron->{'cardnumber'},
     );
 }
+
+my $hidepatronname = C4::Context->preference("HidePatronName");
 
 # get variables
 
@@ -116,10 +119,11 @@ $data->{'showncount'}=$showncount;
 $data->{'hiddencount'}=$hiddencount;  # can be zero
 
 my $ccodes= GetKohaAuthorisedValues('items.ccode',$fw);
+my $copynumbers = GetKohaAuthorisedValues('items.copynumber',$fw);
 my $itemtypes = GetItemTypes;
 
 $data->{'itemtypename'} = $itemtypes->{$data->{'itemtype'}}->{'description'};
-
+$data->{'rentalcharge'} = sprintf( "%.2f", $data->{'rentalcharge'} );
 foreach ( keys %{$data} ) {
     $template->param( "$_" => defined $data->{$_} ? $data->{$_} : '' );
 }
@@ -131,9 +135,15 @@ foreach my $item (@items){
     $item->{'collection'}              = $ccodes->{ $item->{ccode} } if ($ccodes);
     $item->{'itype'}                   = $itemtypes->{ $item->{'itype'} }->{'description'};
     $item->{'replacementprice'}        = sprintf( "%.2f", $item->{'replacementprice'} );
-    $item->{$_}                        = format_date( $item->{$_} ) foreach qw/datelastborrowed dateaccessioned datelastseen lastreneweddate/;
-    $item->{'copyvol'}                 = $item->{'copynumber'};
-
+    if ( defined $item->{'copynumber'} ) {
+        $item->{'displaycopy'} = 1;
+        if ( defined $copynumbers->{ $item->{'copynumber'} } ) {
+            $item->{'copyvol'} = $copynumbers->{ $item->{'copynumber'} }
+        }
+        else {
+            $item->{'copyvol'} = $item->{'copynumber'};
+        }
+    }
 
     # item has a host number if its biblio number does not match the current bib
     if ($item->{biblionumber} ne $biblionumber){
@@ -142,11 +152,19 @@ foreach my $item (@items){
     }
 
     my $order  = GetOrderFromItemnumber( $item->{'itemnumber'} );
-    my $basket = GetBasket( $order->{'basketno'} );
-    $item->{'booksellerid'}            = $basket->{'booksellerid'};
     $item->{'ordernumber'}             = $order->{'ordernumber'};
     $item->{'basketno'}                = $order->{'basketno'};
-    $item->{'booksellerinvoicenumber'} = $order->{'booksellerinvoicenumber'};
+    $item->{'orderdate'}               = $order->{'entrydate'};
+    if ($item->{'basketno'}){
+	    my $basket = GetBasket($item->{'basketno'});
+	    my $bookseller = GetBookSellerFromId($basket->{'booksellerid'});
+	    $item->{'vendor'} = $bookseller->{'name'};
+    }
+    $item->{'invoiceid'}               = $order->{'invoiceid'};
+    if($item->{invoiceid}) {
+        my $invoice = GetInvoice($item->{invoiceid});
+        $item->{invoicenumber} = $invoice->{invoicenumber} if $invoice;
+    }
     $item->{'datereceived'}            = $order->{'datereceived'};
 
     if ($item->{notforloantext} or $item->{itemlost} or $item->{damaged} or $item->{wthdrawn}) {
@@ -163,11 +181,19 @@ foreach my $item (@items){
     $item->{'homebranchname'} = GetBranchName($item->{'homebranch'});
     $item->{'holdingbranchname'} = GetBranchName($item->{'holdingbranch'});
     if ($item->{'datedue'}) {
-        $item->{'datedue'} = format_date($item->{'datedue'});
         $item->{'issue'}= 1;
     } else {
         $item->{'issue'}= 0;
     }
+
+    unless ($hidepatronname) {
+        if ( $item->{'borrowernumber'} ) {
+            my $curr_borrower = GetMember('borrowernumber' => $item->{'borrowernumber'} );
+            $item->{borrowerfirstname} = $curr_borrower->{'firstname'};
+            $item->{borrowersurname} = $curr_borrower->{'surname'};
+        }
+    }
+
 }
 $template->param(count => $data->{'count'},
 	subscriptionsnumber => $subscriptionsnumber,
@@ -184,6 +210,7 @@ $template->param(
     itemnumber          => $itemnumber,
     z3950_search_params => C4::Search::z3950_search_args(GetBiblioData($biblionumber)),
     subtitle            => $subtitle,
+    hidepatronname      => $hidepatronname,
 );
 $template->param(ONLY_ONE => 1) if ( $itemnumber && $showncount != @items );
 

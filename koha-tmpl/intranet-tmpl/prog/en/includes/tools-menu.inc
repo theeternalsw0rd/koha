@@ -1,18 +1,19 @@
 <script type="text/javascript">//<![CDATA[
-	$(document).ready(function() {
-		var path = location.pathname.substring(1);
-		var url = window.location.toString();
-		url.match(/\?(.+)$/);
-		var params = RegExp.$1;
-		if (params) { params = "?" + params; }
-		$('#navmenulist a[href$="/' + path + params + '"]').css('font-weight','bold');
-	});
+    $(document).ready(function() {
+        var path = location.pathname.substring(1);
+        var url = window.location.toString();
+        var params = '';
+        if ( url.match(/\?(.+)$/) ) {
+            params = "?" + RegExp.$1;
+        }
+        $('#navmenulist a[href$="/' + path + params + '"]').css('font-weight','bold');
+    });
 //]]>
 </script>
 <div id="navmenu">
 <div id="navmenulist">
 <ul>
-	<li><a href="/cgi-bin/koha/tools/tools-home.pl">Tools Home</a></li>
+    <li><a href="/cgi-bin/koha/tools/tools-home.pl">Tools home</a></li>
 </ul>
 <h5>Patrons and circulation</h5>
 <ul>
@@ -23,7 +24,7 @@
 	<li><a href="/cgi-bin/koha/tools/import_borrowers.pl">Import patrons</a></li>
     [% END %]
     [% IF ( CAN_user_tools_edit_notices ) %]
-	<li><a href="/cgi-bin/koha/tools/letter.pl">Notices</a></li>
+    <li><a href="/cgi-bin/koha/tools/letter.pl">Notices &amp; slips</a></li>
     [% END %]
     [% IF ( CAN_user_tools_edit_notice_status_triggers ) %]
 	<li><a href="/cgi-bin/koha/tools/overduerules.pl">Overdue notice/status triggers</a></li>
@@ -33,6 +34,9 @@
     [% END %]
     [% IF ( CAN_user_tools_delete_anonymize_patrons ) %]
     <li><a href="/cgi-bin/koha/tools/cleanborrowers.pl">Patrons (anonymize, bulk-delete)</a></li>
+    [% END %]
+    [% IF ( CAN_user_tools_edit_patrons ) %]
+    <li><a href="/cgi-bin/koha/tools/modborrowers.pl">Batch patron modification</a></li>
     [% END %]
     [% IF ( CAN_user_tools_moderate_tags ) %]
     <li><a href="/cgi-bin/koha/tags/review.pl">Tag moderation</a></li>
@@ -50,7 +54,7 @@
 	<li><a href="/cgi-bin/koha/tools/batchMod.pl">Batch item modification</a></li>
     [% END %]
     [% IF ( CAN_user_tools_export_catalog ) %]
-	<li><a href="/cgi-bin/koha/tools/export.pl">Export bibs/holdings</a></li>
+    <li><a href="/cgi-bin/koha/tools/export.pl">Export data</a></li>
     [% END %]
     [% IF ( CAN_user_tools_inventory ) %]
 	<li><a href="/cgi-bin/koha/tools/inventory.pl">Inventory/stocktaking</a></li>
@@ -71,10 +75,10 @@
 	<li><a href="/cgi-bin/koha/tools/manage-marc-import.pl">Staged MARC management</a></li>
     [% END %]
     [% IF ( CAN_user_tools_upload_local_cover_images ) %]
-	<li><a href="/cgi-bin/koha/tools/upload-cover-image.pl">Upload Local Cover Image</a></li>
+    <li><a href="/cgi-bin/koha/tools/upload-cover-image.pl">Upload local cover image</a></li>
     [% END %]
 </ul>
-<h5>Additional Tools</h5>
+<h5>Additional tools</h5>
 <ul>
     [% IF ( CAN_user_tools_edit_calendar ) %]
 	<li><a href="/cgi-bin/koha/tools/holidays.pl">Calendar</a></li>
@@ -90,5 +94,8 @@
     [% END %]
     [% IF ( CAN_user_tools_schedule_tasks ) %]
 	<li><a href="/cgi-bin/koha/tools/scheduler.pl">Task scheduler</a></li>
+    [% END %]
+    [% IF ( CAN_user_tools_edit_quotes ) %]
+       <li><a href="/cgi-bin/koha/tools/quotes.pl">Quote editor</a></li>
     [% END %]
 </ul></div></div>

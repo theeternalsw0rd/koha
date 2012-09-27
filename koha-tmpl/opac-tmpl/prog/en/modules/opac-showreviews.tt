@@ -1,6 +1,8 @@
-[% INCLUDE 'doc-head-open.inc' %][% IF ( LibraryNameTitle ) %][% LibraryNameTitle %][% ELSE %]Koha Online[% END %] Catalog &rsaquo; Recent Comments
+[% USE KohaDates %]
+
+[% INCLUDE 'doc-head-open.inc' %][% IF ( LibraryNameTitle ) %][% LibraryNameTitle %][% ELSE %]Koha online[% END %] catalog &rsaquo; Recent comments
 [% INCLUDE 'doc-head-close.inc' %]
-<link rel="alternate" type="application/rss+xml" title="[% IF ( LibraryNameTitle ) %][% LibraryNameTitle %][% ELSE %]Koha Online[% END %] Catalog Recent Comments" href="[% OPACBaseURL %]/cgi-bin/koha/opac-showreviews.pl?format=rss" />
+<link rel="alternate" type="application/rss+xml" title="[% IF ( LibraryNameTitle ) %][% LibraryNameTitle %][% ELSE %]Koha online[% END %] catalog recent comments" href="[% OPACBaseURL %]/cgi-bin/koha/opac-showreviews.pl?format=rss" />
 <script type="text/javascript">
 //<![CDATA[
 $(document).ready(function(){
@@ -53,9 +55,21 @@ $(document).ready(function(){
             [% FILTER html_break %]
             [% review.review |html %]
             [% END %]
-            <span style="font-size:87%;font-color:#CCC;">Added [% review.datereviewed %] [% IF ( review.your_comment ) %] by <strong>you</strong>[% ELSE %]
-            [% IF ( ShowReviewer ) %] by
-            [% review.firstname %] [% review.surname %][% END %][% END %]</span></p>
+            <span style="font-size:87%;font-color:#CCC;">Added [% review.datereviewed | $KohaDates %] [% IF ( review.your_comment ) %] by <strong>you</strong>[% ELSE %]
+            [% IF ( review.borrowernumber && ShowReviewer != "none" ) %] by
+                [% SWITCH ShowReviewer %]
+                [% CASE 'full' %]
+                    [% review.borrtitle %] [% review.firstname %] [% review.surname %]
+                [% CASE 'first' %]
+                    [% review.firstname %]
+                [% CASE 'surname' %]
+                    [% review.surname %]
+                [% CASE 'firstandinitial' %]
+                    [% review.firstname %] [% review.surname|truncate(2,'.') %]
+                [% CASE 'username' %]
+                    [% review.userid %]
+                [% END %]
+            [% END %][% END %]</span></p>
         </td>
         <td>
 [% IF ( review.BiblioDefaultViewmarc ) %]<a class="title" href="/cgi-bin/koha/opac-MARCdetail.pl?biblionumber=[% review.biblionumber |url %]" title="View details for this title">
@@ -66,7 +80,7 @@ $(document).ready(function(){
     [% END %]
 
 
-            [% IF ( OPACAmazonEnabled ) %][% IF ( OPACAmazonCoverImages ) %][% IF ( review.normalized_isbn ) %]<img src="http://images.amazon.com/images/P/[% review.normalized_isbn %].01.TZZZZZZZ.jpg" alt="" class="thumbnail" />[% ELSE %]<span class="no-image">No cover image available</span>[% END %][% END %][% END %]
+            [% IF ( OPACAmazonCoverImages ) %][% IF ( review.normalized_isbn ) %]<img src="http://images.amazon.com/images/P/[% review.normalized_isbn %].01.TZZZZZZZ.jpg" alt="" class="thumbnail" />[% ELSE %]<span class="no-image">No cover image available</span>[% END %][% END %]
 
             [% IF ( SyndeticsEnabled ) %][% IF ( SyndeticsCoverImages ) %][% IF ( using_https ) %]
         <img src="https://secure.syndetics.com/index.aspx?isbn=[% review.normalized_isbn %]/SC.GIF&amp;client=[% SyndeticsClientCode %]&amp;type=xw10&amp;upc=[% review.normalized_upc %]&amp;oclc=[% review.normalized_oclc %]" alt="" class="thumbnail" />

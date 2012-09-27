@@ -30,8 +30,10 @@ my ($template, $loggedinuser, $cookie)
 			     query => $query,
 			     type => "intranet",
 			     authnotrequired => 0,
-			     flagsrequired => {parameters => 1},
+                 flagsrequired => {parameters => '*'},
 			     debug => 1,
 			     });
+
+$template->param( SearchEngine => C4::Context->preference('SearchEngine') );
 
 output_html_with_http_headers $query, $cookie, $template->output;

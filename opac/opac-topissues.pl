@@ -122,14 +122,14 @@ if($timeLimit eq 999){ $timeLimitFinite = 0 };
 
 $template->param(do_it => 1,
                 limit => $limit,
-                branch => $branches->{$branch}->{branchname} || 'all locations',
-                itemtype => $itemtypes->{$itemtype}->{description} || 'item types',
+                branch => $branches->{$branch}->{branchname},
+                itemtype => $itemtypes->{$itemtype}->{description},
                 timeLimit => $timeLimit,
                 timeLimitFinite => $timeLimit,
                 results_loop => \@results,
                 );
 
-$template->param( branchloop => GetBranchesLoop(C4::Context->userenv->{'branch'}));
+$template->param( branchloop => GetBranchesLoop(C4::Context->userenv?C4::Context->userenv->{'branch'}:''));
 
 # the index parameter is different for item-level itemtypes
 my $itype_or_itemtype = (C4::Context->preference("item-level_itypes"))?'itype':'itemtype';
@@ -146,7 +146,8 @@ if (!$advanced_search_types or $advanced_search_types eq 'itemtypes') {
 } else {
     my $advsearchtypes = GetAuthorisedValues($advanced_search_types, '', 'opac');
         for my $thisitemtype (@$advsearchtypes) {
-                my $selected = 1 if $thisitemtype->{authorised_value} eq $itemtype;
+                my $selected;
+            $selected = 1 if $thisitemtype->{authorised_value} eq $itemtype;
                 my %row =( value => $thisitemtype->{authorised_value},
                 selected    => $thisitemtype eq $itemtype,
                 description => $thisitemtype->{'lib'},

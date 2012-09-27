@@ -72,7 +72,7 @@ my ( $template, $borrowernumber, $cookie ) = get_template_and_user(
         query           => $input,
         type            => "intranet",
         authnotrequired => 0,
-        flagsrequired   => { parameters => 1 },
+        flagsrequired   => { parameters => 'parameters_remaining_permissions' },
         debug           => 1,
     }
 );
@@ -179,6 +179,7 @@ if ( $op eq 'add_form' ) {
     while ( $data = $sth->fetchrow_hashref ) {
         my %row_data;    # get a fresh hash for the row data
         $row_data{defaultvalue} = $data->{defaultvalue};
+        $row_data{maxlength} = $data->{maxlength};
         $row_data{tab} = CGI::scrolling_list(
             -name   => 'tab',
             -id     => "tab$i",
@@ -273,14 +274,13 @@ if ( $op eq 'add_form' ) {
     }
 
     # add more_subfields empty lines for add if needed
-    for ( my $j = 1 ; $j <= 1 ; $j++ ) {
         my %row_data;    # get a fresh hash for the row data
         $row_data{'new_subfield'} = 1;
         $row_data{'subfieldcode'} = '';
 
         $row_data{tab} = CGI::scrolling_list(
             -name   => 'tab',
-            -id     => "tab$j",
+            -id     => "tab$i",
             -values =>
               [ '-1', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10' ],
             -labels => {
@@ -310,7 +310,7 @@ if ( $op eq 'add_form' ) {
         $row_data{seealso}      = "";
         $row_data{kohafield}    = CGI::scrolling_list(
             -name     => 'kohafield',
-            -id       => "kohafield$j",
+            -id       => "kohafield$i",
             -values   => \@kohafields,
             -default  => "",
             -size     => 1,
@@ -318,29 +318,29 @@ if ( $op eq 'add_form' ) {
         );
         $row_data{hidden}     = "";
         $row_data{repeatable} = CGI::checkbox(
-            -name     => "repeatable$j",
-            -id       => "repeatable$j",
+            -name     => "repeatable$i",
+            -id       => "repeatable$i",
             -checked  => '',
             -value    => 1,
             -label    => ''
         );
         $row_data{mandatory} = CGI::checkbox(
-            -name     => "mandatory$j",
-            -id       => "mandatory$j",
+            -name     => "mandatory$i",
+            -id       => "mandatory$i",
             -checked  => '',
             -value    => 1,
             -label    => ''
         );
         $row_data{isurl} = CGI::checkbox(
-            -name     => "isurl$j",
-            -id       => "isurl$j",
+            -name     => "isurl$i",
+            -id       => "isurl$i",
             -checked  => '',
             -value    => 1,
             -label    => ''
         );
         $row_data{value_builder} = CGI::scrolling_list(
             -name     => "value_builder",
-            -id       => "value_builder$j",
+            -id       => "value_builder$i",
             -values   => \@value_builder,
             -default  => $data->{'value_builder'},
             -size     => 1,
@@ -348,22 +348,22 @@ if ( $op eq 'add_form' ) {
         );
         $row_data{authorised_value} = CGI::scrolling_list(
             -name     => "authorised_value",
-            -id       => "authorised_value$j",
+            -id       => "authorised_value$i",
             -values   => \@authorised_values,
             -size     => 1,
             -multiple => 0,
         );
         $row_data{authtypes} = CGI::scrolling_list(
             -name     => "authtypecode",
-            -id       => "authtypecode$j",
+            -id       => "authtypecode$i",
             -values   => \@authtypes,
             -size     => 1,
             -multiple => 0,
         );
         $row_data{link}   = CGI::escapeHTML( $data->{'link'} );
-        $row_data{row}    = $j;
+        $row_data{row}    = $i;
         push( @loop_data, \%row_data );
-    }
+
     $template->param( 'use_heading_flags_p'      => 1 );
     $template->param( 'heading_edit_subfields_p' => 1 );
     $template->param(
@@ -386,11 +386,11 @@ elsif ( $op eq 'add_validate' ) {
 #                                     values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 #     );
     my $sth_insert = $dbh->prepare(qq{
-        insert into marc_subfield_structure (tagfield,tagsubfield,liblibrarian,libopac,repeatable,mandatory,kohafield,tab,seealso,authorised_value,authtypecode,value_builder,hidden,isurl,frameworkcode, link,defaultvalue)
-        values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        insert into marc_subfield_structure (tagfield,tagsubfield,liblibrarian,libopac,repeatable,mandatory,kohafield,tab,seealso,authorised_value,authtypecode,value_builder,hidden,isurl,frameworkcode, link,defaultvalue,maxlength)
+        values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     });
     my $sth_update = $dbh->prepare(qq{
-        update marc_subfield_structure set tagfield=?, tagsubfield=?, liblibrarian=?, libopac=?, repeatable=?, mandatory=?, kohafield=?, tab=?, seealso=?, authorised_value=?, authtypecode=?, value_builder=?, hidden=?, isurl=?, frameworkcode=?,  link=?, defaultvalue=?
+        update marc_subfield_structure set tagfield=?, tagsubfield=?, liblibrarian=?, libopac=?, repeatable=?, mandatory=?, kohafield=?, tab=?, seealso=?, authorised_value=?, authtypecode=?, value_builder=?, hidden=?, isurl=?, frameworkcode=?,  link=?, defaultvalue=?, maxlength=?
         where tagfield=? and tagsubfield=? and frameworkcode=?
     });
     my @tagsubfield       = $input->param('tagsubfield');
@@ -405,6 +405,7 @@ elsif ( $op eq 'add_validate' ) {
     my @value_builder     = $input->param('value_builder');
     my @link              = $input->param('link');
     my @defaultvalue      = $input->param('defaultvalue');
+    my @maxlength         = $input->param('maxlength');
     
     for ( my $i = 0 ; $i <= $#tagsubfield ; $i++ ) {
         my $tagfield    = $input->param('tagfield');
@@ -425,6 +426,7 @@ elsif ( $op eq 'add_validate' ) {
         my $isurl  = $input->param("isurl$i") ? 1 : 0;
         my $link   = $link[$i];
         my $defaultvalue = $defaultvalue[$i];
+        my $maxlength = $maxlength[$i];
         
         if (defined($liblibrarian) && $liblibrarian ne "") {
             unless ( C4::Context->config('demo') eq 1 ) {
@@ -447,6 +449,7 @@ elsif ( $op eq 'add_validate' ) {
                         $frameworkcode,
                         $link,
                         $defaultvalue,
+                        $maxlength,
                         (
                             $tagfield,
                             $tagsubfield,
@@ -472,6 +475,7 @@ elsif ( $op eq 'add_validate' ) {
                         $frameworkcode,
                         $link,
                         $defaultvalue,
+                        $maxlength,
                     );
                 }
             }

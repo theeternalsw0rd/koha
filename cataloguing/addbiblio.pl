@@ -215,10 +215,8 @@ sub build_authorized_values_list {
                         ($class_source eq $default_source);
             push @authorised_values, $class_source;
             $authorised_lib{$class_source} = $class_sources->{$class_source}->{'description'};
-            $value = $class_source unless ($value);
-            $value = $default_source unless ($value);
         }
-        #---- "true" authorised value
+        $value = $default_source unless $value;
     }
     else {
         $authorised_values_sth->execute(
@@ -293,14 +291,6 @@ sub create_input {
 
     $value =~ s/"/&quot;/g;
 
-    # determine maximum length; 9999 bytes per ISO 2709 except for leader and MARC21 008
-    my $max_length = 9999;
-    if ($tag eq '000') {
-        $max_length = 24;
-    } elsif ($tag eq '008' and C4::Context->preference('marcflavour') eq 'MARC21')  {
-        $max_length = 40;
-    }
-
     # if there is no value provided but a default value in parameters, get it
     if ( $value eq '' ) {
         $value = $tagslib->{$tag}->{$subfield}->{defaultvalue};
@@ -335,6 +325,7 @@ sub create_input {
         index          => $index_tag,
         id             => "tag_".$tag."_subfield_".$id_subfield."_".$index_tag."_".$index_subfield,
         value          => $value,
+        maxlength      => $tagslib->{$tag}->{$subfield}->{maxlength},
         random         => CreateKey(),
     );
 
@@ -374,7 +365,7 @@ sub create_input {
                     class=\"input_marceditor readonly\"
                     tabindex=\"1\"
                     size=\"5\"
-                    maxlength=\"$max_length\"
+                    maxlength=\"".$subfield_data{maxlength}."\"
                     readonly=\"readonly\"
                     \/>";
 
@@ -390,7 +381,7 @@ sub create_input {
                     class=\"input_marceditor readonly\"
                     tabindex=\"1\"
                     size=\"67\"
-                    maxlength=\"$max_length\"
+                    maxlength=\"".$subfield_data{maxlength}."\"
                     \/>
                     <span class=\"subfield_controls\"><a href=\"#\" class=\"buttonDot\"
                        onclick=\"openAuth(this.parentNode.parentNode.getElementsByTagName('input')[1].id,'".$tagslib->{$tag}->{$subfield}->{authtypecode}."'); return false;\" tabindex=\"1\" title=\"Tag Editor\"><img src=\"/intranet-tmpl/prog/img/edit-tag.png\" alt=\"Tag Editor\" /></a></span>
@@ -404,7 +395,7 @@ sub create_input {
                     class=\"input_marceditor readonly\"
                     tabindex=\"1\"
                     size=\"67\"
-                    maxlength=\"$max_length\"
+                    maxlength=\"".$subfield_data{maxlength}."\"
                     readonly=\"readonly\"
                     \/><span class=\"subfield_controls\"><a href=\"#\" class=\"buttonDot\"
                         onclick=\"openAuth(this.parentNode.parentNode.getElementsByTagName('input')[1].id,'".$tagslib->{$tag}->{$subfield}->{authtypecode}."'); return false;\" tabindex=\"1\" title=\"Tag Editor\"><img src=\"/intranet-tmpl/prog/img/edit-tag.png\" alt=\"Tag Editor\" /></a></span>
@@ -435,7 +426,7 @@ sub create_input {
                             class=\"input_marceditor\"
                             onfocus=\"Focus$function_name($index_tag)\"
                             size=\"67\"
-                            maxlength=\"$max_length\"
+                            maxlength=\"".$subfield_data{maxlength}."\"
                             onblur=\"Blur$function_name($index_tag); \" \/>
                             <span class=\"subfield_controls\"><a href=\"#\" class=\"buttonDot\" onclick=\"Clic$function_name('$subfield_data{id}'); return false;\" tabindex=\"1\" title=\"Tag Editor\"><img src=\"/intranet-tmpl/prog/img/edit-tag.png\" alt=\"Tag Editor\" /></a></span>
                     $javascript";
@@ -449,7 +440,7 @@ sub create_input {
                         value=\"$value\"
                         tabindex=\"1\"
                         size=\"67\"
-                        maxlength=\"$max_length\"
+                        maxlength=\"".$subfield_data{maxlength}."\"
                         class=\"input_marceditor\"
                 \/>
                 ";
@@ -463,7 +454,7 @@ sub create_input {
                     id=\"".$subfield_data{id}."\"
                     name=\"".$subfield_data{id}."\"
                     size=\"67\"
-                    maxlength=\"$max_length\"
+                    maxlength=\"".$subfield_data{maxlength}."\"
                     value=\"$value\" \/>
             ";
     }
@@ -497,7 +488,7 @@ sub create_input {
                         value=\"$value\"
                         tabindex=\"1\"
                         size=\"67\"
-                        maxlength=\"$max_length\"
+                        maxlength=\"".$subfield_data{maxlength}."\"
                         class=\"input_marceditor\"
                 \/>
                 ";
@@ -723,101 +714,13 @@ sub build_tabs {
     $template->param( BIG_LOOP => \@BIG_LOOP );
 }
 
-#
-# sub that tries to find authorities linked to the biblio
-# the sub :
-#   - search in the authority DB for the same authid (in $9 of the biblio)
-#   - search in the authority DB for the same 001 (in $3 of the biblio in UNIMARC)
-#   - search in the authority DB for the same values (exactly) (in all subfields of the biblio)
-# if the authority is found, the biblio is modified accordingly to be connected to the authority.
-# if the authority is not found, it's added, and the biblio is then modified to be connected to the authority.
-#
-
-sub BiblioAddAuthorities{
-  my ( $record, $frameworkcode ) = @_;
-  my $dbh=C4::Context->dbh;
-  my $query=$dbh->prepare(qq|
-SELECT authtypecode,tagfield
-FROM marc_subfield_structure 
-WHERE frameworkcode=? 
-AND (authtypecode IS NOT NULL AND authtypecode<>\"\")|);
-# SELECT authtypecode,tagfield
-# FROM marc_subfield_structure 
-# WHERE frameworkcode=? 
-# AND (authtypecode IS NOT NULL OR authtypecode<>\"\")|);
-  $query->execute($frameworkcode);
-  my ($countcreated,$countlinked);
-  while (my $data=$query->fetchrow_hashref){
-    foreach my $field ($record->field($data->{tagfield})){
-      next if ($field->subfield('3') || $field->subfield('9'));
-      # No authorities id in the tag.
-      # Search if there is any authorities to link to.
-      my $query='at='.$data->{authtypecode}.' ';
-      map {$query.= ' and he,ext="'.$_->[1].'"' if ($_->[0]=~/[A-z]/)}  $field->subfields();
-      my ($error, $results, $total_hits)=SimpleSearch( $query, undef, undef, [ "authorityserver" ] );
-    # there is only 1 result 
-	  if ( $error ) {
-        warn "BIBLIOADDSAUTHORITIES: $error";
-	    return (0,0) ;
-	  }
-      if ( @{$results} == 1) {
-        my $marcrecord = MARC::File::USMARC::decode($results->[0]);
-        $field->add_subfields('9'=>$marcrecord->field('001')->data);
-        $countlinked++;
-      } elsif (@{$results} > 1) {
-   #More than One result 
-   #This can comes out of a lack of a subfield.
-#         my $marcrecord = MARC::File::USMARC::decode($results->[0]);
-#         $record->field($data->{tagfield})->add_subfields('9'=>$marcrecord->field('001')->data);
-        $countlinked++;
-      } else {
-  #There are no results, build authority record, add it to Authorities, get authid and add it to 9
-  ###NOTICE : This is only valid if a subfield is linked to one and only one authtypecode     
-  ###NOTICE : This can be a problem. We should also look into other types and rejected forms.
-         my $authtypedata=GetAuthType($data->{authtypecode});
-         next unless $authtypedata;
-         my $marcrecordauth=MARC::Record->new();
-		if (C4::Context->preference('marcflavour') eq 'MARC21') {
-			$marcrecordauth->leader('     nz  a22     o  4500');
-			SetMarcUnicodeFlag($marcrecordauth, 'MARC21');
-			}
-         my $authfield=MARC::Field->new($authtypedata->{auth_tag_to_report},'','',"a"=>"".$field->subfield('a'));
-         map { $authfield->add_subfields($_->[0]=>$_->[1]) if ($_->[0]=~/[A-z]/ && $_->[0] ne "a" )}  $field->subfields();
-         $marcrecordauth->insert_fields_ordered($authfield);
-
-         # bug 2317: ensure new authority knows it's using UTF-8; currently
-         # only need to do this for MARC21, as MARC::Record->as_xml_record() handles
-         # automatically for UNIMARC (by not transcoding)
-         # FIXME: AddAuthority() instead should simply explicitly require that the MARC::Record
-         # use UTF-8, but as of 2008-08-05, did not want to introduce that kind
-         # of change to a core API just before the 3.0 release.
-
-				if (C4::Context->preference('marcflavour') eq 'MARC21') {
-					$marcrecordauth->insert_fields_ordered(MARC::Field->new('667','','','a'=>"Machine generated authority record."));
-					my $cite = $record->author() . ", " .  $record->title_proper() . ", " . $record->publication_date() . " "; 
-					$cite =~ s/^[\s\,]*//;
-					$cite =~ s/[\s\,]*$//;
-					$cite = "Work cat.: (" . C4::Context->preference('MARCOrgCode') . ")". $record->subfield('999','c') . ": " . $cite;
-					$marcrecordauth->insert_fields_ordered(MARC::Field->new('670','','','a'=>$cite));
-				}
-
-#          warn "AUTH RECORD ADDED : ".$marcrecordauth->as_formatted;
-
-         my $authid=AddAuthority($marcrecordauth,'',$data->{authtypecode});
-         $countcreated++;
-         $field->add_subfields('9'=>$authid);
-      }
-    }  
-  }
-  return ($countlinked,$countcreated);
-}
-
 # ========================
 #          MAIN
 #=========================
 my $input = new CGI;
 my $error = $input->param('error');
 my $biblionumber  = $input->param('biblionumber'); # if biblionumber exists, it's a modif, not a new biblio.
+my $parentbiblio  = $input->param('parentbiblionumber');
 my $breedingid    = $input->param('breedingid');
 my $z3950         = $input->param('z3950');
 my $op            = $input->param('op');
@@ -897,13 +800,25 @@ if (($biblionumber) && !($breedingid)){
 if ($breedingid) {
     ( $record, $encoding ) = MARCfindbreeding( $breedingid ) ;
 }
+
 #populate hostfield if hostbiblionumber is available
-if ($hostbiblionumber){
-	my $marcflavour = C4::Context->preference("marcflavour");
-	$record=MARC::Record->new();
-	$record->leader('');
-        my $field = PrepHostMarcField($hostbiblionumber, $hostitemnumber,$marcflavour);
-	$record->append_fields($field);
+if ($hostbiblionumber) {
+    my $marcflavour = C4::Context->preference("marcflavour");
+    $record = MARC::Record->new();
+    $record->leader('');
+    my $field =
+      PrepHostMarcField( $hostbiblionumber, $hostitemnumber, $marcflavour );
+    $record->append_fields($field);
+}
+
+# This is  a child record
+if ($parentbiblio) {
+    my $marcflavour = C4::Context->preference('marcflavour');
+    $record = MARC::Record->new();
+    my $hostfield = prepare_host_field($parentbiblio,$marcflavour);
+    if ($hostfield) {
+        $record->append_fields($hostfield);
+    }
 }
 
 $is_a_modif = 0;
@@ -944,7 +859,7 @@ if ( $op eq "addbiblio" ) {
         my $oldbibnum;
         my $oldbibitemnum;
         if (C4::Context->preference("BiblioAddsAuthorities")){
-          my ($countlinked,$countcreated)=BiblioAddAuthorities($record,$frameworkcode);
+          my ($countlinked,$countcreated)=BiblioAutoLink($record,$frameworkcode);
         } 
         if ( $is_a_modif ) {
             ModBiblioframework( $biblionumber, $frameworkcode ); 
@@ -1067,7 +982,6 @@ $template->param(
     frameworkcode => $frameworkcode,
     itemtype => $frameworkcode,
     borrowernumber => $loggedinuser, 
-    marcflavour => C4::Context->preference("marcflavour"),
 );
 
 output_html_with_http_headers $input, $cookie, $template->output;

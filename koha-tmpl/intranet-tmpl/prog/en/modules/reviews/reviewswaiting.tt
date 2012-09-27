@@ -2,7 +2,7 @@
 <title>Koha &rsaquo; Tools &rsaquo; Comments &rsaquo; [% IF ( status ) %] Approved comments[% ELSE %] Comments awaiting moderation[% END %]</title>
 [% INCLUDE 'doc-head-close.inc' %]
 </head>
-<body>
+<body id="tools_reviewswaiting" class="tools">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'cat-search.inc' %]
 
@@ -18,10 +18,10 @@
 <h1>Comments</h1>
 
 <!-- The manual invoice and credit buttons -->
-<div class="toptabs">
-<ul class="ui-tabs-nav">
-    [% IF ( status ) %]<li class="ui-tabs-selected">[% ELSE %]<li>[% END %]<a href="/cgi-bin/koha/reviews/reviewswaiting.pl?status=1">Approved comments</a></li>
-    [% IF ( status ) %]<li>[% ELSE %]<li class="ui-tabs-selected">[% END %]<a href="/cgi-bin/koha/reviews/reviewswaiting.pl" >Comments awaiting moderation</a></li>
+<div class="statictabs">
+<ul>
+    [% IF ( status ) %]<li class="active">[% ELSE %]<li>[% END %]<a href="/cgi-bin/koha/reviews/reviewswaiting.pl?status=1">Approved comments</a></li>
+    [% IF ( status ) %]<li>[% ELSE %]<li class="active">[% END %]<a href="/cgi-bin/koha/reviews/reviewswaiting.pl" >Comments awaiting moderation</a></li>
 </ul>
 <div class="tabs-container">
 
@@ -32,7 +32,7 @@
             Commenter
         </th>
         <th>
-            On Title
+            On title
         </th>
         <th>
             Comment
@@ -44,7 +44,7 @@
     <tbody>[% FOREACH review IN reviews %]
     <tr>
         <td>
-            <a href="/cgi-bin/koha/members/moremember.pl?borrowernumber=[% review.borrowernumber %]">[% review.surname %], [% review.firstname %]</a>
+            [% IF ( review.borrowernumber ) %]<a href="/cgi-bin/koha/members/moremember.pl?borrowernumber=[% review.borrowernumber %]">[% review.surname %], [% review.firstname %]</a>[% ELSE %](deleted patron)[% END %]
         </td>
         <td>
             <a href="/cgi-bin/koha/catalogue/detail.pl?biblionumber=[% review.biblionumber %]">[% review.bibliotitle %]</a>

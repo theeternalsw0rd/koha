@@ -24,7 +24,7 @@ use C4::Debug;
 use vars qw($VERSION @ISA $debug);
 
 BEGIN {
-	$VERSION = 1.03;
+    $VERSION = 3.07.00.049;
 	@ISA = qw(ILS::Transaction);
 }
 
@@ -38,8 +38,7 @@ my %fields = (
 sub new {
     my $class = shift;;
     my $self = $class->SUPER::new();
-    my $element;
-    foreach $element (keys %fields) {
+    foreach my $element (keys %fields) {
 		$self->{_permitted}->{$element} = $fields{$element};
     }
     @{$self}{keys %fields} = values %fields;
@@ -55,6 +54,7 @@ sub do_checkout {
 	my $shelf          = $self->{item}->hold_shelf;
 	my $barcode        = $self->{item}->id;
 	my $patron_barcode = $self->{patron}->id;
+        my $overridden_duedate; # usually passed as undef to AddIssue
 	$debug and warn "do_checkout: patron (" . $patron_barcode . ")";
 	my $borrower = $self->{patron}->getmemberdetails_object();
 	$debug and warn "do_checkout borrower: . " . Dumper $borrower;
@@ -73,7 +73,7 @@ sub do_checkout {
             $noerror = 0;
         }
     } else {
-        foreach my $confirmation (keys %$needsconfirmation) {
+        foreach my $confirmation (keys %{$needsconfirmation}) {
             if ($confirmation eq 'RENEW_ISSUE'){
                 $self->screen_msg("Item already checked out to you: renewing item.");
             } elsif ($confirmation eq 'RESERVED' or $confirmation eq 'RESERVE_WAITING') {
@@ -88,6 +88,9 @@ sub do_checkout {
                 $self->screen_msg("Item already checked out to another patron.  Please return item for check-in.");
                 $noerror = 0;
             } elsif ($confirmation eq 'DEBT') {     # don't do anything, it's the minor debt, and alarms fire elsewhere
+            } elsif ($confirmation eq 'HIGHHOLDS') {
+                $overridden_duedate = $needsconfirmation->{$confirmation}->{returndate};
+                $self->screen_msg('Loan period reduced for high-demand item');
             } else {
                 $self->screen_msg($needsconfirmation->{$confirmation});
                 $noerror = 0;
@@ -119,14 +122,17 @@ sub do_checkout {
         # TODO: adjust representation in $self->item
     }
 	# can issue
-	$debug and warn "do_checkout: calling AddIssue(\$borrower,$barcode, undef, 0)\n"
+	$debug and warn "do_checkout: calling AddIssue(\$borrower,$barcode, $overridden_duedate, 0)\n"
 		# . "w/ \$borrower: " . Dumper($borrower)
 		. "w/ C4::Context->userenv: " . Dumper(C4::Context->userenv);
-	my $c4due  = AddIssue($borrower, $barcode, undef, 0);
-	my $due  = $c4due->output('iso') || undef;
-	$debug and warn "Item due: $due";
-	$self->{'due'} = $due;
-	$self->{item}->due_date($due);
+	my $due_dt  = AddIssue($borrower, $barcode, $overridden_duedate, 0);
+    if ($due_dt) {
+        $self->{due} = $due_dt->clone();
+    } else {
+        $self->{due} = undef;
+    }
+
+    #$self->{item}->due_date($due);
 	$self->ok(1);
 	return $self;
 }

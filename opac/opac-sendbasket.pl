@@ -1,5 +1,7 @@
 #!/usr/bin/perl
 
+# Copyright Doxulting 2004
+#
 # This file is part of Koha.
 #
 # Koha is free software; you can redistribute it and/or modify it under the
@@ -11,9 +13,9 @@
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License along with
-# Koha; if not, write to the Free Software Foundation, Inc., 59 Temple Place,
-# Suite 330, Boston, MA  02111-1307 USA
+# You should have received a copy of the GNU General Public License along
+# with Koha; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 use strict;
 use warnings;
@@ -51,11 +53,20 @@ my $email_sender = $query->param('email_sender');
 my $dbh          = C4::Context->dbh;
 
 if ( $email_add ) {
+    my $user = GetMember(borrowernumber => $borrowernumber);
+    my $user_email = GetFirstValidEmailAddress($borrowernumber)
+    || C4::Context->preference('KohaAdminEmailAddress');
+
     my $email_from = C4::Context->preference('KohaAdminEmailAddress');
+    my $email_replyto = "$user->{firstname} $user->{surname} <$user_email>";
     my $comment    = $query->param('comment');
     my %mail = (
         To   => $email_add,
-        From => $email_from
+        From => $email_from,
+    'Reply-To' => $email_replyto,
+#    'X-Orig-IP' => $ENV{'REMOTE_ADDR'},
+#    FIXME Commented out for now: discussion on privacy issue
+    'X-Abuse-Report' => C4::Context->preference('KohaAdminEmailAddress'),
     );
 
     my ( $template2, $borrowernumber, $cookie ) = get_template_and_user(
@@ -63,7 +74,7 @@ if ( $email_add ) {
             template_name   => "opac-sendbasket.tmpl",
             query           => $query,
             type            => "opac",
-            authnotrequired => 1,
+            authnotrequired => 0,
             flagsrequired   => { borrow => 1 },
         }
     );
@@ -103,8 +114,6 @@ if ( $email_add ) {
 
     my $resultsarray = \@results;
     
-    my $user = GetMember(borrowernumber => $borrowernumber); 
-    
     $template2->param(
         BIBLIO_RESULTS => $resultsarray,
         email_sender   => $email_sender,
@@ -118,39 +127,34 @@ if ( $email_add ) {
     my $body;
 
     # Analysing information and getting mail properties
-    if ( $template_res =~ /<SUBJECT>\n(.*)\n<END_SUBJECT>/s ) {
+    if ( $template_res =~ /<SUBJECT>\n(.*)\n?<END_SUBJECT>/s ) {
         $mail{'subject'} = $1;
     }
     else { $mail{'subject'} = "no subject"; }
 
     my $email_header = "";
-    if ( $template_res =~ /<HEADER>\n(.*)\n<END_HEADER>/s ) {
-        $email_header = $1;
+    if ( $template_res =~ /<HEADER>\n(.*)\n?<END_HEADER>/s ) {
+        $email_header = encode_qp($1);
     }
 
     my $email_file = "basket.txt";
-    if ( $template_res =~ /<FILENAME>\n(.*)\n<END_FILENAME>/s ) {
+    if ( $template_res =~ /<FILENAME>\n(.*)\n?<END_FILENAME>/s ) {
         $email_file = $1;
     }
 
-    if ( $template_res =~ /<MESSAGE>\n(.*)\n<END_MESSAGE>/s ) { $body = encode_qp($1); }
+    if ( $template_res =~ /<MESSAGE>\n(.*)\n?<END_MESSAGE>/s ) {
+        $body = encode_qp($1);
+    }
 
     my $boundary = "====" . time() . "====";
 
-    #     $mail{'content-type'} = "multipart/mixed; boundary=\"$boundary\"";
-    #
-    #     $email_header = encode_qp($email_header);
-    #
-    #     $boundary = "--".$boundary;
-    #
-    #     # Writing mail
-    #     $mail{body} =
     $mail{'content-type'} = "multipart/mixed; boundary=\"$boundary\"";
     my $isofile = encode_base64(encode("UTF-8", $iso2709));
     $boundary = '--' . $boundary;
     $mail{body} = <<END_OF_BODY;
 $boundary
-Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
 Content-Transfer-Encoding: quoted-printable
 
 $email_header
@@ -164,14 +168,15 @@ $isofile
 $boundary--
 END_OF_BODY
 
-    # Sending mail
-    if ( sendmail %mail ) {
-        # do something if it works....
+    # Sending mail (if not empty basket)
+    if ( defined($iso2709) && sendmail %mail ) {
+    # do something if it works....
         $template->param( SENT      => "1" );
     }
     else {
         # do something if it doesnt work....
-        carp "Error sending mail: $Mail::Sendmail::error \n";
+    carp "Error sending mail: empty basket" if !defined($iso2709);
+        carp "Error sending mail: $Mail::Sendmail::error" if $Mail::Sendmail::error;
         $template->param( error => 1 );
     }
     $template->param( email_add => $email_add );

@@ -33,7 +33,7 @@ use vars qw($VERSION @ISA @EXPORT);
 
 BEGIN {
 	# set the version for version checking
-	$VERSION = 3.01;
+    $VERSION = 3.07.00.049;
 	require Exporter;
 	@ISA    = qw(Exporter);
 	# subs to rename (and maybe merge some...)
@@ -124,7 +124,7 @@ sub Getoverdues {
    SELECT issues.*, items.itype as itemtype, items.homebranch, items.barcode
      FROM issues 
 LEFT JOIN items       USING (itemnumber)
-    WHERE date_due < CURDATE() 
+    WHERE date_due < NOW()
 ";
     } else {
         $statement = "
@@ -132,7 +132,7 @@ LEFT JOIN items       USING (itemnumber)
      FROM issues 
 LEFT JOIN items       USING (itemnumber)
 LEFT JOIN biblioitems USING (biblioitemnumber)
-    WHERE date_due < CURDATE() 
+    WHERE date_due < NOW()
 ";
     }
 
@@ -199,7 +199,7 @@ sub checkoverdues {
          LEFT JOIN biblio      ON items.biblionumber     = biblio.biblionumber
          LEFT JOIN biblioitems ON items.biblioitemnumber = biblioitems.biblioitemnumber
             WHERE issues.borrowernumber  = ?
-            AND   issues.date_due < CURDATE()"
+            AND   issues.date_due < NOW()"
     );
     # FIXME: SELECT * across 4 tables?  do we really need the marc AND marcxml blobs??
     $sth->execute($borrowernumber);
@@ -209,9 +209,9 @@ sub checkoverdues {
 
 =head2 CalcFine
 
-    ($amount, $chargename, $daycount, $daycounttotal) = &CalcFine($item, 
-                                  $categorycode, $branch, $days_overdue, 
-                                  $description, $start_date, $end_date );
+    ($amount, $chargename,  $daycounttotal) = &CalcFine($item,
+                                  $categorycode, $branch,
+                                  $start_dt, $end_dt );
 
 Calculates the fine for a book.
 
@@ -229,13 +229,8 @@ the book.
 
 C<$branchcode> is the library (string) whose issuingrules govern this transaction.
 
-C<$days_overdue> is the number of days elapsed since the book's due date.
-  NOTE: supplying days_overdue is deprecated.
-
-C<$start_date> & C<$end_date> are C4::Dates objects 
+C<$start_date> & C<$end_date> are DateTime objects
 defining the date range over which to determine the fine.
-Note that if these are defined, we ignore C<$difference> and C<$dues> , 
-but retain these for backwards-comptibility with extant fines scripts.
 
 Fines scripts should just supply the date range over which to calculate the fine.
 
@@ -246,10 +241,8 @@ C<$amount> is the fine owed by the patron (see above).
 C<$chargename> is the chargename field from the applicable record in
 the categoryitem table, whatever that is.
 
-C<$daycount> is the number of days between start and end dates, Calendar adjusted (where needed), 
-minus any applicable grace period.
-
-C<$daycounttotal> is C<$daycount> without consideration of grace period.
+C<$unitcount> is the number of chargeable units (days between start and end dates, Calendar adjusted where needed,
+minus any applicable grace period, or hours)
 
 FIXME - What is chargename supposed to be ?
 
@@ -259,49 +252,68 @@ or "Final Notice".  But CalcFine never defined any value.
 =cut
 
 sub CalcFine {
-    my ( $item, $bortype, $branchcode, $difference ,$dues , $start_date, $end_date  ) = @_;
-	$debug and warn sprintf("CalcFine(%s, %s, %s, %s, %s, %s, %s)",
-			($item ? '{item}' : 'UNDEF'), 
-			($bortype    || 'UNDEF'), 
-			($branchcode || 'UNDEF'), 
-			($difference || 'UNDEF'), 
-			($dues       || 'UNDEF'), 
-			($start_date ? ($start_date->output('iso') || 'Not a C4::Dates object') : 'UNDEF'), 
-			(  $end_date ? (  $end_date->output('iso') || 'Not a C4::Dates object') : 'UNDEF')
-	);
-    my $dbh = C4::Context->dbh;
+    my ( $item, $bortype, $branchcode, $due_dt, $end_date  ) = @_;
+    my $start_date = $due_dt->clone();
+    # get issuingrules (fines part will be used)
+    my $itemtype = $item->{itemtype} || $item->{itype};
+    my $data = C4::Circulation::GetIssuingRule($bortype, $itemtype, $branchcode);
+    my $fine_unit = $data->{lengthunit};
+    $fine_unit ||= 'days';
+
+    my $chargeable_units = _get_chargeable_units($fine_unit, $start_date, $end_date, $branchcode);
+    my $units_minus_grace = $chargeable_units - $data->{firstremind};
     my $amount = 0;
-	my $daystocharge;
-	# get issuingrules (fines part will be used)
-    $debug and warn sprintf("CalcFine calling GetIssuingRule(%s, %s, %s)", $bortype, $item->{'itemtype'}, $branchcode);
-    my $data = C4::Circulation::GetIssuingRule($bortype, $item->{'itemtype'}, $branchcode);
-	if($difference) {
-		# if $difference is supplied, the difference has already been calculated, but we still need to adjust for the calendar.
-    	# use copy-pasted functions from calendar module.  (deprecated -- these functions will be removed from C4::Overdues ).
-	    my $countspecialday    =    &GetSpecialHolidays($dues,$item->{itemnumber});
-	    my $countrepeatableday = &GetRepeatableHolidays($dues,$item->{itemnumber},$difference);    
-	    my $countalldayclosed  = $countspecialday + $countrepeatableday;
-	    $daystocharge = $difference - $countalldayclosed;
-	} else {
-		# if $difference is not supplied, we have C4::Dates objects giving us the date range, and we use the calendar module.
-		if(C4::Context->preference('finesCalendar') eq 'noFinesWhenClosed') {
-			my $calendar = C4::Calendar->new( branchcode => $branchcode );
-			$daystocharge = $calendar->daysBetween( $start_date, $end_date );
-		} else {
-			$daystocharge = Date_to_Days(split('-',$end_date->output('iso'))) - Date_to_Days(split('-',$start_date->output('iso')));
-		}
-	}
-	# correct for grace period.
-	my $days_minus_grace = $daystocharge - $data->{'firstremind'};
-    if ($data->{'chargeperiod'} > 0 && $days_minus_grace > 0 ) { 
-        $amount = int($daystocharge / $data->{'chargeperiod'}) * $data->{'fine'};
+    if ($data->{'chargeperiod'}  && $units_minus_grace  ) {
+        $amount = int($chargeable_units / $data->{'chargeperiod'}) * $data->{'fine'};# TODO fine calc should be in cents
     } else {
         # a zero (or null)  chargeperiod means no charge.
     }
-	$amount = C4::Context->preference('maxFine') if(C4::Context->preference('maxFine') && ( $amount > C4::Context->preference('maxFine')));
-	$debug and warn sprintf("CalcFine returning (%s, %s, %s, %s)", $amount, $data->{'chargename'}, $days_minus_grace, $daystocharge);
-    return ($amount, $data->{'chargename'}, $days_minus_grace, $daystocharge);
+    $amount = $data->{overduefinescap} if $data->{overduefinescap} && $amount > $data->{overduefinescap};
+    $debug and warn sprintf("CalcFine returning (%s, %s, %s, %s)", $amount, $data->{'chargename'}, $units_minus_grace, $chargeable_units);
+    return ($amount, $data->{'chargename'}, $units_minus_grace, $chargeable_units);
     # FIXME: chargename is NEVER populated anywhere.
+}
+
+
+=head2 _get_chargeable_units
+
+    _get_chargeable_units($unit, $start_date_ $end_date, $branchcode);
+
+return integer value of units between C<$start_date> and C<$end_date>, factoring in holidays for C<$branchcode>.
+
+C<$unit> is 'days' or 'hours' (default is 'days').
+
+C<$start_date> and C<$end_date> are the two DateTimes to get the number of units between.
+
+C<$branchcode> is the branch whose calendar to use for finding holidays.
+
+=cut
+
+sub _get_chargeable_units {
+    my ($unit, $dt1, $dt2, $branchcode) = @_;
+    my $charge_units = 0;
+    my $charge_duration;
+    if ($unit eq 'hours') {
+        if(C4::Context->preference('finesCalendar') eq 'noFinesWhenClosed') {
+            my $calendar = Koha::Calendar->new( branchcode => $branchcode );
+            $charge_duration = $calendar->hours_between( $dt1, $dt2 );
+        } else {
+            $charge_duration = $dt2->delta_ms( $dt1 );
+        }
+        if($charge_duration->in_units('hours') == 0 && $charge_duration->in_units('seconds') > 0){
+            return 1;
+        }
+        return $charge_duration->in_units('hours');
+    }
+    else { # days
+        if(C4::Context->preference('finesCalendar') eq 'noFinesWhenClosed') {
+            my $calendar = Koha::Calendar->new( branchcode => $branchcode );
+            $charge_duration = $calendar->days_between( $dt1, $dt2 );
+        } else {
+            $charge_duration = $dt2->delta_days( $dt1 );
+        }
+        return $charge_duration->in_units('days');
+    }
 }
 
 
@@ -508,14 +520,39 @@ sub UpdateFine {
 	#   "REF" is Cash Refund
     my $sth = $dbh->prepare(
         "SELECT * FROM accountlines
-		WHERE itemnumber=?
-		AND   borrowernumber=?
-		AND   accounttype IN ('FU','O','F','M')
-		AND   description like ? "
+        WHERE borrowernumber=?
+        AND   accounttype IN ('FU','O','F','M')"
     );
-    $sth->execute( $itemnum, $borrowernumber, "%$due%" );
+    $sth->execute( $borrowernumber );
+    my $data;
+    my $total_amount_other = 0.00;
+    my $due_qr = qr/$due/;
+    # Cycle through the fines and
+    # - find line that relates to the requested $itemnum
+    # - accumulate fines for other items
+    # so we can update $itemnum fine taking in account fine caps
+    while (my $rec = $sth->fetchrow_hashref) {
+        if ($rec->{itemnumber} == $itemnum && $rec->{description} =~ /$due_qr/) {
+            if ($data) {
+                warn "Not a unique accountlines record for item $itemnum borrower $borrowernumber";
+            } else {
+                $data = $rec;
+                next;
+            }
+        }
+        $total_amount_other += $rec->{'amount'};
+    }
+    if (my $maxfine = C4::Context->preference('MaxFine')) {
+        if ($total_amount_other + $amount > $maxfine) {
+            my $new_amount = $maxfine - $total_amount_other;
+            warn "Reducing fine for item $itemnum borrower $borrowernumber from $amount to $new_amount - MaxFine reached";
+            return if $new_amount <= 0.00;
 
-    if ( my $data = $sth->fetchrow_hashref ) {
+            $amount = $new_amount;
+        }
+    }
+
+    if ( $data ) {
 
 		# we're updating an existing fine.  Only modify if amount changed
         # Note that in the current implementation, you cannot pay against an accruing fine
@@ -1218,7 +1255,7 @@ sub GetOverduesForBranch {
     WHERE (accountlines.amountoutstanding  != '0.000000')
       AND (accountlines.accounttype         = 'FU'      )
       AND (issues.branchcode =  ?   )
-      AND (issues.date_due  < CURDATE())
+      AND (issues.date_due  < NOW())
     ";
     my @getoverdues;
     my $i = 0;

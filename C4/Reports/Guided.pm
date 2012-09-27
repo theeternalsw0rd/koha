@@ -26,7 +26,8 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use C4::Context;
 use C4::Dates qw/format_date format_date_in_iso/;
 use C4::Templates qw/themelanguage/;
-use C4::Dates;
+use C4::Koha;
+use C4::Output;
 use XML::Simple;
 use XML::Dumper;
 use C4::Debug;
@@ -34,75 +35,17 @@ use C4::Debug;
 # use Data::Dumper;
 
 BEGIN {
-	# set the version for version checking
-	$VERSION = 0.12;
-	require Exporter;
-	@ISA = qw(Exporter);
-	@EXPORT = qw(
-		get_report_types get_report_areas get_columns build_query get_criteria
-	    save_report get_saved_reports execute_query get_saved_report create_compound run_compound
-		get_column_type get_distinct_values save_dictionary get_from_dictionary
-		delete_definition delete_report format_results get_sql
-        nb_rows update_sql
-	);
-}
-
-our %table_areas;
-$table_areas{'1'} =
-  [ 'borrowers', 'statistics','items', 'biblioitems' ];    # circulation
-$table_areas{'2'} = [ 'items', 'biblioitems', 'biblio' ];   # catalogue
-$table_areas{'3'} = [ 'borrowers' ];        # patrons
-$table_areas{'4'} = ['aqorders', 'biblio', 'items'];        # acquisitions
-$table_areas{'5'} = [ 'borrowers', 'accountlines' ];        # accounts
-our %keys;
-$keys{'1'} = [
-    'statistics.borrowernumber=borrowers.borrowernumber',
-    'items.itemnumber = statistics.itemnumber',
-    'biblioitems.biblioitemnumber = items.biblioitemnumber'
-];
-$keys{'2'} = [
-    'items.biblioitemnumber=biblioitems.biblioitemnumber',
-    'biblioitems.biblionumber=biblio.biblionumber'
-];
-$keys{'3'} = [ ];
-$keys{'4'} = [
-	'aqorders.biblionumber=biblio.biblionumber',
-	'biblio.biblionumber=items.biblionumber'
-];
-$keys{'5'} = ['borrowers.borrowernumber=accountlines.borrowernumber'];
-
-# have to do someting here to know if its dropdown, free text, date etc
-
-our %criteria;
-# reports on circulation
-$criteria{'1'} = [
-    'statistics.type',   'borrowers.categorycode',
-    'statistics.branch',
-    'biblioitems.publicationyear|date',
-    'items.dateaccessioned|date'
-];
-# reports on catalogue
-$criteria{'2'} =
-  [ 'items.itemnumber|textrange',   'items.biblionumber|textrange',   'items.barcode|textrange', 
-    'biblio.frameworkcode',         'items.holdingbranch',            'items.homebranch', 
-  'biblio.datecreated|daterange',   'biblio.timestamp|daterange',     'items.onloan|daterange', 
-  'items.ccode',                    'items.itemcallnumber|textrange', 'items.itype', 
-  'items.itemlost',                 'items.location' ];
-# reports on borrowers
-$criteria{'3'} = ['borrowers.branchcode', 'borrowers.categorycode'];
-# reports on acquisition
-$criteria{'4'} = ['aqorders.datereceived|date'];
-
-# reports on accounting
-$criteria{'5'} = ['borrowers.branchcode', 'borrowers.categorycode'];
-
-# Adds itemtypes to criteria, according to the syspref
-if (C4::Context->preference('item-level_itypes')) {
-    unshift @{ $criteria{'1'} }, 'items.itype';
-    unshift @{ $criteria{'2'} }, 'items.itype';
-} else {
-    unshift @{ $criteria{'1'} }, 'biblioitems.itemtype';
-    unshift @{ $criteria{'2'} }, 'biblioitems.itemtype';
+    # set the version for version checking
+    $VERSION = 3.07.00.049;
+    require Exporter;
+    @ISA    = qw(Exporter);
+    @EXPORT = qw(
+      get_report_types get_report_areas get_report_groups get_columns build_query get_criteria
+      save_report get_saved_reports execute_query get_saved_report create_compound run_compound
+      get_column_type get_distinct_values save_dictionary get_from_dictionary
+      delete_definition delete_report format_results get_sql
+      nb_rows update_sql build_authorised_value_list
+    );
 }
 
 =head1 NAME
@@ -121,7 +64,70 @@ C4::Reports::Guided - Module for generating guided reports
 
 =over 2
 
+=item get_report_areas()
+
+This will return a list of all the available report areas
+
 =cut
+
+my @REPORT_AREA = (
+    [CIRC => "Circulation"],
+    [CAT  => "Catalogue"],
+    [PAT  => "Patrons"],
+    [ACQ  => "Acquisition"],
+    [ACC  => "Accounts"],
+);
+my $AREA_NAME_SQL_SNIPPET
+  = "CASE report_area " .
+    join (" ", map "WHEN '$_->[0]' THEN '$_->[1]'", @REPORT_AREA) .
+    " END AS areaname";
+sub get_report_areas {
+    return \@REPORT_AREA
+}
+
+my %table_areas = (
+    CIRC => [ 'borrowers', 'statistics', 'items', 'biblioitems' ],
+    CAT  => [ 'items', 'biblioitems', 'biblio' ],
+    PAT  => ['borrowers'],
+    ACQ  => [ 'aqorders', 'biblio', 'items' ],
+    ACC  => [ 'borrowers', 'accountlines' ],
+);
+my %keys = (
+    CIRC => [ 'statistics.borrowernumber=borrowers.borrowernumber',
+              'items.itemnumber = statistics.itemnumber',
+              'biblioitems.biblioitemnumber = items.biblioitemnumber' ],
+    CAT  => [ 'items.biblioitemnumber=biblioitems.biblioitemnumber',
+              'biblioitems.biblionumber=biblio.biblionumber' ],
+    PAT  => [],
+    ACQ  => [ 'aqorders.biblionumber=biblio.biblionumber',
+              'biblio.biblionumber=items.biblionumber' ],
+    ACC  => ['borrowers.borrowernumber=accountlines.borrowernumber'],
+);
+
+# have to do someting here to know if its dropdown, free text, date etc
+my %criteria = (
+    CIRC => [ 'statistics.type', 'borrowers.categorycode', 'statistics.branch',
+              'biblioitems.publicationyear|date', 'items.dateaccessioned|date' ],
+    CAT  => [ 'items.itemnumber|textrange', 'items.biblionumber|textrange',
+              'items.barcode|textrange', 'biblio.frameworkcode',
+              'items.holdingbranch', 'items.homebranch',
+              'biblio.datecreated|daterange', 'biblio.timestamp|daterange',
+              'items.onloan|daterange', 'items.ccode',
+              'items.itemcallnumber|textrange', 'items.itype', 'items.itemlost',
+              'items.location' ],
+    PAT  => [ 'borrowers.branchcode', 'borrowers.categorycode' ],
+    ACQ  => ['aqorders.datereceived|date'],
+    ACC  => [ 'borrowers.branchcode', 'borrowers.categorycode' ],
+);
+
+# Adds itemtypes to criteria, according to the syspref
+if ( C4::Context->preference('item-level_itypes') ) {
+    unshift @{ $criteria{'CIRC'} }, 'items.itype';
+    unshift @{ $criteria{'CAT'} }, 'items.itype';
+} else {
+    unshift @{ $criteria{'CIRC'} }, 'biblioitems.itemtype';
+    unshift @{ $criteria{'CAT'} }, 'biblioitems.itemtype';
+}
 
 =item get_report_types()
 
@@ -145,26 +151,33 @@ sub get_report_types {
 
 }
 
-=item get_report_areas()
+=item get_report_groups()
 
-This will return a list of all the available report areas
+This will return a list of all the available report areas with groups
 
 =cut
 
-sub get_report_areas {
+sub get_report_groups {
     my $dbh = C4::Context->dbh();
 
-    # FIXME these should be in the database
-    my @reports = ( 'Circulation', 'Catalog', 'Patrons', 'Acquisitions', 'Accounts');
-    my @reports2;
-    for ( my $i = 0 ; $i < 5 ; $i++ ) {
-        my %hashrep;
-        $hashrep{id}   = $i + 1;
-        $hashrep{name} = $reports[$i];
-        push @reports2, \%hashrep;
-    }
-    return ( \@reports2 );
+    my $groups = GetAuthorisedValues('REPORT_GROUP');
+    my $subgroups = GetAuthorisedValues('REPORT_SUBGROUP');
 
+    my %groups_with_subgroups = map { $_->{authorised_value} => {
+                        name => $_->{lib},
+                        groups => {}
+                    } } @$groups;
+    foreach (@$subgroups) {
+        my $sg = $_->{authorised_value};
+        my $g = $_->{lib_opac}
+          or warn( qq{REPORT_SUBGROUP "$sg" without REPORT_GROUP (lib_opac)} ),
+             next;
+        my $g_sg = $groups_with_subgroups{$g}
+          or warn( qq{REPORT_SUBGROUP "$sg" with invalid REPORT_GROUP "$g"} ),
+             next;
+        $g_sg->{subgroups}{$sg} = $_->{lib};
+    }
+    return \%groups_with_subgroups
 }
 
 =item get_all_tables()
@@ -196,8 +209,10 @@ This will return a list of all columns for a report area
 sub get_columns {
 
     # this calls the internal fucntion _get_columns
-    my ($area,$cgi) = @_;
-    my $tables = $table_areas{$area};
+    my ( $area, $cgi ) = @_;
+    my $tables = $table_areas{$area}
+      or die qq{Unsuported report area "$area"};
+
     my @allcolumns;
     my $first = 1;
     foreach my $table (@$tables) {
@@ -383,7 +398,7 @@ sub nb_rows($) {
 
 =item execute_query
 
-  ($results, $total, $error) = execute_query($sql, $offset, $limit)
+  ($results, $error) = execute_query($sql, $offset, $limit)
 
 
 When passed C<$sql>, this function returns an array ref containing a result set
@@ -413,11 +428,44 @@ sub select_2_select_count ($) {
     $sql =~ s/\bSELECT\W+(?:\w+\W+){1,}?FROM\b|\bSELECT\W\*\WFROM\b/SELECT count(*) FROM /ig;
     return $sql;
 }
-sub strip_limit ($) {
-    my $sql = shift or return;
-    ($sql =~ /\bLIMIT\b/i) or return ($sql, 0, undef);
-    $sql =~ s/\bLIMIT\b\s*(\d+)(\s*\,\s*(\d+))?\s*/ /ig;
-    return ($sql, (defined $2 ? $1 : 0), (defined $3 ? $3 : $1));   # offset can default to 0, LIMIT cannot!
+
+# This removes the LIMIT from the query so that a custom one can be specified.
+# Usage:
+#   ($new_sql, $offset, $limit) = strip_limit($sql);
+#
+# Where:
+#   $sql is the query to modify
+#   $new_sql is the resulting query
+#   $offset is the offset value, if the LIMIT was the two-argument form,
+#       0 if it wasn't otherwise given.
+#   $limit is the limit value
+#
+# Notes:
+#   * This makes an effort to not break subqueries that have their own
+#     LIMIT specified. It does that by only removing a LIMIT if it comes after
+#     a WHERE clause (which isn't perfect, but at least should make more cases
+#     work - subqueries with a limit in the WHERE will still break.)
+#   * If your query doesn't have a WHERE clause then all LIMITs will be
+#     removed. This may break some subqueries, but is hopefully rare enough
+#     to not be a big issue.
+sub strip_limit {
+    my ($sql) = @_;
+
+    return unless $sql;
+    return ($sql, 0, undef) unless $sql =~ /\bLIMIT\b/i;
+
+    # Two options: if there's no WHERE clause in the SQL, we simply capture
+    # any LIMIT that's there. If there is a WHERE, we make sure that we only
+    # capture a LIMIT after the last one. This prevents stomping on subqueries.
+    if ($sql !~ /\bWHERE\b/i) {
+        (my $res = $sql) =~ s/\bLIMIT\b\s*(\d+)(\s*\,\s*(\d+))?\s*/ /ig;
+        return ($res, (defined $2 ? $1 : 0), (defined $3 ? $3 : $1));
+    } else {
+        my $res = $sql;
+        $res =~ m/.*\bWHERE\b/gsi;
+        $res =~ s/\G(.*)\bLIMIT\b\s*(\d+)(\s*\,\s*(\d+))?\s*/$1 /is;
+        return ($res, (defined $3 ? $2 : 0), (defined $4 ? $4 : $2));
+    }
 }
 
 sub execute_query ($;$$$) {
@@ -472,28 +520,47 @@ Returns id of the newly created report
 =cut
 
 sub save_report {
-    my ( $borrowernumber, $sql, $name, $type, $notes ) = @_;
+    my ($fields) = @_;
+    my $borrowernumber = $fields->{borrowernumber};
+    my $sql = $fields->{sql};
+    my $name = $fields->{name};
+    my $type = $fields->{type};
+    my $notes = $fields->{notes};
+    my $area = $fields->{area};
+    my $group = $fields->{group};
+    my $subgroup = $fields->{subgroup};
+    my $cache_expiry = $fields->{cache_expiry} || 300;
+    my $public = $fields->{public};
+
     my $dbh = C4::Context->dbh();
-    $sql =~ s/(\s*\;\s*)$//; # removes trailing whitespace and /;/
-    my $query =
-"INSERT INTO saved_sql (borrowernumber,date_created,last_modified,savedsql,report_name,type,notes)  VALUES (?,now(),now(),?,?,?,?)";
-    $dbh->do( $query, undef, $borrowernumber, $sql, $name, $type, $notes );
+    $sql =~ s/(\s*\;\s*)$//;    # removes trailing whitespace and /;/
+    my $query = "INSERT INTO saved_sql (borrowernumber,date_created,last_modified,savedsql,report_name,report_area,report_group,report_subgroup,type,notes,cache_expiry,public)  VALUES (?,now(),now(),?,?,?,?,?,?,?,?,?)";
+    $dbh->do($query, undef, $borrowernumber, $sql, $name, $area, $group, $subgroup, $type, $notes, $cache_expiry, $public);
+
     my $id = $dbh->selectrow_array("SELECT max(id) FROM saved_sql WHERE borrowernumber=? AND report_name=?", undef,
                                    $borrowernumber, $name);
     return $id;
 }
 
 sub update_sql {
-    my $id = shift || croak "No Id given";
-    my $sql = shift;
-    my $reportname = shift;
-    my $notes = shift;
-    my $dbh = C4::Context->dbh();
-    $sql =~ s/(\s*\;\s*)$//; # removes trailing whitespace and /;/
-    my $query = "UPDATE saved_sql SET savedsql = ?, last_modified = now(), report_name = ?, notes = ? WHERE id = ? ";
-    my $sth = $dbh->prepare($query);
-    $sth->execute( $sql, $reportname, $notes, $id );
-    $sth->finish();
+    my $id         = shift || croak "No Id given";
+    my $fields     = shift;
+    my $sql = $fields->{sql};
+    my $name = $fields->{name};
+    my $notes = $fields->{notes};
+    my $group = $fields->{group};
+    my $subgroup = $fields->{subgroup};
+    my $cache_expiry = $fields->{cache_expiry};
+    my $public = $fields->{public};
+
+    if( $cache_expiry >= 2592000 ){
+      die "Please specify a cache expiry less than 30 days\n";
+    }
+
+    my $dbh        = C4::Context->dbh();
+    $sql =~ s/(\s*\;\s*)$//;    # removes trailing whitespace and /;/
+    my $query = "UPDATE saved_sql SET savedsql = ?, last_modified = now(), report_name = ?, report_group = ?, report_subgroup = ?, notes = ?, cache_expiry = ?, public = ? WHERE id = ? ";
+    $dbh->do($query, undef, $sql, $name, $group, $subgroup, $notes, $cache_expiry, $public, $id );
 }
 
 sub store_results {
@@ -540,29 +607,34 @@ sub format_results {
 }	
 
 sub delete_report {
-	my ( $id ) = @_;
-	my $dbh = C4::Context->dbh();
-	my $query = "DELETE FROM saved_sql WHERE id = ?";
-	my $sth = $dbh->prepare($query);
-	$sth->execute($id);
+    my ($id)  = @_;
+    my $dbh   = C4::Context->dbh();
+    my $query = "DELETE FROM saved_sql WHERE id = ?";
+    my $sth   = $dbh->prepare($query);
+    $sth->execute($id);
 }	
 
-# $filter is either { date => $d, author => $a, keyword => $kw }
-# or $keyword. Optional.
+
+my $SAVED_REPORTS_BASE_QRY = <<EOQ;
+SELECT s.*, r.report, r.date_run, $AREA_NAME_SQL_SNIPPET, av_g.lib AS groupname, av_sg.lib AS subgroupname,
+b.firstname AS borrowerfirstname, b.surname AS borrowersurname
+FROM saved_sql s
+LEFT JOIN saved_reports r ON r.report_id = s.id
+LEFT OUTER JOIN authorised_values av_g ON (av_g.category = 'REPORT_GROUP' AND av_g.authorised_value = s.report_group)
+LEFT OUTER JOIN authorised_values av_sg ON (av_sg.category = 'REPORT_SUBGROUP' AND av_sg.lib_opac = s.report_group AND av_sg.authorised_value = s.report_subgroup)
+LEFT OUTER JOIN borrowers b USING (borrowernumber)
+EOQ
 my $DATE_FORMAT = "%d/%m/%Y";
 sub get_saved_reports {
+# $filter is either { date => $d, author => $a, keyword => $kw, }
+# or $keyword. Optional.
     my ($filter) = @_;
     $filter = { keyword => $filter } if $filter && !ref( $filter );
+    my ($group, $subgroup) = @_;
 
     my $dbh   = C4::Context->dbh();
+    my $query = $SAVED_REPORTS_BASE_QRY;
     my (@cond,@args);
-    my $query = "SELECT saved_sql.id, report_id, report,
-                        date_run, date_created, last_modified, savedsql, last_run,
-                        report_name, type, notes,
-                        borrowernumber, surname as borrowersurname, firstname as borrowerfirstname
-                 FROM saved_sql 
-                 LEFT JOIN saved_reports ON saved_reports.report_id = saved_sql.id
-                 LEFT OUTER JOIN borrowers USING (borrowernumber)";
     if ($filter) {
         if (my $date = $filter->{date}) {
             $date = format_date_in_iso($date);
@@ -586,6 +658,14 @@ sub get_saved_reports {
                          savedsql LIKE ?";
             push @args, $keyword, $keyword, $keyword, $keyword;
         }
+        if ($filter->{group}) {
+            push @cond, "report_group = ?";
+            push @args, $filter->{group};
+        }
+        if ($filter->{subgroup}) {
+            push @cond, "report_subgroup = ?";
+            push @args, $filter->{subgroup};
+        }
     }
     $query .= " WHERE ".join( " AND ", map "($_)", @cond ) if @cond;
     $query .= " ORDER by date_created";
@@ -597,13 +677,27 @@ sub get_saved_reports {
 }
 
 sub get_saved_report {
-    my ($id)  = @_;
     my $dbh   = C4::Context->dbh();
-    my $query = " SELECT * FROM saved_sql WHERE id = ?";
-    my $sth   = $dbh->prepare($query);
-    $sth->execute($id);
-    my $data = $sth->fetchrow_hashref();
-    return ( $data->{'savedsql'}, $data->{'type'}, $data->{'report_name'}, $data->{'notes'} );
+    my $query;
+    my $report_arg;
+    if ($#_ == 0 && ref $_[0] ne 'HASH') {
+        ($report_arg) = @_;
+        $query = " SELECT * FROM saved_sql WHERE id = ?";
+    } elsif (ref $_[0] eq 'HASH') {
+        my ($selector) = @_;
+        if ($selector->{name}) {
+            $query = " SELECT * FROM saved_sql WHERE report_name = ?";
+            $report_arg = $selector->{name};
+        } elsif ($selector->{id} || $selector->{id} eq '0') {
+            $query = " SELECT * FROM saved_sql WHERE id = ?";
+            $report_arg = $selector->{id};
+        } else {
+            return;
+        }
+    } else {
+        return;
+    }
+    return $dbh->selectrow_hashref($query, undef, $report_arg);
 }
 
 =item create_compound($masterID,$subreportID)
@@ -613,22 +707,27 @@ This will take 2 reports and create a compound report using both of them
 =cut
 
 sub create_compound {
-	my ($masterID,$subreportID) = @_;
-	my $dbh = C4::Context->dbh();
-	# get the reports
-	my ($mastersql,$mastertype) = get_saved_report($masterID);
-	my ($subsql,$subtype) = get_saved_report($subreportID);
-	
-	# now we have to do some checking to see how these two will fit together
-	# or if they will
-	my ($mastertables,$subtables);
-	if ($mastersql =~ / from (.*) where /i){ 
-		$mastertables = $1;
-	}
-	if ($subsql =~ / from (.*) where /i){
-		$subtables = $1;
-	}
-	return ($mastertables,$subtables);
+    my ( $masterID, $subreportID ) = @_;
+    my $dbh = C4::Context->dbh();
+
+    # get the reports
+    my $master = get_saved_report($masterID);
+    my $mastersql = $master->{savedsql};
+    my $mastertype = $master->{type};
+    my $sub = get_saved_report($subreportID);
+    my $subsql = $master->{savedsql};
+    my $subtype = $master->{type};
+
+    # now we have to do some checking to see how these two will fit together
+    # or if they will
+    my ( $mastertables, $subtables );
+    if ( $mastersql =~ / from (.*) where /i ) {
+        $mastertables = $1;
+    }
+    if ( $subsql =~ / from (.*) where /i ) {
+        $subtables = $1;
+    }
+    return ( $mastertables, $subtables );
 }
 
 =item get_column_type($column)
@@ -678,43 +777,41 @@ sub get_distinct_values {
 }	
 
 sub save_dictionary {
-	my ($name,$description,$sql,$area) = @_;
-	my $dbh = C4::Context->dbh();
-	my $query = "INSERT INTO reports_dictionary (name,description,saved_sql,area,date_created,date_modified)
+    my ( $name, $description, $sql, $area ) = @_;
+    my $dbh   = C4::Context->dbh();
+    my $query = "INSERT INTO reports_dictionary (name,description,saved_sql,report_area,date_created,date_modified)
   VALUES (?,?,?,?,now(),now())";
     my $sth = $dbh->prepare($query);
     $sth->execute($name,$description,$sql,$area) || return 0;
     return 1;
 }
 
+my $DICTIONARY_BASE_QRY = <<EOQ;
+SELECT d.*, $AREA_NAME_SQL_SNIPPET
+FROM reports_dictionary d
+EOQ
 sub get_from_dictionary {
-	my ($area,$id) = @_;
-	my $dbh = C4::Context->dbh();
-	my $query = "SELECT * FROM reports_dictionary";
-	if ($area){
-		$query.= " WHERE area = ?";
-	}
-	elsif ($id){
-		$query.= " WHERE id = ?"
-	}
-	my $sth = $dbh->prepare($query);
-	if ($id){
-		$sth->execute($id);
-	}
-	elsif ($area) {
-		$sth->execute($area);
-	}
-	else {
-		$sth->execute();
-	}
-	my @loop;
-	my @reports = ( 'Circulation', 'Catalog', 'Patrons', 'Acquisitions', 'Accounts');
-	while (my $data = $sth->fetchrow_hashref()){
-		$data->{'areaname'}=$reports[$data->{'area'}-1];
-		push @loop,$data;
-		
-	}
-	return (\@loop);
+    my ( $area, $id ) = @_;
+    my $dbh   = C4::Context->dbh();
+    my $query = $DICTIONARY_BASE_QRY;
+    if ($area) {
+        $query .= " WHERE report_area = ?";
+    } elsif ($id) {
+        $query .= " WHERE id = ?";
+    }
+    my $sth = $dbh->prepare($query);
+    if ($id) {
+        $sth->execute($id);
+    } elsif ($area) {
+        $sth->execute($area);
+    } else {
+        $sth->execute();
+    }
+    my @loop;
+    while ( my $data = $sth->fetchrow_hashref() ) {
+        push @loop, $data;
+    }
+    return ( \@loop );
 }
 
 sub delete_definition {
@@ -741,7 +838,7 @@ sub _get_column_defs {
 	my $columns_def_file = "columns.def";
 	my $htdocs = C4::Context->config('intrahtdocs');                       
 	my $section='intranet';
-	my ($theme, $lang) = C4::Templates::themelanguage($htdocs, $columns_def_file, $section,$cgi);
+    my ($theme, $lang, $availablethemes) = C4::Templates::themelanguage($htdocs, $columns_def_file, $section,$cgi);
 
 	my $full_path_to_columns_def_file="$htdocs/$theme/$lang/$columns_def_file";    
 	open (COLUMNS,$full_path_to_columns_def_file);
@@ -754,6 +851,72 @@ sub _get_column_defs {
 	close COLUMNS;
 	return \%columns;
 }
+
+=item build_authorised_value_list($authorised_value)
+
+Returns an arrayref - hashref pair. The hashref consists of
+various code => name lists depending on the $authorised_value.
+The arrayref is the hashref keys, in appropriate order
+
+=cut
+
+sub build_authorised_value_list {
+    my ( $authorised_value ) = @_;
+
+    my $dbh = C4::Context->dbh;
+    my @authorised_values;
+    my %authorised_lib;
+
+    # builds list, depending on authorised value...
+    if ( $authorised_value eq "branches" ) {
+        my $branches = GetBranchesLoop();
+        foreach my $thisbranch (@$branches) {
+            push @authorised_values, $thisbranch->{value};
+            $authorised_lib{ $thisbranch->{value} } = $thisbranch->{branchname};
+        }
+    } elsif ( $authorised_value eq "itemtypes" ) {
+        my $sth = $dbh->prepare("SELECT itemtype,description FROM itemtypes ORDER BY description");
+        $sth->execute;
+        while ( my ( $itemtype, $description ) = $sth->fetchrow_array ) {
+            push @authorised_values, $itemtype;
+            $authorised_lib{$itemtype} = $description;
+        }
+    } elsif ( $authorised_value eq "cn_source" ) {
+        my $class_sources  = GetClassSources();
+        my $default_source = C4::Context->preference("DefaultClassificationSource");
+        foreach my $class_source ( sort keys %$class_sources ) {
+            next
+              unless $class_sources->{$class_source}->{'used'}
+                  or ( $class_source eq $default_source );
+            push @authorised_values, $class_source;
+            $authorised_lib{$class_source} = $class_sources->{$class_source}->{'description'};
+        }
+    } elsif ( $authorised_value eq "categorycode" ) {
+        my $sth = $dbh->prepare("SELECT categorycode, description FROM categories ORDER BY description");
+        $sth->execute;
+        while ( my ( $categorycode, $description ) = $sth->fetchrow_array ) {
+            push @authorised_values, $categorycode;
+            $authorised_lib{$categorycode} = $description;
+        }
+
+        #---- "true" authorised value
+    } else {
+        my $authorised_values_sth = $dbh->prepare("SELECT authorised_value,lib FROM authorised_values WHERE category=? ORDER BY lib");
+
+        $authorised_values_sth->execute($authorised_value);
+
+        while ( my ( $value, $lib ) = $authorised_values_sth->fetchrow_array ) {
+            push @authorised_values, $value;
+            $authorised_lib{$value} = $lib;
+
+            # For item location, we show the code and the libelle
+            $authorised_lib{$value} = $lib;
+        }
+    }
+
+    return (\@authorised_values, \%authorised_lib);
+}
+
 1;
 __END__
 

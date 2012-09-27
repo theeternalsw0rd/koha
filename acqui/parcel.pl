@@ -42,8 +42,6 @@ To know the supplier this script has to show orders.
 
 is the bookseller invoice number.
 
-=item freight
-
 
 =item gst
 
@@ -57,7 +55,8 @@ To filter the results list on this given date.
 =cut
 
 use strict;
-#use warnings; FIXME - Bug 2505
+use warnings;
+
 use C4::Auth;
 use C4::Acquisition;
 use C4::Budgets;
@@ -71,75 +70,78 @@ use C4::Suggestions;
 use JSON;
 
 my $input=new CGI;
-my $booksellerid=$input->param('booksellerid');
-my $bookseller=GetBookSellerFromId($booksellerid);
 
-my $invoice=$input->param('invoice') || '';
-my $freight=$input->param('freight');
-my $input_gst = ($input->param('gst') eq '' ? undef : $input->param('gst'));
-my $gst= $input_gst // $bookseller->{gstrate} // C4::Context->preference("gist") // 0;
-my $datereceived =  ($input->param('op') eq 'new') ? C4::Dates->new($input->param('datereceived')) 
-					:  C4::Dates->new($input->param('datereceived'), 'iso')   ;
-$datereceived = C4::Dates->new() unless $datereceived;
-my $code            = $input->param('code');
-my @rcv_err         = $input->param('error');
-my @rcv_err_barcode = $input->param('error_bc');
-
-my $startfrom=$input->param('startfrom');
-my $resultsperpage = $input->param('resultsperpage');
-$resultsperpage = 20 unless ($resultsperpage);
-$startfrom=0 unless ($startfrom);
-
-if($input->param('format') eq "json"){
-    my ($template, $loggedinuser, $cookie)
-        = get_template_and_user({template_name => "acqui/ajax.tmpl",
-                 query => $input,
-				 type => "intranet",
-                 authnotrequired => 0,
-                 flagsrequired => {acquisition => 'order_receive'},
-                 debug => 1,
-    });
-       
-    my @datas;
-    my $search   = $input->param('search') || '';
-    my $supplier = $input->param('booksellerid') || '';
-    my $basketno = $input->param('basketno') || '';
-    my $orderno  = $input->param('orderno') || '';
-
-    my $orders = SearchOrder($orderno, $search, $supplier, $basketno);
-    foreach my $order (@$orders){
-        if($order->{quantityreceived} < $order->{quantity}){
-            my $data = {};
-            
-            $data->{basketno} = $order->{basketno};
-            $data->{ordernumber} = $order->{ordernumber};
-            $data->{title} = $order->{title};
-            $data->{author} = $order->{author};
-            $data->{isbn} = $order->{isbn};
-            $data->{booksellerid} = $order->{booksellerid};
-            $data->{biblionumber} = $order->{biblionumber};
-            $data->{freight} = $order->{freight};
-            $data->{quantity} = $order->{quantity};
-            $data->{ecost} = $order->{ecost};
-            $data->{ordertotal} = sprintf("%.2f",$order->{ecost}*$order->{quantity});
-            push @datas, $data;
+sub get_value_with_gst_params {
+    my $value = shift;
+    my $gstrate = shift;
+    my $bookseller = shift;
+    if ( $bookseller->{listincgst} ) {
+        if ( $bookseller->{invoiceincgst} ) {
+            return $value;
+        } else {
+            return $value / ( 1 + $gstrate );
+        }
+    } else {
+        if ( $bookseller->{invoiceincgst} ) {
+            return $value * ( 1 + $gstrate );
+        } else {
+            return $value;
         }
     }
-    
-    my $json_text = to_json(\@datas);
-    $template->param(return => $json_text);
-    output_html_with_http_headers $input, $cookie, $template->output;
-    exit;
+}
+
+sub get_gste {
+    my $value = shift;
+    my $gstrate = shift;
+    my $bookseller = shift;
+    return $bookseller->{invoiceincgst}
+        ? $value / ( 1 + $gstrate )
+        : $value;
+}
+
+sub get_gst {
+    my $value = shift;
+    my $gstrate = shift;
+    my $bookseller = shift;
+    return $bookseller->{invoiceincgst}
+        ? $value / ( 1 + $gstrate ) * $gstrate
+        : $value * ( 1 + $gstrate ) - $value;
 }
 
 my ($template, $loggedinuser, $cookie)
     = get_template_and_user({template_name => "acqui/parcel.tmpl",
                  query => $input,
-				 type => "intranet",
+                 type => "intranet",
                  authnotrequired => 0,
                  flagsrequired => {acquisition => 'order_receive'},
                  debug => 1,
 });
+
+my $invoiceid = $input->param('invoiceid');
+my $op = $input->param('op') // '';
+
+if ($op eq 'cancelreceipt') {
+    my $ordernumber = $input->param('ordernumber');
+    my $parent_ordernumber = CancelReceipt($ordernumber);
+    unless($parent_ordernumber) {
+        $template->param(error_cancelling_receipt => 1);
+    }
+}
+
+my $invoice = GetInvoiceDetails($invoiceid);
+my $booksellerid = $invoice->{booksellerid};
+my $bookseller = GetBookSellerFromId($booksellerid);
+my $gst = $bookseller->{gstrate} // C4::Context->preference("gist") // 0;
+my $datereceived = C4::Dates->new();
+my $code            = $input->param('code');
+my @rcv_err         = $input->param('error');
+my @rcv_err_barcode = $input->param('error_bc');
+my $startfrom=$input->param('startfrom');
+my $resultsperpage = $input->param('resultsperpage');
+$resultsperpage = 20 unless ($resultsperpage);
+$startfrom=0 unless ($startfrom);
+
+
 
 # If receiving error, report the error (coming from finishrecieve.pl(sic)).
 if( scalar(@rcv_err) ) {
@@ -155,173 +157,191 @@ if( scalar(@rcv_err) ) {
 }
 
 my $cfstr         = "%.2f";                                                           # currency format string -- could get this from currency table.
-my @parcelitems   = GetParcel($booksellerid, $invoice, $datereceived->output('iso'));
+my @parcelitems   = @{ $invoice->{orders} };
 my $countlines    = scalar @parcelitems;
 my $totalprice    = 0;
-my $totalfreight  = 0;
 my $totalquantity = 0;
 my $total;
-my $tototal;
 my @loop_received = ();
+my @book_foot_loop;
+my %foot;
+my $total_quantity = 0;
+my $total_gste = 0;
+my $total_gsti = 0;
 
-for (my $i = 0 ; $i < $countlines ; $i++) {
-
-    #$total=($parcelitems[$i]->{'unitprice'} + $parcelitems[$i]->{'freight'}) * $parcelitems[$i]->{'quantityreceived'};   #weird, are the freight fees counted by book? (pierre)
-    $total = ($parcelitems[$i]->{'unitprice'}) * $parcelitems[$i]->{'quantityreceived'};    #weird, are the freight fees counted by book? (pierre)
-    $parcelitems[$i]->{'unitprice'} += 0;
+for my $item ( @parcelitems ) {
+    $item->{unitprice} = get_value_with_gst_params( $item->{unitprice}, $item->{gstrate}, $bookseller );
+    $total = ( $item->{'unitprice'} ) * $item->{'quantityreceived'};
+    $item->{'unitprice'} += 0;
     my %line;
-    %line          = %{ $parcelitems[$i] };
-    $line{invoice} = $invoice;
-    $line{gst}     = $gst;
+    %line          = %{ $item };
+    my $ecost = get_value_with_gst_params( $line{ecost}, $line{gstrate}, $bookseller );
+    $line{ecost} = sprintf( "%.2f", $ecost );
+    $line{invoice} = $invoice->{invoicenumber};
     $line{total} = sprintf($cfstr, $total);
-    $line{booksellerid} = $booksellerid;
-    push @loop_received, \%line;
-    $totalprice += $parcelitems[$i]->{'unitprice'};
-    $line{unitprice} = sprintf($cfstr, $parcelitems[$i]->{'unitprice'});
+    $line{booksellerid} = $invoice->{booksellerid};
+    $totalprice += $item->{'unitprice'};
+    $line{unitprice} = sprintf( $cfstr, $item->{'unitprice'} );
+    my $gste = get_gste( $line{total}, $line{gstrate}, $bookseller );
+    my $gst = get_gst( $line{total}, $line{gstrate}, $bookseller );
+    $foot{$line{gstrate}}{gstrate} = $line{gstrate};
+    $foot{$line{gstrate}}{value} += sprintf( "%.2f", $gst );
+    $total_quantity += $line{quantity};
+    $total_gste += $gste;
+    $total_gsti += $gste + $gst;
 
     my $suggestion   = GetSuggestionInfoFromBiblionumber($line{biblionumber});
     $line{suggestionid}         = $suggestion->{suggestionid};
     $line{surnamesuggestedby}   = $suggestion->{surnamesuggestedby};
     $line{firstnamesuggestedby} = $suggestion->{firstnamesuggestedby};
 
-    #double FIXME - totalfreight is redefined later.
-
-# FIXME - each order in a  parcel holds the freight for the whole parcel. This means if you receive a parcel with items from multiple budgets, you'll see the freight charge in each budget..
-    if ($i > 0 && $totalfreight != $parcelitems[$i]->{'freight'}) {
-        warn "FREIGHT CHARGE MISMATCH!!";
-    }
-    $totalfreight = $parcelitems[$i]->{'freight'};
-    $totalquantity += $parcelitems[$i]->{'quantityreceived'};
-    $tototal       += $total;
-}
-
-my $pendingorders = GetPendingOrders($booksellerid);
-my $countpendings = scalar @$pendingorders;
-
-# pending orders totals
-my ($totalPunitprice, $totalPquantity, $totalPecost, $totalPqtyrcvd);
-my $ordergrandtotal;
-my @loop_orders = ();
-for (my $i = 0 ; $i < $countpendings ; $i++) {
-    my %line;
-    %line = %{$pendingorders->[$i]};
-   
-    $line{quantity}+=0;
-    $line{quantityreceived}+=0;
-    $line{unitprice}+=0;
-    $totalPunitprice += $line{unitprice};
-    $totalPquantity +=$line{quantity};
-    $totalPqtyrcvd +=$line{quantityreceived};
-    $totalPecost += $line{ecost};
-    $line{ecost} = sprintf("%.2f",$line{ecost});
-    $line{ordertotal} = sprintf("%.2f",$line{ecost}*$line{quantity});
-    $line{unitprice} = sprintf("%.2f",$line{unitprice});
-    $line{invoice} = $invoice;
-    $line{gst} = $gst;
-    $line{total} = $total;
-    $line{booksellerid} = $booksellerid;
-    $ordergrandtotal += $line{ecost} * $line{quantity};
-    
-    my $biblionumber = $line{'biblionumber'};
-    my $countbiblio = CountBiblioInOrders($biblionumber);
-    my $ordernumber = $line{'ordernumber'};
-    my @subscriptions = GetSubscriptionsId ($biblionumber);
-    my $itemcount = GetItemsCount($biblionumber);
-    my $holds  = GetHolds ($biblionumber);
-    my @items = GetItemnumbersFromOrder( $ordernumber );
-    my $itemholds;
-    foreach my $item (@items){
-        my $nb = GetItemHolds($biblionumber, $item);
-        if ($nb){
-            $itemholds += $nb;
+    if ( $line{parent_ordernumber} != $line{ordernumber} ) {
+        if ( grep { $_->{ordernumber} == $line{parent_ordernumber} }
+            @parcelitems )
+        {
+            $line{cannot_cancel} = 1;
         }
     }
 
-    my $suggestion   = GetSuggestionInfoFromBiblionumber($line{biblionumber});
-    $line{suggestionid}         = $suggestion->{suggestionid};
-    $line{surnamesuggestedby}   = $suggestion->{surnamesuggestedby};
-    $line{firstnamesuggestedby} = $suggestion->{firstnamesuggestedby};
+    my $budget = GetBudget( $line{budget_id} );
+    $line{budget_name} = $budget->{'budget_name'};
 
-    # if the biblio is not in other orders and if there is no items elsewhere and no subscriptions and no holds we can then show the link "Delete order and Biblio" see bug 5680
-    $line{can_del_bib}          = 1 if $countbiblio <= 1 && $itemcount == scalar @items && !(@subscriptions) && !($holds);
-    $line{items}                = ($itemcount) - (scalar @items);
-    $line{left_item}            = 1 if $line{items} >= 1;
-    $line{left_biblio}          = 1 if $countbiblio > 1;
-    $line{biblios}              = $countbiblio - 1;
-    $line{left_subscription}    = 1 if scalar @subscriptions >= 1;
-    $line{subscriptions}        = scalar @subscriptions;
-    $line{left_holds}           = 1 if $holds >= 1;
-    $line{left_holds_on_order}  = 1 if $line{left_holds}==1 && ($line{items} == 0 || $itemholds );
-    $line{holds}                = $holds;
-    $line{holds_on_order}       = $itemholds?$itemholds:$holds if $line{left_holds_on_order};
-    
-    
-    push @loop_orders, \%line if ($i >= $startfrom and $i < $startfrom + $resultsperpage);
+    push @loop_received, \%line;
+    $totalquantity += $item->{'quantityreceived'};
+
 }
-$freight = $totalfreight unless $freight;
+push @book_foot_loop, map { $_ } values %foot;
 
-my $count = $countpendings;
+my @loop_orders = ();
+if(!defined $invoice->{closedate}) {
+    my $pendingorders;
+    if($input->param('op') eq "search"){
+        my $search   = $input->param('summaryfilter') || '';
+        my $ean      = $input->param('eanfilter') || '';
+        my $basketno = $input->param('basketfilter') || '';
+        my $orderno  = $input->param('orderfilter') || '';
+        my $grouped;
+        my $owner;
+        $pendingorders = GetPendingOrders($booksellerid,$grouped,$owner,$basketno,$orderno,$search,$ean);
+    }else{
+        $pendingorders = GetPendingOrders($booksellerid);
+    }
+    my $countpendings = scalar @$pendingorders;
 
-if ($count>$resultsperpage){
-    my $displaynext=0;
-    my $displayprev=$startfrom;
-    if(($count - ($startfrom+$resultsperpage)) > 0 ) {
-        $displaynext = 1;
+    for (my $i = 0 ; $i < $countpendings ; $i++) {
+        my %line;
+        %line = %{$pendingorders->[$i]};
+
+        my $ecost = get_value_with_gst_params( $line{ecost}, $line{gstrate}, $bookseller );
+        $line{unitprice} = get_value_with_gst_params( $line{unitprice}, $line{gstrate}, $bookseller );
+        $line{quantity} += 0;
+        $line{quantityreceived} += 0;
+        $line{unitprice}+=0;
+        $line{ecost} = sprintf( "%.2f", $ecost );
+        $line{ordertotal} = sprintf( "%.2f", $ecost * $line{quantity} );
+        $line{unitprice} = sprintf("%.2f",$line{unitprice});
+        $line{invoice} = $invoice;
+        $line{booksellerid} = $booksellerid;
+
+
+
+        my $biblionumber = $line{'biblionumber'};
+        my $countbiblio = CountBiblioInOrders($biblionumber);
+        my $ordernumber = $line{'ordernumber'};
+        my @subscriptions = GetSubscriptionsId ($biblionumber);
+        my $itemcount = GetItemsCount($biblionumber);
+        my $holds  = GetHolds ($biblionumber);
+        my @items = GetItemnumbersFromOrder( $ordernumber );
+        my $itemholds;
+        foreach my $item (@items){
+            my $nb = GetItemHolds($biblionumber, $item);
+            if ($nb){
+                $itemholds += $nb;
+            }
+        }
+
+        my $suggestion   = GetSuggestionInfoFromBiblionumber($line{biblionumber});
+        $line{suggestionid}         = $suggestion->{suggestionid};
+        $line{surnamesuggestedby}   = $suggestion->{surnamesuggestedby};
+        $line{firstnamesuggestedby} = $suggestion->{firstnamesuggestedby};
+
+        # if the biblio is not in other orders and if there is no items elsewhere and no subscriptions and no holds we can then show the link "Delete order and Biblio" see bug 5680
+        $line{can_del_bib}          = 1 if $countbiblio <= 1 && $itemcount == scalar @items && !(@subscriptions) && !($holds);
+        $line{items}                = ($itemcount) - (scalar @items);
+        $line{left_item}            = 1 if $line{items} >= 1;
+        $line{left_biblio}          = 1 if $countbiblio > 1;
+        $line{biblios}              = $countbiblio - 1;
+        $line{left_subscription}    = 1 if scalar @subscriptions >= 1;
+        $line{subscriptions}        = scalar @subscriptions;
+        $line{left_holds}           = ($holds >= 1) ? 1 : 0;
+        $line{left_holds_on_order}  = 1 if $line{left_holds}==1 && ($line{items} == 0 || $itemholds );
+        $line{holds}                = $holds;
+        $line{holds_on_order}       = $itemholds?$itemholds:$holds if $line{left_holds_on_order};
+
+        my $budget = GetBudget( $line{budget_id} );
+        $line{budget_name} = $budget->{'budget_name'};
+
+        push @loop_orders, \%line if ($i >= $startfrom and $i < $startfrom + $resultsperpage);
     }
 
-    my @numbers = ();
-    for (my $i=1; $i<$count/$resultsperpage+1; $i++) {
-            my $highlight=0;
-            ($startfrom/$resultsperpage==($i-1)) && ($highlight=1);
-            push @numbers, { number => $i,
-                highlight => $highlight ,
-                startfrom => ($i-1)*$resultsperpage};
+    my $count = $countpendings;
+
+    if ($count>$resultsperpage){
+        my $displaynext=0;
+        my $displayprev=$startfrom;
+        if(($count - ($startfrom+$resultsperpage)) > 0 ) {
+            $displaynext = 1;
+        }
+
+        my @numbers = ();
+        for (my $i=1; $i<$count/$resultsperpage+1; $i++) {
+                my $highlight=0;
+                ($startfrom/$resultsperpage==($i-1)) && ($highlight=1);
+                push @numbers, { number => $i,
+                    highlight => $highlight ,
+                    startfrom => ($i-1)*$resultsperpage};
+        }
+
+        my $from = $startfrom*$resultsperpage+1;
+        my $to;
+        if($count < (($startfrom+1)*$resultsperpage)){
+            $to = $count;
+        } else {
+            $to = (($startfrom+1)*$resultsperpage);
+        }
+        $template->param(numbers=>\@numbers,
+                         displaynext=>$displaynext,
+                         displayprev=>$displayprev,
+                         nextstartfrom=>(($startfrom+$resultsperpage<$count)?$startfrom+$resultsperpage:$count),
+                         prevstartfrom=>(($startfrom-$resultsperpage>0)?$startfrom-$resultsperpage:0)
+                        );
     }
 
-    my $from = $startfrom*$resultsperpage+1;
-    my $to;
-    if($count < (($startfrom+1)*$resultsperpage)){
-        $to = $count;
-    } else {
-        $to = (($startfrom+1)*$resultsperpage);
-    }
-    $template->param(numbers=>\@numbers,
-                     displaynext=>$displaynext,
-                     displayprev=>$displayprev,
-                     nextstartfrom=>(($startfrom+$resultsperpage<$count)?$startfrom+$resultsperpage:$count),
-                     prevstartfrom=>(($startfrom-$resultsperpage>0)?$startfrom-$resultsperpage:0)
-                    );
+    $template->param(
+        loop_orders  => \@loop_orders,
+    );
 }
-
-#$totalfreight=$freight;
-$tototal = $tototal + $freight;
 
 $template->param(
-    invoice               => $invoice,
+    invoiceid             => $invoice->{invoiceid},
+    invoice               => $invoice->{invoicenumber},
+    invoiceclosedate      => $invoice->{closedate},
     datereceived          => $datereceived->output('iso'),
     invoicedatereceived   => $datereceived->output('iso'),
     formatteddatereceived => $datereceived->output(),
     name                  => $bookseller->{'name'},
-    booksellerid            => $booksellerid,
-    gst                   => $gst,
-    freight               => $freight,
-    invoice               => $invoice,
+    booksellerid          => $bookseller->{id},
     countreceived         => $countlines,
     loop_received         => \@loop_received,
-    countpending          => $countpendings,
+    booksellerid          => $booksellerid,
     loop_orders           => \@loop_orders,
+    book_foot_loop        => \@book_foot_loop,
     totalprice            => sprintf($cfstr, $totalprice),
-    totalfreight          => $totalfreight,
     totalquantity         => $totalquantity,
-    tototal               => sprintf($cfstr, $tototal),
-    ordergrandtotal       => sprintf($cfstr, $ordergrandtotal),
-    gst                   => $gst,
-    grandtot              => sprintf($cfstr, $tototal + $gst),
-    totalPunitprice       => sprintf("%.2f", $totalPunitprice),
-    totalPquantity        => $totalPquantity,
-    totalPqtyrcvd         => $totalPqtyrcvd,
-    totalPecost           => sprintf("%.2f", $totalPecost),
     resultsperpage        => $resultsperpage,
+    (uc(C4::Context->preference("marcflavour"))) => 1,
+    total_quantity       => $total_quantity,
+    total_gste           => sprintf( "%.2f", $total_gste ),
+    total_gsti           => sprintf( "%.2f", $total_gsti ),
 );
 output_html_with_http_headers $input, $cookie, $template->output;
- 

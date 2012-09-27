@@ -1,5 +1,8 @@
 #!/usr/bin/perl
 
+# Copyright Katipo Communications 2002
+# Copyright Biblibre 2007,2010
+#
 # This file is part of Koha.
 #
 # Koha is free software; you can redistribute it and/or modify it under the
@@ -11,12 +14,10 @@
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License along with
-# Koha; if not, write to the Free Software Foundation, Inc., 59 Temple Place,
-# Suite 330, Boston, MA  02111-1307 USA
+# You should have received a copy of the GNU General Public License along
+# with Koha; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-# wrriten 15/10/2002 by finlay@katipo.oc.nz
-# script to display borrowers account details in the opac
 
 use strict;
 use CGI;
@@ -24,7 +25,6 @@ use C4::Members;
 use C4::Circulation;
 use C4::Auth;
 use C4::Output;
-use C4::Dates qw/format_date/;
 use warnings;
 
 my $query = new CGI;
@@ -50,7 +50,6 @@ $template->param( BORROWER_INFO => \@bordat );
 my ( $total , $accts, $numaccts) = GetMemberAccountRecords( $borrowernumber );
 
 for ( my $i = 0 ; $i < $numaccts ; $i++ ) {
-    $accts->[$i]{'date'} = format_date( $accts->[$i]{'date'} );
     $accts->[$i]{'amount'} = sprintf( "%.2f", $accts->[$i]{'amount'} || '0.00');
     if ( $accts->[$i]{'amount'} >= 0 ) {
         $accts->[$i]{'amountcredit'} = 1;

@@ -45,17 +45,17 @@ sub AuthorizedValuesForCategory {
 my $input = new CGI;
 my $id          = $input->param('id');
 my $op          = $input->param('op')     || '';
-my $offset      = $input->param('offset') || 0;
-my $searchfield = $input->param('searchfield');
+our $offset      = $input->param('offset') || 0;
+our $searchfield = $input->param('searchfield');
 $searchfield = '' unless defined $searchfield;
 $searchfield =~ s/\,//g;
-my $script_name = "/cgi-bin/koha/admin/authorised_values.pl";
-my $dbh = C4::Context->dbh;
+our $script_name = "/cgi-bin/koha/admin/authorised_values.pl";
+our $dbh = C4::Context->dbh;
 
-my ($template, $borrowernumber, $cookie)= get_template_and_user({
+our ($template, $borrowernumber, $cookie)= get_template_and_user({
     template_name => "admin/authorised_values.tmpl",
     authnotrequired => 0,
-    flagsrequired => {parameters => 1},
+    flagsrequired => {parameters => 'parameters_remaining_permissions'},
     query => $input,
     type => "intranet",
     debug => 1,
@@ -188,17 +188,18 @@ output_html_with_http_headers $input, $cookie, $template->output;
 exit 0;
 
 sub default_form {
-	# build categories list
-	my $sth = $dbh->prepare("select distinct category from authorised_values");
-	$sth->execute;
-	my @category_list;
-	my %categories;     # a hash, to check that some hardcoded categories exist.
-	while ( my ($category) = $sth->fetchrow_array) {
-		push(@category_list,$category);
-		$categories{$category} = 1;
-	}
-	# push koha system categories
-    foreach (qw(Asort1 Asort2 Bsort1 Bsort2 SUGGEST DAMAGED LOST)) {
+    # build categories list
+    my $sth = $dbh->prepare("select distinct category from authorised_values");
+    $sth->execute;
+    my @category_list;
+    my %categories;    # a hash, to check that some hardcoded categories exist.
+    while ( my ($category) = $sth->fetchrow_array ) {
+        push( @category_list, $category );
+        $categories{$category} = 1;
+    }
+
+    # push koha system categories
+    foreach (qw(Asort1 Asort2 Bsort1 Bsort2 SUGGEST DAMAGED LOST REPORT_GROUP REPORT_SUBGROUP)) {
         push @category_list, $_ unless $categories{$_};
     }
 

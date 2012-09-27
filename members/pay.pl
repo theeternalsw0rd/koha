@@ -41,9 +41,11 @@ use C4::Overdues;
 use C4::Branch;
 use C4::Members::Attributes qw(GetBorrowerAttributes);
 
-my $input = CGI->new;
+our $input = CGI->new;
+our $writeoff_sth;
+our $add_writeoff_sth;
 
-my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
+our ( $template, $loggedinuser, $cookie ) = get_template_and_user(
     {   template_name   => 'members/pay.tmpl',
         query           => $input,
         type            => 'intranet',
@@ -53,23 +55,20 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
     }
 );
 
-my $writeoff_sth;
-my $add_writeoff_sth;
-
 my @names = $input->param;
 
-my $borrowernumber = $input->param('borrowernumber');
+our $borrowernumber = $input->param('borrowernumber');
 if ( !$borrowernumber ) {
     $borrowernumber = $input->param('borrowernumber0');
 }
 
 # get borrower details
-my $borrower = GetMember( borrowernumber => $borrowernumber );
-my $user = $input->remote_user;
+our $borrower = GetMember( borrowernumber => $borrowernumber );
+our $user = $input->remote_user;
 $user ||= q{};
 
 my $branches = GetBranches();
-my $branch = GetBranch( $input, $branches );
+our $branch = GetBranch( $input, $branches );
 
 my $writeoff_item = $input->param('confirm_writeoff');
 my $paycollect    = $input->param('paycollect');
@@ -86,11 +85,11 @@ my $writeoff_all = $input->param('woall');    # writeoff all fines
 if ($writeoff_all) {
     writeoff_all(@names);
 } elsif ($writeoff_item) {
-    my $accountno    = $input->param('accountno');
+    my $accountlines_id = $input->param('accountlines_id');
     my $itemno       = $input->param('itemnumber');
     my $account_type = $input->param('accounttype');
-    my $amount       = $input->param('amount');
-    writeoff( $accountno, $itemno, $account_type, $amount );
+    my $amount       = $input->param('amountoutstanding');
+    WriteOffFee( $borrowernumber, $accountlines_id, $itemno, $account_type, $amount, $branch );
 }
 
 for (@names) {
@@ -110,14 +109,14 @@ add_accounts_to_template();
 output_html_with_http_headers $input, $cookie, $template->output;
 
 sub writeoff {
-    my ( $accountnum, $itemnum, $accounttype, $amount ) = @_;
+    my ( $accountlines_id, $itemnum, $accounttype, $amount ) = @_;
     my $manager_id = 0;
     $manager_id = C4::Context->userenv->{'number'} if C4::Context->userenv;
 
     # if no item is attached to fine, make sure to store it as a NULL
     $itemnum ||= undef;
     get_writeoff_sth();
-    $writeoff_sth->execute( $accountnum, $borrowernumber );
+    $writeoff_sth->execute( $accountlines_id );
 
     my $acct = getnextacctno($borrowernumber);
     $add_writeoff_sth->execute( $borrowernumber, $acct, $itemnum, $amount, $manager_id );
@@ -187,6 +186,7 @@ sub redirect_to_paycollect {
     $redirect .= get_for_redirect( 'itemnumber',   "itemnumber$line_no",   0 );
     $redirect .= get_for_redirect( 'notify_id',    "notify_id$line_no",    0 );
     $redirect .= get_for_redirect( 'notify_level', "notify_level$line_no", 0 );
+    $redirect .= get_for_redirect( 'accountlines_id', "accountlines_id$line_no", 0 );
     $redirect .= '&remote_user=';
     $redirect .= $user;
     return print $input->redirect($redirect);
@@ -202,9 +202,10 @@ sub writeoff_all {
 
             #    my $borrowernum    = $input->param("borrowernumber$value");
             my $itemno    = $input->param("itemnumber$value");
-            my $amount    = $input->param("amount$value");
+            my $amount    = $input->param("amountoutstanding$value");
             my $accountno = $input->param("accountno$value");
-            writeoff( $accountno, $itemno, $accounttype, $amount );
+            my $accountlines_id = $input->param("accountlines_id$value");
+            WriteOffFee( $borrowernumber, $accountlines_id, $itemno, $accounttype, $amount, $branch );
         }
     }
 
@@ -281,7 +282,7 @@ sub get_writeoff_sth {
 
         # Do we need to validate accounttype
         my $sql = 'Update accountlines set amountoutstanding=0 '
-          . 'WHERE accountno=? and borrowernumber=?';
+          . 'WHERE accountlines_id=?';
         $writeoff_sth = $dbh->prepare($sql);
         my $insert =
 q{insert into accountlines (borrowernumber,accountno,itemnumber,date,amount,description,accounttype,manager_id)}

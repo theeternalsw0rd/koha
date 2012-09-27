@@ -33,7 +33,7 @@ use C4::Input;
 use C4::Output;
 use C4::ImportBatch;
 use C4::Matcher;
-use C4::Search qw/FindDuplicate BiblioAddAuthorities/;
+use C4::Search qw/FindDuplicate/;
 use C4::Acquisition;
 use C4::Biblio;
 use C4::Items;
@@ -41,20 +41,20 @@ use C4::Koha;
 use C4::Budgets;
 use C4::Acquisition;
 use C4::Bookseller qw/GetBookSellerFromId/;
-use C4::Dates;
 use C4::Suggestions;    # GetSuggestion
 use C4::Branch;         # GetBranches
 use C4::Members;
 
 my $input = new CGI;
-my ($template, $loggedinuser, $cookie) = get_template_and_user({
-                                        template_name => "acqui/addorderiso2709.tmpl",
-                                        query => $input,
-                                        type => "intranet",
-                                        authnotrequired => 0,
-                                        flagsrequired   => { acquisition => 'order_manage' },
-                                        debug => 1,
-                                        });
+my ($template, $loggedinuser, $cookie, $userflags) = get_template_and_user({
+    template_name => "acqui/addorderiso2709.tmpl",
+    query => $input,
+    type => "intranet",
+    authnotrequired => 0,
+    flagsrequired   => { acquisition => 'order_manage' },
+    debug => 1,
+});
+
 my $cgiparams = $input->Vars;
 my $op = $cgiparams->{'op'};
 my $booksellerid  = $input->param('booksellerid');
@@ -156,7 +156,7 @@ if ($op eq ""){
 
     # retrieve the file you want to import
     my $import_batch_id = $cgiparams->{'import_batch_id'};
-    my $biblios = GetImportBibliosRange($import_batch_id);
+    my $biblios = GetImportRecordsRange($import_batch_id);
     for my $biblio (@$biblios){
         # 1st insert the biblio, or find it through matcher
         my ( $marcblob, $encoding ) = GetImportRecordMarc( $biblio->{'import_record_id'} );
@@ -183,7 +183,7 @@ if ($op eq ""){
             SetImportRecordStatus( $biblio->{'import_record_id'}, 'imported' );
             # 2nd add authorities if applicable
             if (C4::Context->preference("BiblioAddsAuthorities")){
-                my ($countlinked,$countcreated)=BiblioAddAuthorities($marcrecord, $cgiparams->{'frameworkcode'});
+                my $headings_linked =BiblioAutoLink($marcrecord, $cgiparams->{'frameworkcode'});
             }
         } else {
             SetImportRecordStatus( $biblio->{'import_record_id'}, 'imported' );
@@ -191,27 +191,20 @@ if ($op eq ""){
         # 3rd add order
         my $patron = C4::Members->GetMember( borrowernumber => $loggedinuser );
         my $branch = C4::Branch->GetBranchDetail( $patron->{branchcode} );
-        my ($invoice);
         # get quantity in the MARC record (1 if none)
         my $quantity = GetMarcQuantity($marcrecord, C4::Context->preference('marcflavour')) || 1;
         my %orderinfo = (
             "biblionumber", $biblionumber, "basketno", $cgiparams->{'basketno'},
             "quantity", $quantity, "branchcode", $branch, 
-            "booksellerinvoicenumber", $invoice, 
             "budget_id", $budget_id, "uncertainprice", 1,
             "sort1", $cgiparams->{'sort1'},"sort2", $cgiparams->{'sort2'},
             "notes", $cgiparams->{'notes'}, "budget_id", $cgiparams->{'budget_id'},
             "currency",$cgiparams->{'currency'},
         );
-        # get the price if there is one.
-        # filter by storing only the 1st number
-        # we suppose the currency is correct, as we have no possibilities to get it.
-        my $price= GetMarcPrice($marcrecord, C4::Context->preference('marcflavour'));
+
+        my $price = GetMarcPrice($marcrecord, C4::Context->preference('marcflavour'));
+
         if ($price){
-            $price = $num->unformat_number($price);
-        }
-        if ($price){
-            $orderinfo{'listprice'} = $price;
             eval {
 		require C4::Acquisition;
 		import C4::Acquisition qw/GetBasket/;
@@ -228,13 +221,19 @@ if ($op eq ""){
 	    }
             my $basket     = GetBasket( $orderinfo{basketno} );
             my $bookseller = GetBookSellerFromId( $basket->{booksellerid} );
-            my $gst        = $bookseller->{gstrate} || C4::Context->preference("gist") || 0;
-            $orderinfo{'unitprice'} = $orderinfo{listprice} - ( $orderinfo{listprice} * ( $bookseller->{discount} / 100 ) );
-            $orderinfo{'ecost'} = $orderinfo{unitprice};
+            $orderinfo{gstrate} = $bookseller->{gstrate};
+            if ( $bookseller->{listincgst} ) {
+                $orderinfo{ecost} = $price;
+            } else {
+                $orderinfo{ecost} = $price * ( 1 + $orderinfo{gstrate} );
+            }
+            $orderinfo{rrp} = ( $orderinfo{ecost} * 100 ) / ( 100 - $bookseller->{discount} );
+            $orderinfo{listprice} = $orderinfo{rrp};
+            $orderinfo{unitprice} = $orderinfo{ecost};
+            $orderinfo{total} = $orderinfo{ecost};
         } else {
             $orderinfo{'listprice'} = 0;
         }
-        $orderinfo{'rrp'} = $orderinfo{'listprice'};
 
         # remove uncertainprice flag if we have found a price in the MARC record
         $orderinfo{uncertainprice} = 0 if $orderinfo{listprice};
@@ -281,8 +280,9 @@ my $budget = GetBudget($budget_id);
 
 # build budget list
 my $budget_loop = [];
-$budgets = GetBudgetHierarchy( q{}, $borrower->{branchcode}, $borrower->{borrowernumber} );
+$budgets = GetBudgetHierarchy;
 foreach my $r ( @{$budgets} ) {
+    next unless (CanUserUseBudget($borrower, $r, $userflags));
     if ( !defined $r->{budget_amount} || $r->{budget_amount} == 0 ) {
         next;
     }
@@ -301,10 +301,7 @@ if ($budget) {    # its a mod ..
     }
 } elsif ( scalar(@$budgets) ) {
     $CGIsort1 = GetAuthvalueDropbox(  @$budgets[0]->{'sort1_authcat'}, '' );
-} else {
-    $CGIsort1 = GetAuthvalueDropbox(  '', '' );
 }
-
 # if CGIsort is successfully fetched, the use it
 # else - failback to plain input-field
 if ($CGIsort1) {
@@ -320,10 +317,7 @@ if ($budget) {
     }
 } elsif ( scalar(@$budgets) ) {
     $CGIsort2 = GetAuthvalueDropbox(  @$budgets[0]->{sort2_authcat}, '' );
-} else {
-    $CGIsort2 = GetAuthvalueDropbox( '', '' );
 }
-
 if ($CGIsort2) {
     $template->param( CGIsort2 => $CGIsort2 );
 } else {
@@ -341,13 +335,15 @@ sub import_batches_list {
     foreach my $batch (@$batches) {
         if ($batch->{'import_status'} eq "staged") {
             # check if there is at least 1 line still staged
-            my $stagedList=GetImportBibliosRange($batch->{'import_batch_id'}, undef, undef, 'staged');
+            my $stagedList=GetImportRecordsRange($batch->{'import_batch_id'}, undef, undef, 'staged');
             if (scalar @$stagedList) {
+                my ($staged_date, $staged_hour) = split (/ /, $batch->{'upload_timestamp'});
                 push @list, {
                         import_batch_id => $batch->{'import_batch_id'},
                         num_biblios => $batch->{'num_biblios'},
                         num_items => $batch->{'num_items'},
-                        upload_timestamp => $batch->{'upload_timestamp'},
+                        staged_date => $staged_date,
+                        staged_hour => $staged_hour,
                         import_status => $batch->{'import_status'},
                         file_name => $batch->{'file_name'},
                         comments => $batch->{'comments'},
@@ -366,7 +362,7 @@ sub import_batches_list {
 sub import_biblios_list {
     my ($template, $import_batch_id) = @_;
     my $batch = GetImportBatch($import_batch_id,'staged');
-    my $biblios = GetImportBibliosRange($import_batch_id,'','','staged');
+    my $biblios = GetImportRecordsRange($import_batch_id,'','','staged');
     my @list = ();
 
     foreach my $biblio (@$biblios) {

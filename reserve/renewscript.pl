@@ -1,9 +1,7 @@
 #!/usr/bin/perl
 
-
 #written 18/1/2000 by chris@katipo.co.nz
 #script to renew items from the web
-
 
 # Copyright 2000-2002 Katipo Communications
 #
@@ -25,9 +23,11 @@ use strict;
 use warnings;
 use CGI;
 use C4::Circulation;
+use C4::Context;
+use C4::Items;
 use C4::Auth;
 use URI::Escape;
-use C4::Dates qw/format_date_in_iso/;
+use Koha::DateUtils;
 my $input = new CGI;
 
 #Set Up User_env
@@ -49,7 +49,7 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
 #
 
 my @data;
-if ($input->param('renew_all')) {
+if ( $input->param('renew_all') ) {
     @data = $input->param('all_items[]');
 }
 else {
@@ -57,56 +57,86 @@ else {
 }
 
 my @barcodes;
-if ($input->param('return_all')) {
+if ( $input->param('return_all') ) {
     @barcodes = $input->param('all_barcodes[]');
-} else {
+}
+else {
     @barcodes = $input->param('barcodes[]');
 }
 
-my $branch=$input->param('branch');
+my $branch = $input->param('branch');
 my $datedue;
-if ($input->param('newduedate')){
-    $datedue=C4::Dates->new($input->param('newduedate'));
+if ( $input->param('newduedate') ) {
+    $datedue = dt_from_string( $input->param('newduedate') );
+    $datedue->set_hour(23);
+    $datedue->set_minute(59);
 }
 
 # warn "barcodes : @barcodes";
 #
 # renew items
 #
-my $cardnumber = $input->param("cardnumber");
+my $cardnumber     = $input->param("cardnumber");
 my $borrowernumber = $input->param("borrowernumber");
-my $exemptfine = $input->param("exemptfine") || 0;
+my $exemptfine     = $input->param("exemptfine") || 0;
 my $override_limit = $input->param("override_limit") || 0;
-my $failedrenews = q{};
+my $failedrenews   = q{};
 foreach my $itemno (@data) {
+
     # check status before renewing issue
-	my ($renewokay,$error) = CanBookBeRenewed($borrowernumber,$itemno,$override_limit);
-    if ($renewokay){
-        AddRenewal($borrowernumber,$itemno,$branch,$datedue);
+    my ( $renewokay, $error ) =
+      CanBookBeRenewed( $borrowernumber, $itemno, $override_limit );
+    if ($renewokay) {
+        AddRenewal( $borrowernumber, $itemno, $branch, $datedue );
     }
-	else {
-		$failedrenews.="&failedrenew=$itemno";        
-	}
+    else {
+        $failedrenews .= "&failedrenew=$itemno";
+    }
 }
 my $failedreturn = q{};
 foreach my $barcode (@barcodes) {
+
     # check status before renewing issue
-   my ( $returned, $messages, $issueinformation, $borrower ) = 
-    AddReturn($barcode, $branch, $exemptfine);
-   $failedreturn.="&failedreturn=$barcode" unless ($returned);
+
+    #System Preference Handling During Check-in In Patron Module
+    my $itemnumber;
+    $itemnumber = GetItemnumberFromBarcode($barcode);
+    if ($itemnumber) {
+        if ( C4::Context->preference("InProcessingToShelvingCart") ) {
+            my $item = GetItem($itemnumber);
+            if ( $item->{'location'} eq 'PROC' ) {
+                $item->{'location'} = 'CART';
+                ModItem( $item, $item->{'biblionumber'},
+                    $item->{'itemnumber'} );
+            }
+        }
+
+        if ( C4::Context->preference("ReturnToShelvingCart") ) {
+            my $item = GetItem($itemnumber);
+            $item->{'location'} = 'CART';
+            ModItem( $item, $item->{'biblionumber'}, $item->{'itemnumber'} );
+        }
+    }
+
+    my ( $returned, $messages, $issueinformation, $borrower ) =
+      AddReturn( $barcode, $branch, $exemptfine );
+    $failedreturn .= "&failedreturn=$barcode" unless ($returned);
 }
 
 #
 # redirection to the referrer page
 #
-if ($input->param('destination') eq "circ"){
+if ( $input->param('destination') eq "circ" ) {
     $cardnumber = uri_escape($cardnumber);
-    print $input->redirect(
-        '/cgi-bin/koha/circ/circulation.pl?findborrower='.$cardnumber.$failedrenews.$failedreturn
-    );
+    print $input->redirect( '/cgi-bin/koha/circ/circulation.pl?findborrower='
+          . $cardnumber
+          . $failedrenews
+          . $failedreturn );
 }
 else {
     print $input->redirect(
-        '/cgi-bin/koha/members/moremember.pl?borrowernumber='.$borrowernumber.$failedrenews.$failedreturn
-    );
+            '/cgi-bin/koha/members/moremember.pl?borrowernumber='
+          . $borrowernumber
+          . $failedrenews
+          . $failedreturn );
 }

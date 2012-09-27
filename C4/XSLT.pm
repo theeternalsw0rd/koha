@@ -3,6 +3,7 @@ package C4::XSLT;
 # <jmf at liblime dot com>
 # Parts Copyright Katrin Fischer 2011
 # Parts Copyright ByWater Solutions 2011
+# Parts Copyright Biblibre 2012
 #
 # This file is part of Koha.
 #
@@ -32,15 +33,17 @@ use C4::Reserves;
 use Encode;
 use XML::LibXML;
 use XML::LibXSLT;
+use LWP::Simple;
 
 use vars qw($VERSION @ISA @EXPORT);
 
 BEGIN {
     require Exporter;
-    $VERSION = 0.03;
+    $VERSION = 3.07.00.049;
     @ISA = qw(Exporter);
     @EXPORT = qw(
         &XSLTParse4Display
+        &GetURI
     );
 }
 
@@ -49,6 +52,19 @@ BEGIN {
 C4::XSLT - Functions for displaying XSLT-generated content
 
 =head1 FUNCTIONS
+
+=head2 GetURI
+
+GetURI file and returns the xslt as a string
+
+=cut
+
+sub GetURI {
+    my ($uri) = @_;
+    my $string;
+    $string = get $uri ;
+    return $string;
+}
 
 =head2 transformMARCXML4XSLT
 
@@ -121,8 +137,45 @@ sub getAuthorisedValues4MARCSubfields {
 my $stylesheet;
 
 sub XSLTParse4Display {
-    my ( $biblionumber, $orig_record, $xsl_suffix, $interface, $fixamps, $hidden_items ) = @_;
-    $interface = 'opac' unless $interface;
+    my ( $biblionumber, $orig_record, $xslsyspref, $fixamps, $hidden_items ) = @_;
+    my $xslfilename = C4::Context->preference($xslsyspref);
+    if ( $xslfilename =~ /^\s*"?default"?\s*$/i ) {
+        my $htdocs;
+        my $theme;
+        my $lang = C4::Templates::_current_language();
+        my $xslfile;
+        if ($xslsyspref eq "XSLTDetailsDisplay") {
+            $htdocs  = C4::Context->config('intrahtdocs');
+            $theme   = C4::Context->preference("template");
+            $xslfile = C4::Context->preference('marcflavour') .
+                       "slim2intranetDetail.xsl";
+        } elsif ($xslsyspref eq "XSLTResultsDisplay") {
+            $htdocs  = C4::Context->config('intrahtdocs');
+            $theme   = C4::Context->preference("template");
+            $xslfile = C4::Context->preference('marcflavour') .
+                        "slim2intranetResults.xsl";
+        } elsif ($xslsyspref eq "OPACXSLTDetailsDisplay") {
+            $htdocs  = C4::Context->config('opachtdocs');
+            $theme   = C4::Context->preference("opacthemes");
+            $xslfile = C4::Context->preference('marcflavour') .
+                       "slim2OPACDetail.xsl";
+        } elsif ($xslsyspref eq "OPACXSLTResultsDisplay") {
+            $htdocs  = C4::Context->config('opachtdocs');
+            $theme   = C4::Context->preference("opacthemes");
+            $xslfile = C4::Context->preference('marcflavour') .
+                       "slim2OPACResults.xsl";
+        }
+        $xslfilename = "$htdocs/$theme/$lang/xslt/$xslfile";
+        $xslfilename = "$htdocs/$theme/en/xslt/$xslfile" unless ( $lang ne 'en' && !-f $xslfilename );
+        $xslfilename = "$htdocs/prog/$lang/xslt/$xslfile" unless ( !-f $xslfilename );
+        $xslfilename = "$htdocs/prog/en/xslt/$xslfile" unless ( $lang ne 'en' && !-f $xslfilename );
+    }
+
+    if ( $xslfilename =~ m/\{langcode\}/ ) {
+        my $lang = C4::Templates::_current_language();
+        $xslfilename =~ s/\{langcode\}/$lang/;
+    }
+
     # grab the XML, run it through our stylesheet, push it out to the browser
     my $record = transformMARCXML4XSLT($biblionumber, $orig_record);
     #return $record->as_formatted();
@@ -131,10 +184,11 @@ sub XSLTParse4Display {
     my $sysxml = "<sysprefs>\n";
     foreach my $syspref ( qw/ hidelostitems OPACURLOpenInNewWindow
                               DisplayOPACiconsXSLT URLLinkText viewISBD
-                              OPACBaseURL TraceCompleteSubfields
+                              OPACBaseURL TraceCompleteSubfields UseICU
                               UseAuthoritiesForTracings TraceSubjectSubdivisions
                               Display856uAsImage OPACDisplay856uAsImage 
-                              UseControlNumber
+                              UseControlNumber IntranetBiblioDefaultView BiblioDefaultView
+                              singleBranchMode
                               AlternateHoldingsField AlternateHoldingsSeparator / )
     {
         my $sp = C4::Context->preference( $syspref );
@@ -153,29 +207,20 @@ sub XSLTParse4Display {
     # don't die when you find &, >, etc
     $parser->recover_silently(0);
     my $source = $parser->parse_string($xmlrecord);
-    unless ( $stylesheet ) {
+    unless ( $stylesheet->{$xslfilename} ) {
         my $xslt = XML::LibXSLT->new();
-        my $xslfile;
-        if ($interface eq 'intranet') {
-            $xslfile = C4::Context->config('intrahtdocs') . 
-                      '/' . C4::Context->preference("template") . 
-                      '/' . C4::Templates::_current_language() .
-                      '/xslt/' .
-                      C4::Context->preference('marcflavour') .
-                      "slim2intranet$xsl_suffix.xsl";
+        my $style_doc;
+        if ( $xslfilename =~ /^https?:\/\// ) {
+            my $xsltstring = GetURI($xslfilename);
+            $style_doc = $parser->parse_string($xsltstring);
         } else {
-            $xslfile = C4::Context->config('opachtdocs') . 
-                      '/' . C4::Context->preference("opacthemes") . 
-                      '/' . C4::Templates::_current_language() .
-                      '/xslt/' .
-                      C4::Context->preference('marcflavour') .
-                      "slim2OPAC$xsl_suffix.xsl";
+            use Cwd;
+            $style_doc = $parser->parse_file($xslfilename);
         }
-        my $style_doc = $parser->parse_file($xslfile);
-        $stylesheet = $xslt->parse_stylesheet($style_doc);
+        $stylesheet->{$xslfilename} = $xslt->parse_stylesheet($style_doc);
     }
-    my $results = $stylesheet->transform($source);
-    my $newxmlrecord = $stylesheet->output_string($results);
+    my $results      = $stylesheet->{$xslfilename}->transform($source);
+    my $newxmlrecord = $stylesheet->{$xslfilename}->output_string($results);
     return $newxmlrecord;
 }
 

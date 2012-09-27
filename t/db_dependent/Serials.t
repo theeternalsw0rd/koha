@@ -9,7 +9,7 @@ use YAML;
 
 use C4::Serials;
 use C4::Debug;
-use Test::More tests => 33;
+use Test::More tests => 34;
 
 BEGIN {
     use_ok('C4::Serials');
@@ -24,7 +24,10 @@ $debug && warn scalar(@subscriptions);
 @subscriptions = GetSubscriptions( undef, $$subscriptioninformation{issn} );
 isa_ok( \@subscriptions, 'ARRAY' );
 $debug && warn scalar(@subscriptions);
-@subscriptions = GetSubscriptions( undef,undef ,$$subscriptioninformation{bibnum} );
+@subscriptions = GetSubscriptions( undef, undef, $$subscriptioninformation{ean} );
+isa_ok( \@subscriptions, 'ARRAY' );
+$debug && warn scalar(@subscriptions);
+@subscriptions = GetSubscriptions( undef, undef, undef, $$subscriptioninformation{bibnum} );
 isa_ok( \@subscriptions, 'ARRAY' );
 $debug && warn scalar(@subscriptions);
 if ($subscriptioninformation->{periodicity} % 16==0){

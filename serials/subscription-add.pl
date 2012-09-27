@@ -34,7 +34,7 @@ use Carp;
 
 #use Smart::Comments;
 
-my $query = CGI->new;
+our $query = CGI->new;
 my $op = $query->param('op') || '';
 my $dbh = C4::Context->dbh;
 my $sub_length;
@@ -64,7 +64,6 @@ my @sub_type_data;
 
 my $subs;
 my $firstissuedate;
-my $nextexpected;
 
 if ($op eq 'modify' || $op eq 'dup' || $op eq 'modsubscription') {
 
@@ -89,7 +88,7 @@ if ($op eq 'modify' || $op eq 'dup' || $op eq 'modsubscription') {
           $subs->{letter}= q{};
       }
     letter_loop($subs->{'letter'}, $template);
-    $nextexpected = GetNextExpected($subscriptionid);
+    my $nextexpected = GetNextExpected($subscriptionid);
     $nextexpected->{'isfirstissue'} = $nextexpected->{planneddate}->output('iso') eq $firstissuedate ;
     $subs->{nextacquidate} = $nextexpected->{planneddate}->output()  if($op eq 'modify');
     unless($op eq 'modsubscription') {
@@ -112,6 +111,12 @@ if ($op eq 'modify' || $op eq 'dup' || $op eq 'modsubscription') {
                     "numberpattern".$subs->{'numberpattern'} => 1,
                     firstacquiyear => substr($firstissuedate,0,4),
                     );
+    }
+
+    if ( $op eq 'dup' ) {
+        my $dont_copy_fields = C4::Context->preference('SubscriptionDuplicateDroppedInput');
+        my @fields_id = map { fieldid => $_ }, split '\|', $dont_copy_fields;
+        $template->param( dont_export_field_loop => \@fields_id );
     }
 }
 
@@ -170,6 +175,7 @@ if ($op eq 'addsubscription') {
             $template->param(bibliotitle => $bib->{title});
         }
     }
+        $template->param((uc(C4::Context->preference("marcflavour"))) => 1);
 	output_html_with_http_headers $query, $cookie, $template->output;
 }
 
@@ -326,6 +332,7 @@ sub redirect_mod_subscription {
 	my $opacdisplaycount = $query->param('opacdisplaycount');
     my $graceperiod     = $query->param('graceperiod') || 0;
     my $location = $query->param('location');
+    my $nextexpected = GetNextExpected($subscriptionid);
 	#  If it's  a mod, we need to check the current 'expected' issue, and mod it in the serials table if necessary.
     if ( $nextacquidate ne $nextexpected->{planneddate}->output('iso') ) {
         ModNextExpected($subscriptionid,C4::Dates->new($nextacquidate,'iso'));

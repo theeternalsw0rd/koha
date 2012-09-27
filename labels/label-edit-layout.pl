@@ -26,8 +26,8 @@ use POSIX;
 
 use C4::Auth qw(get_template_and_user);
 use C4::Output qw(output_html_with_http_headers);
-use C4::Creators 1.000000;
-use C4::Labels 1.000000;
+use C4::Creators;
+use C4::Labels;
 
 my $cgi = new CGI;
 my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
@@ -44,7 +44,7 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
 my $op = $cgi->param('op') || $ARGV[0] || '';
 my $layout_id = $cgi->param('layout_id') || $cgi->param('element_id') || $ARGV[1] || '';
 my $layout_choice = $cgi->param('layout_choice') || '';
-my $layout = '';
+our $layout = '';
 
 sub _set_selected {
     my ($type_list, $object, $data_type) = @_;

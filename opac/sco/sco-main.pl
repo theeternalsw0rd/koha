@@ -39,12 +39,10 @@ use Digest::MD5 qw(md5_base64);
 
 use C4::Auth qw(get_template_and_user checkpw);
 use C4::Koha;
-use C4::Dates qw/format_date/;
 use C4::Circulation;
 use C4::Reserves;
 use C4::Output;
 use C4::Members;
-use C4::Dates;
 use C4::Biblio;
 use C4::Items;
 
@@ -157,7 +155,7 @@ elsif ( $op eq "checkout" ) {
             hide_main                 => 1,
         );
         if ($issue_error eq 'DEBT') {
-            $template->param(amount => $impossible->{DEBT});
+            $template->param(amount => C4::Budgets->GetCurrency()->{symbol}.$impossible->{DEBT});
         }
         #warn "issue_error: " . $issue_error ;
         if ( $issue_error eq "NO_MORE_RENEWALS" ) {
@@ -189,6 +187,9 @@ elsif ( $op eq "checkout" ) {
             "circ_error_$issue_error" => 1,
             hide_main                 => 1,
         );
+        if ($issue_error eq 'DEBT') {
+            $template->param(amount => C4::Budgets->GetCurrency()->{symbol}.$needconfirm->{DEBT});
+        }
     } else {
         if ( $confirmed || $issuenoconfirm ) {    # we'll want to call getpatroninfo again to get updated issues.
             # warn "issuing book?";
@@ -218,7 +219,6 @@ if ($borrower->{cardnumber}) {
     my @issues;
     my ($issueslist) = GetPendingIssues( $borrower->{'borrowernumber'} );
     foreach my $it (@$issueslist) {
-        $it->{date_due_display} = format_date($it->{date_due});
         my ($renewokay, $renewerror) = CanBookBeIssued(
             $borrower,
             $it->{'barcode'},

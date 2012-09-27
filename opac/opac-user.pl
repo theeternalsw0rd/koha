@@ -12,9 +12,9 @@
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License along with
-# Koha; if not, write to the Free Software Foundation, Inc., 59 Temple Place,
-# Suite 330, Boston, MA  02111-1307 USA
+# You should have received a copy of the GNU General Public License along
+# with Koha; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 
 use strict;
@@ -33,9 +33,9 @@ use C4::Output;
 use C4::Overdues qw/CheckBorrowerDebarred/;
 use C4::Biblio;
 use C4::Items;
-use C4::Dates qw/format_date/;
 use C4::Letters;
 use C4::Branch; # GetBranches
+use Koha::DateUtils;
 
 use constant ATTRIBUTE_SHOW_BARCODE => 'SHOW_BCODE';
 
@@ -65,7 +65,10 @@ my ( $template, $borrowernumber, $cookie ) = get_template_and_user(
     }
 );
 
-my $OPACDisplayRequestPriority = (C4::Context->preference("OPACDisplayRequestPriority")) ? 1 : 0;
+my $show_priority;
+for ( C4::Context->preference("OPACShowHoldQueueDetails") ) {
+    m/priority/ and $show_priority = 1;
+}
 my $patronupdate = $query->param('patronupdate');
 my $canrenew = 1;
 
@@ -75,9 +78,6 @@ my ( $borr ) = GetMemberDetails( $borrowernumber );
 my (  $today_year,   $today_month,   $today_day) = Today();
 my ($warning_year, $warning_month, $warning_day) = split /-/, $borr->{'dateexpiry'};
 
-for (qw(dateenrolled dateexpiry dateofbirth)) {
-    ($borr->{$_}) and $borr->{$_} = format_date($borr->{$_});
-}
 $borr->{'ethnicity'} = fixEthnicity( $borr->{'ethnicity'} );
 
 my $debar = CheckBorrowerDebarred($borrowernumber);
@@ -87,7 +87,7 @@ if ($debar) {
     $userdebarred = 1;
     $template->param( 'userdebarred' => $userdebarred );
     if ( $debar ne "9999-12-31" ) {
-        $borr->{'userdebarreddate'} = C4::Dates::format_date($debar);
+        $borr->{'userdebarreddate'} = $debar;
     }
 }
 
@@ -110,6 +110,7 @@ if ( $borr->{amountoutstanding} > $no_renewal_amt ) {
     $canrenew = 0;
     $template->param(
         renewal_blocked_fines => sprintf( '%.02f', $no_renewal_amt ),
+        renewal_blocked_fines_amountoutstanding => sprintf( '%.02f', $borr->{amountoutstanding} ),
     );
 }
 
@@ -151,9 +152,9 @@ my $overdues_count = 0;
 my @overdues;
 my @issuedat;
 my $itemtypes = GetItemTypes();
-my ($issues) = GetPendingIssues($borrowernumber);
+my $issues = GetPendingIssues($borrowernumber);
 if ($issues){
-	foreach my $issue ( sort { $b->{'date_due'} cmp $a->{'date_due'} } @$issues ) {
+	foreach my $issue ( sort { $b->{date_due}->datetime() cmp $a->{date_due}->datetime() } @{$issues} ) {
 		# check for reserves
 		my ( $restype, $res, undef ) = CheckReserves( $issue->{'itemnumber'} );
 		if ( $restype ) {
@@ -200,7 +201,6 @@ if ($issues){
 			$issue->{'imageurl'}    = getitemtypeimagelocation( 'opac', $itemtypes->{$itemtype}->{'imageurl'} );
 			$issue->{'description'} = $itemtypes->{$itemtype}->{'description'};
 		}
-		$issue->{date_due} = format_date($issue->{date_due});
 		push @issuedat, $issue;
 		$count++;
 		
@@ -253,24 +253,21 @@ $template->param( branchloop => \@branch_loop );
 # now the reserved items....
 my @reserves  = GetReservesFromBorrowernumber( $borrowernumber );
 foreach my $res (@reserves) {
-    $res->{'reservedate'} = format_date( $res->{'reservedate'} );
 
-    if ( $res->{'expirationdate'} ne '0000-00-00' ) {
-      $res->{'expirationdate'} = format_date( $res->{'expirationdate'} ) 
-    } else {
+    if ( $res->{'expirationdate'} eq '0000-00-00' ) {
       $res->{'expirationdate'} = '';
     }
     
     my $publictype = $res->{'publictype'};
     $res->{$publictype} = 1;
     $res->{'waiting'} = 1 if $res->{'found'} eq 'W';
-    $res->{'formattedwaitingdate'} = format_date($res->{'waitingdate'});
     $res->{'branch'} = $branches->{ $res->{'branchcode'} }->{'branchname'};
     my $biblioData = GetBiblioData($res->{'biblionumber'});
     $res->{'reserves_title'} = $biblioData->{'title'};
-    if ($OPACDisplayRequestPriority) {
-        $res->{'priority'} = '' if $res->{'priority'} eq '0';
+    if ($show_priority) {
+        $res->{'priority'} ||= '';
     }
+    $res->{'suspend_until'} = C4::Dates->new( $res->{'suspend_until'}, "iso")->output("syspref") if ( $res->{'suspend_until'} );
 }
 
 # use Data::Dumper;
@@ -278,7 +275,7 @@ foreach my $res (@reserves) {
 
 $template->param( RESERVES       => \@reserves );
 $template->param( reserves_count => $#reserves+1 );
-$template->param( showpriority=>1 ) if $OPACDisplayRequestPriority;
+$template->param( showpriority=>$show_priority );
 
 my @waiting;
 my $wcount = 0;
@@ -310,7 +307,7 @@ foreach my $res (@reserves) {
             my ($transfertwhen, $transfertfrom, $transfertto) = GetTransfers( $res->{'itemnumber'} );
             if ($transfertwhen) {
                 $res->{intransit} = 1;
-                $res->{datesent}   = format_date($transfertwhen);
+                $res->{datesent}   = $transfertwhen;
                 $res->{frombranch} = GetBranchName($transfertfrom);
             }
         }
@@ -362,11 +359,16 @@ if ( $borr->{'opacnote'} ) {
 $template->param(
     bor_messages_loop	=> GetMessages( $borrowernumber, 'B', 'NONE' ),
     waiting_count      => $wcount,
-    textmessaging      => $borr->{textmessaging},
     patronupdate => $patronupdate,
     OpacRenewalAllowed => C4::Context->preference("OpacRenewalAllowed"),
     userview => 1,
     dateformat    => C4::Context->preference("dateformat"),
+);
+
+$template->param( DHTMLcalendar_dateformat  => C4::Dates->DHTMLcalendar() );
+$template->param(
+    SuspendHoldsOpac => C4::Context->preference('SuspendHoldsOpac'),
+    AutoResumeSuspendedHolds => C4::Context->preference('AutoResumeSuspendedHolds') ,
 );
 
 output_html_with_http_headers $query, $cookie, $template->output;

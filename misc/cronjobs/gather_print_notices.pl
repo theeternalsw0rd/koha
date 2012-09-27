@@ -21,14 +21,14 @@ use strict;
 use warnings;
 
 BEGIN {
-
     # find Koha's Perl modules
     # test carefully before changing this
     use FindBin;
     eval { require "$FindBin::Bin/../kohalib.pl" };
 }
 
-use CGI; # NOT a CGI script, this is just to keep C4::Templates::gettemplate happy
+use
+  CGI; # NOT a CGI script, this is just to keep C4::Templates::gettemplate happy
 use C4::Context;
 use C4::Dates;
 use C4::Debug;
@@ -39,54 +39,92 @@ use Getopt::Long;
 
 sub usage {
     print STDERR <<USAGE;
-Usage: $0 [ -s STYLESHEET ] OUTPUT_DIRECTORY
+Usage: $0 OUTPUT_DIRECTORY
   Will print all waiting print notices to
   OUTPUT_DIRECTORY/notices-CURRENT_DATE.html .
-  If the filename of a CSS stylesheet is specified with -s, the contents of that
-  file will be included in the HTML.
+
+  -s --split  Split messages into separate file by borrower home library to OUTPUT_DIRECTORY/notices-CURRENT_DATE-BRANCHCODE.html
 USAGE
     exit $_[0];
 }
 
-my ( $stylesheet, $help );
+my ( $stylesheet, $help, $split );
 
 GetOptions(
-    's:s' => \$stylesheet,
-    'h|help' => \$help,
-) || usage( 1 );
+    'h|help'  => \$help,
+    's|split' => \$split,
+) || usage(1);
 
-usage( 0 ) if ( $help );
+usage(0) if ($help);
 
 my $output_directory = $ARGV[0];
 
 if ( !$output_directory || !-d $output_directory ) {
-    print STDERR "Error: You must specify a valid directory to dump the print notices in.\n";
-    usage( 1 );
+    print STDERR
+"Error: You must specify a valid directory to dump the print notices in.\n";
+    usage(1);
 }
 
-my $today = C4::Dates->new();
-my @messages = @{ GetPrintMessages() };
-exit unless( @messages );
+my $today        = C4::Dates->new();
+my @all_messages = @{ GetPrintMessages() };
+exit unless (@all_messages);
 
-open OUTPUT, '>', File::Spec->catdir( $output_directory, "holdnotices-" . $today->output( 'iso' ) . ".html" );
+my $OUTPUT;
 
-my $template = C4::Templates::gettemplate( 'batch/print-notices.tmpl', 'intranet', new CGI );
-my $stylesheet_contents = '';
+if ($split) {
+    my %messages_by_branch;
+    foreach my $message (@all_messages) {
+        push( @{ $messages_by_branch{ $message->{'branchcode'} } }, $message );
+    }
 
-if ($stylesheet) {
-  open STYLESHEET, '<', $stylesheet;
-  while ( <STYLESHEET> ) { $stylesheet_contents .= $_ }
-  close STYLESHEET;
+    foreach my $branchcode ( keys %messages_by_branch ) {
+        my @messages = @{ $messages_by_branch{$branchcode} };
+        open $OUTPUT, '>',
+          File::Spec->catdir( $output_directory,
+            "holdnotices-" . $today->output('iso') . "-$branchcode.html" );
+
+        my $template =
+          C4::Templates::gettemplate( 'batch/print-notices.tmpl', 'intranet',
+            new CGI );
+
+        $template->param(
+            stylesheet => C4::Context->preference("NoticeCSS"),
+            today      => $today->output(),
+            messages   => \@messages,
+        );
+
+        print $OUTPUT $template->output;
+
+        foreach my $message (@messages) {
+            C4::Letters::_set_message_status(
+                { message_id => $message->{'message_id'}, status => 'sent' } );
+        }
+
+        close $OUTPUT;
+    }
 }
+else {
+    open $OUTPUT, '>',
+      File::Spec->catdir( $output_directory,
+        "holdnotices-" . $today->output('iso') . ".html" );
 
-$template->param(
-    stylesheet => $stylesheet_contents,
-    today => $today->output(),
-    messages => \@messages,
-);
+    my $template =
+      C4::Templates::gettemplate( 'batch/print-notices.tmpl', 'intranet',
+        new CGI );
 
-print OUTPUT $template->output;
+    $template->param(
+        stylesheet => C4::Context->preference("NoticeCSS"),
+        today      => $today->output(),
+        messages   => \@all_messages,
+    );
 
-foreach my $message ( @messages ) {
-    C4::Letters::_set_message_status( { message_id => $message->{'message_id'}, status => 'sent' } );
+    print $OUTPUT $template->output;
+
+    foreach my $message (@all_messages) {
+        C4::Letters::_set_message_status(
+            { message_id => $message->{'message_id'}, status => 'sent' } );
+    }
+
+    close $OUTPUT;
+
 }

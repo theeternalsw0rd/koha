@@ -73,7 +73,7 @@ my ($template, $loggedinuser, $cookie)
 			     query => $input,
 			     type => "intranet",
 			     authnotrequired => 0,
-			     flagsrequired => {parameters => 1},
+                 flagsrequired => {parameters => 'parameters_remaining_permissions'},
 			     debug => 1,
 			     });
 
@@ -112,8 +112,9 @@ if ($op eq 'add_form') {
                                 hidelostitems           => $data->{'hidelostitems'},
 				category_type           => $data->{'category_type'},
 				DHTMLcalendar_dateformat => C4::Dates->DHTMLcalendar(),
+                SMSSendDriver => C4::Context->preference("SMSSendDriver"),
+                TalkingTechItivaPhone => C4::Context->preference("TalkingTechItivaPhoneNotification"),
 				"type_".$data->{'category_type'} => 1,
-				SMSSendDriver => C4::Context->preference("SMSSendDriver")
 				);
     if (C4::Context->preference('EnhancedMessagingPreferences')) {
         C4::Form::MessagingPreferences::set_form_values({ categorycode => $categorycode } , $template);
@@ -249,7 +250,7 @@ sub _get_brief_messaging_prefs {
             message_name            => $option->{'message_name'},
             $option->{'message_name'} => 1
         };
-        foreach my $transport ( @{$pref->{'transports'}} ) {
+        foreach my $transport ( keys %{$pref->{'transports'}} ) {
             push @{ $brief_pref->{'transports'} }, { transport => $transport };
         }
         push @$results, $brief_pref;

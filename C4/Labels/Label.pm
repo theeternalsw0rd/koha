@@ -13,7 +13,7 @@ use C4::Debug;
 use C4::Biblio;
 
 BEGIN {
-    use version; our $VERSION = qv('1.0.0_1');
+    use version; our $VERSION = qv('3.07.00.049');
 }
 
 my $possible_decimal = qr/\d{3,}(?:\.\d+)?/; # at least three digits for a DDCN
@@ -78,7 +78,7 @@ sub _get_label_item {
 #        FIXME This makes for a very bulky data structure; data from tables w/duplicate col names also gets overwritten.
 #        Something like this, perhaps, but this also causes problems because we need more fields sometimes.
 #        SELECT i.barcode, i.itemcallnumber, i.itype, bi.isbn, bi.issn, b.title, b.author
-    my $sth = $dbh->prepare("SELECT bi.*, i.*, b.* FROM items AS i, biblioitems AS bi ,biblio AS b WHERE itemnumber=? AND i.biblioitemnumber=bi.biblioitemnumber AND bi.biblionumber=b.biblionumber;");
+    my $sth = $dbh->prepare("SELECT bi.*, i.*, b.*,br.* FROM items AS i, biblioitems AS bi ,biblio AS b, branches AS br WHERE itemnumber=? AND i.biblioitemnumber=bi.biblioitemnumber AND bi.biblionumber=b.biblionumber AND i.homebranch=br.branchcode;");
     $sth->execute($item_number);
     if ($sth->err) {
         warn sprintf('Database returned the following error: %s', $sth->errstr);
@@ -185,7 +185,8 @@ sub _get_barcode_data {
         (
             @{ $kohatables->{'biblio'} },
             @{ $kohatables->{'biblioitems'} },
-            @{ $kohatables->{'items'} }
+            @{ $kohatables->{'items'} },
+            @{ $kohatables->{'branches'} }
         )
     );
     FIELD_LIST:
@@ -249,7 +250,7 @@ sub _get_barcode_data {
 sub _desc_koha_tables {
 	my $dbh = C4::Context->dbh();
 	my $kohatables;
-	for my $table ( 'biblio','biblioitems','items' ) {
+	for my $table ( 'biblio','biblioitems','items','branches' ) {
 		my $sth = $dbh->column_info(undef,undef,$table,'%');
 		while (my $info = $sth->fetchrow_hashref()){
 		        push @{$kohatables->{$table}} , $info->{'COLUMN_NAME'} ;
@@ -552,6 +553,28 @@ sub barcode {
             warn sprintf('Barcode generation failed for item %s with this error: %s', $self->{'item_number'}, $@);
         }
     }
+    elsif ($params{'barcode_type'} eq 'EAN13') {
+        $bar_length = 4; # FIXME
+    $num_of_bars = 13;
+        $tot_bar_length = ($bar_length * $num_of_bars) + ($guard_length * 2);
+        $x_scale_factor = ($params{'width'} / $tot_bar_length) * 0.9;
+        eval {
+            PDF::Reuse::Barcode::EAN13(
+                x                   => $params{'llx'},
+                y                   => $params{'lly'},
+                value               => sprintf('%013d',$params{barcode_data}),
+#                xSize               => $x_scale_factor,
+#                ySize               => $params{'y_scale_factor'},
+                mode                    => 'graphic',
+            );
+        };
+        if ($@) {
+            warn sprintf('Barcode generation failed for item %s with this error: %s', $self->{'item_number'}, $@);
+        }
+    }
+    else {
+    warn "unknown barcode_type: $params{barcode_type}";
+    }
 }
 
 sub csv_data {
@@ -606,6 +629,9 @@ This module provides methods for creating, and otherwise manipulating single lab
 
 =item .
             INDUSTRIAL2OF5  = The standard 2 of 5 barcode (a binary level bar code developed by Identicon Corp. and Computer Identics Corp. in 1970)
+
+=item .
+            EAN13           = The standard EAN-13 barcode
 
 =back
 

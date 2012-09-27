@@ -6,7 +6,7 @@
 	.sql {display:none;}
 </style>
 </head>
-<body>
+<body id="rep_issues_stats" class="rep">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'cat-search.inc' %]
 
@@ -83,62 +83,9 @@
                 <td>Period</td>
                 <td><input type="radio" name="Line" value="datetime" /></td>
                 <td><input type="radio" name="Column" value="datetime" /></td>
-                <td><label for="from">From</label> <input type="text" size="10" id="from" name="Filter" />
-                    <img src="[% themelang %]/lib/calendar/cal.gif" alt="Show Calendar" border="0" id="openCalendarFrom" style="cursor: pointer;" />
-                   <script type="text/javascript">
-				   //<![CDATA[ 
-				   function validate1(date) {
-                        var day = date.getDate();
-                        var month = date.getMonth() + 1;
-                        var year = date.getFullYear();
-                        var weekDay = date.getDay();
-                        var dayMonth = month + '-' + day;
-                        var dateString = year + '-' + month + '-' + day;
-                        var dateTo = document.getElementById('to').value.split("-");
-                        var limitDate = new Date(dateTo[0], (dateTo[1] - 1), dateTo[2]);
-                        if (date > limitDate) {
-                             return true;
-                        } else {
-                             return false;
-                        }
-                    }
-                    Calendar.setup({
-                            inputField : "from",
-                            ifFormat : "[% DHTMLcalendar_dateformat %]",
-                            button : "openCalendarFrom",
-                            disableFunc : validate1,
-                            dateStatusFunc : validate1
-                    });
-					//]]>
-					</script>
-                    <label for="to">To</label> <input size="10" id="to" name="Filter" value="" type="text" />
-                    <img src="[% themelang %]/lib/calendar/cal.gif" alt="Show Calendar" id="openCalendarTo" style="cursor: pointer;" border="0" />
-                    <script type="text/javascript">
-					//<![CDATA[  
-					function validate2(date) {
-                         var day = date.getDate();
-                         var month = date.getMonth() + 1;
-                         var year = date.getFullYear();
-                         var weekDay = date.getDay();
-                         var dayMonth = month + '-' + day;
-                         var dateString = year + '-' + month + '-' + day;
-                         var dateFrom = document.getElementById('from').value.split("-");
-                         var limitDate = new Date(dateFrom[0], (dateFrom[1] - 1), dateFrom[2]);
-                         if (limitDate > date) {
-                              return true;
-                         } else {
-                              return false;
-                         }
-                     }
-                     Calendar.setup({
-                             inputField : "to",
-                             ifFormat : "[% DHTMLcalendar_dateformat %]",
-                             button : "openCalendarTo",
-                             disableFunc : validate2,
-                             dateStatusFunc : validate2
-                     });
-					//]]>
-					</script> <span class="hint">[% INCLUDE 'date-format.inc' %]</span>
+                <td><label for="from">From</label> <input type="text" size="10" id="from" name="Filter" class="datepickerfrom" />
+                    <label for="to">To</label> <input size="10" id="to" name="Filter" value="" type="text" class="datepickerto" />
+                    <span class="hint">[% INCLUDE 'date-format.inc' %]</span>
                     </td>
                 </tr>
                 <tr class="highlight"> 
@@ -156,7 +103,7 @@
                     </select>
                 </td>
                 <td>
-                    <label for="PeriodDaySel">Select Day: </label><select name="PeriodDaySel" id="PeriodDaySel">
+                    <label for="PeriodDaySel">Select day: </label><select name="PeriodDaySel" id="PeriodDaySel">
                     <option value =""></option>
                     <option value ="Monday">Monday</option>
                     <option value ="Tuesday">Tuesday</option>
@@ -166,7 +113,7 @@
                     <option value ="Saturday">Saturday</option>
                     <option value ="Sunday">Sunday</option>
                     </select>
-                    <label for="PeriodMonthSel">Select Month:</label> <select name="PeriodMonthSel" id="PeriodMonthSel">
+                    <label for="PeriodMonthSel">Select month:</label> <select name="PeriodMonthSel" id="PeriodMonthSel">
                     <option value =""></option>
                     <option value ="January">January</option>
                     <option value ="February">February</option>
@@ -184,7 +131,7 @@
                 </td>
         </tr>
         <tr>
-            <td>Patron Category</td>
+            <td>Patron category</td>
             <td><input type="radio" name="Line" value="borrowers.categorycode" /></td>
             <td><input type="radio" name="Column" value="borrowers.categorycode" /></td>
            <td><select name="Filter" id="borcat">
@@ -196,7 +143,7 @@
              </td> 
         </tr>
         <tr class="highlight">
-            <td>Item Type</td>
+            <td>Item type</td>
             <td><input type="radio" name="Line" value="itemtype" /></td>
             <td><input type="radio" name="Column" value="itemtype" /></td>
            <td><select name="Filter" id="itemtype">
@@ -232,7 +179,7 @@
             </td>
         </tr>
         <tr>
-            <td>Shelving Location</td>
+            <td>Shelving location</td>
             <td><input type="radio" name="Line" value="items.location" /></td>
             <td><input type="radio" name="Column" value="items.location" /></td>
             <td><select name="Filter" id="location">
@@ -244,13 +191,13 @@
             </td> 
         </tr>
         <tr class="highlight">
-            <td>Item Call Number</td>
+            <td>Item call number</td>
             <td></td>
             <td></td>
             <td>From <input type="text" name="Filter" size="10" /> (inclusive) to <input type="text" name="Filter" size="10" /> (exclusive) </td>
         </tr>
         [% IF ( hassort1 ) %]
-        <tr><td>Patron sort1</td>
+        <tr><td>Patron sort 1</td>
 			<td><input type="radio" name="Line" value="borrowers.sort1" /></td>
 			<td><input type="radio" name="Column" value="borrowers.sort1" /></td>
 			<td><select name="Filter" id="sort1">
@@ -263,7 +210,7 @@
         </tr>
         [% END %]
         [% IF ( hassort2 ) %]
-        <tr class="highlight"><td>Patron sort2</td>
+        <tr class="highlight"><td>Patron sort 2</td>
             <td><input type="radio" name="Line" value="borrowers.sort2" /></td>
             <td><input type="radio" name="Column" value="borrowers.sort2" /></td>
            	<td><select name="Filter" id="sort2">
@@ -275,7 +222,7 @@
             </td> 
         </tr>
         [% END %]
-        <tr><td>Home branch</td>
+        <tr><td>Home library</td>
             <td><input type="radio" name="Line" value="items.homebranch" /></td>
             <td><input type="radio" name="Column" value="items.homebranch" /></td>
             <td><select name="Filter" id="homebranch">
@@ -287,7 +234,7 @@
             </td>
         </tr>
 
-        <tr><td>Holding branch</td>
+        <tr><td>Holding library</td>
             <td><input type="radio" name="Line" value="items.holdingbranch" /></td>
             <td><input type="radio" name="Column" value="items.holdingbranch" /></td>
             <td><select name="Filter" id="holdingbranch">

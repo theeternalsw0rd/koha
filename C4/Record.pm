@@ -39,7 +39,7 @@ use Text::CSV::Encoded; #marc2csv
 use vars qw($VERSION @ISA @EXPORT);
 
 # set the version for version checking
-$VERSION = 3.00;
+$VERSION = 3.07.00.049;
 
 @ISA = qw(Exporter);
 
@@ -52,6 +52,7 @@ $VERSION = 3.00;
   &marcxml2marc
   &marc2dcxml
   &marc2modsxml
+  &marc2madsxml
   &marc2bibtex
   &marc2csv
   &changeEncoding
@@ -267,25 +268,52 @@ sub marc2dcxml {
 
 =head2 marc2modsxml - Convert from ISO-2709 to MODS
 
-  my ($error,$modsxml) = marc2modsxml($marc);
+  my $modsxml = marc2modsxml($marc);
 
 Returns a MODS scalar
 
 =cut
 
 sub marc2modsxml {
-	my ($marc) = @_;
-	# grab the XML, run it through our stylesheet, push it out to the browser
-	my $xmlrecord = marc2marcxml($marc);
-	my $xslfile = C4::Context->config('intrahtdocs')."/prog/en/xslt/MARC21slim2MODS3-1.xsl";
-	my $parser = XML::LibXML->new();
-	my $xslt = XML::LibXSLT->new();
-	my $source = $parser->parse_string($xmlrecord);
-	my $style_doc = $parser->parse_file($xslfile);
-	my $stylesheet = $xslt->parse_stylesheet($style_doc);
-	my $results = $stylesheet->transform($source);
-	my $newxmlrecord = $stylesheet->output_string($results);
-	return ($newxmlrecord);
+    my ($marc) = @_;
+    return _transformWithStylesheet($marc, "/prog/en/xslt/MARC21slim2MODS3-1.xsl");
+}
+
+=head2 marc2madsxml - Convert from ISO-2709 to MADS
+
+  my $madsxml = marc2madsxml($marc);
+
+Returns a MADS scalar
+
+=cut
+
+sub marc2madsxml {
+    my ($marc) = @_;
+    return _transformWithStylesheet($marc, "/prog/en/xslt/MARC21slim2MADS.xsl");
+}
+
+=head2 _transformWithStylesheet - Transform a MARC record with a stylesheet
+
+    my $xml = _transformWithStylesheet($marc, $stylesheet)
+
+Returns the XML scalar result of the transformation. $stylesheet should
+contain the path to a stylesheet under intrahtdocs.
+
+=cut
+
+sub _transformWithStylesheet {
+    my ($marc, $stylesheet) = @_;
+    # grab the XML, run it through our stylesheet, push it out to the browser
+    my $xmlrecord = marc2marcxml($marc);
+    my $xslfile = C4::Context->config('intrahtdocs') . $stylesheet;
+    my $parser = XML::LibXML->new();
+    my $xslt = XML::LibXSLT->new();
+    my $source = $parser->parse_string($xmlrecord);
+    my $style_doc = $parser->parse_file($xslfile);
+    my $stylesheet = $xslt->parse_stylesheet($style_doc);
+    my $results = $stylesheet->transform($source);
+    my $newxmlrecord = $stylesheet->output_string($results);
+    return ($newxmlrecord);
 }
 
 sub marc2endnote {
@@ -330,7 +358,7 @@ sub marc2endnote {
 
 =head2 marc2csv - Convert several records from UNIMARC to CSV
 
-  my ($csv) = marc2csv($biblios, $csvprofileid);
+  my ($csv) = marc2csv($biblios, $csvprofileid, $itemnumbers);
 
 Pre and postprocessing can be done through a YAML file
 
@@ -340,10 +368,12 @@ C<$biblio> - a list of biblionumbers
 
 C<$csvprofileid> - the id of the CSV profile to use for the export (see export_format.export_format_id and the GetCsvProfiles function in C4::Csv)
 
+C<$itemnumbers> - a list of itemnumbers to export
+
 =cut
 
 sub marc2csv {
-    my ($biblios, $id) = @_;
+    my ($biblios, $id, $itemnumbers) = @_;
     my $output;
     my $csv = Text::CSV::Encoded->new();
 
@@ -358,9 +388,17 @@ sub marc2csv {
     eval $preprocess if ($preprocess);
 
     my $firstpass = 1;
-    foreach my $biblio (@$biblios) {
-	$output .= marcrecord2csv($biblio, $id, $firstpass, $csv, $fieldprocessing) ;
-	$firstpass = 0;
+    if ( $itemnumbers ) {
+        for my $itemnumber ( @$itemnumbers) {
+            my $biblionumber = GetBiblionumberFromItemnumber $itemnumber;
+            $output .= marcrecord2csv( $biblionumber, $id, $firstpass, $csv, $fieldprocessing, [$itemnumber] );
+            $firstpass = 0;
+        }
+    } else {
+        foreach my $biblio (@$biblios) {
+            $output .= marcrecord2csv( $biblio, $id, $firstpass, $csv, $fieldprocessing );
+            $firstpass = 0;
+        }
     }
 
     # Postprocessing
@@ -383,16 +421,21 @@ C<$header> - true if the headers are to be printed (typically at first pass)
 
 C<$csv> - an already initialised Text::CSV object
 
+C<$fieldprocessing>
+
+C<$itemnumbers> a list of itemnumbers to export
+
 =cut
 
 
 sub marcrecord2csv {
-    my ($biblio, $id, $header, $csv, $fieldprocessing) = @_;
+    my ($biblio, $id, $header, $csv, $fieldprocessing, $itemnumbers) = @_;
     my $output;
 
     # Getting the record
-    my $record = GetMarcBiblio($biblio, 1);
+    my $record = GetMarcBiblio($biblio);
     next unless $record;
+    C4::Biblio::EmbedItemsInMarcBiblio( $record, $biblio, $itemnumbers );
     # Getting the framework
     my $frameworkcode = GetFrameworkCode($biblio);
 
@@ -499,18 +542,28 @@ sub marcrecord2csv {
 	    my @fields = ($record->field($marcfield));
 	    my $authvalues = GetKohaAuthorisedValuesFromField($marcfield, undef, $frameworkcode, undef);
 
-	    my @valuesarray;
-	    foreach (@fields) {
-		my $value;
+        my @valuesarray;
+        foreach (@fields) {
+            my $value;
 
-		# Getting authorised value
-		$value = defined $authvalues->{$_->as_string} ? $authvalues->{$_->as_string} : $_->as_string;
+            # If it is a control field
+            if ($_->is_control_field) {
+                $value = defined $authvalues->{$_->as_string} ? $authvalues->{$_->as_string} : $_->as_string;
+            } else {
+                # If it is a field, we gather all subfields, joined by the subfield separator
+                my @subvaluesarray;
+                my @subfields = $_->subfields;
+                foreach my $subfield (@subfields) {
+                    push (@subvaluesarray, defined $authvalues->{$subfield->[1]} ? $authvalues->{$subfield->[1]} : $subfield->[1]);
+                }
+                $value = join ($subfieldseparator, @subvaluesarray);
+            }
 
-		# Field processing
-		eval $fieldprocessing if ($fieldprocessing);
+            # Field processing
+            eval $fieldprocessing if ($fieldprocessing);
 
-		push @valuesarray, $value;
-	    }
+            push @valuesarray, $value;
+        }
 	    push (@fieldstab, join($fieldseparator, @valuesarray)); 
 	 }
     };

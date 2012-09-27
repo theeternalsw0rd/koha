@@ -25,6 +25,7 @@ use warnings;
 # external modules
 use CGI;
 # use Digest::MD5 qw(md5_base64);
+use List::MoreUtils qw/uniq/;
 
 # internal modules
 use C4::Auth;
@@ -100,6 +101,8 @@ my @field_check=split(/\|/,$check_BorrowerMandatoryField);
 foreach (@field_check) {
 	$template->param( "mandatory$_" => 1);    
 }
+# we'll need this, later.
+my $dateofbirthmandatory = (scalar grep {$_ eq "dateofbirth"} @field_check) ? 1 : 0;
 # function to designate unwanted fields
 my $check_BorrowerUnwantedField=C4::Context->preference("BorrowerUnwantedField");
 @field_check=split(/\|/,$check_BorrowerUnwantedField);
@@ -263,14 +266,14 @@ if ($op eq 'save' || $op eq 'insert'){
     if (checkcardnumber($newdata{cardnumber},$newdata{borrowernumber})){ 
         push @errors, 'ERROR_cardnumber';
     } 
-    my $dateofbirthmandatory = (scalar grep {$_ eq "dateofbirth"} @field_check) ? 1 : 0;
     if ($newdata{dateofbirth} && $dateofbirthmandatory) {
         my $age = GetAge($newdata{dateofbirth});
         my $borrowercategory=GetBorrowercategory($newdata{'categorycode'});   
         my ($low,$high) = ($borrowercategory->{'dateofbirthrequired'}, $borrowercategory->{'upperagelimit'});
         if (($high && ($age > $high)) or ($age < $low)) {
             push @errors, 'ERROR_age_limitations';
-            $template->param('ERROR_age_limitations' => "$low to $high");
+            $template->param( age_low => $low);
+            $template->param( age_high => $high);
         }
     }
   
@@ -347,12 +350,19 @@ if ((!$nok) and $nodouble and ($op eq 'insert' or $op eq 'save')){
             # if we manage to find a valid email address, send notice 
             if ($emailaddr) {
                 $newdata{emailaddr} = $emailaddr;
-                my $letter = getletter ('members', "ACCTDETAILS:$newdata{'branchcode'}") ;
-                # if $branch notice fails, then email a default notice instead.
-                $letter = getletter ('members', "ACCTDETAILS")  if !$letter;
-                SendAlerts ( 'members' , \%newdata , $letter ) if $letter
+                my $err;
+                eval {
+                    $err = SendAlerts ( 'members', \%newdata, "ACCTDETAILS" );
+                };
+                if ( $@ ) {
+                    $template->param(error_alert => $@);
+                } elsif ( ref($err) eq "HASH" && defined $err->{error} and $err->{error} eq "no_email" ) {
+                    $template->{VARS}->{'error_alert'} = "no_email";
+                } else {
+                    $template->{VARS}->{'info_alert'} = 1;
+                }
             }
-        } 
+        }
 
 		if ($data{'organisations'}){            
 			# need to add the members organisations
@@ -416,13 +426,17 @@ if ($op eq 'add'){
 if ($op eq "modify")  {
     $template->param( updtype => 'M',modify => 1 );
     $template->param( step_1=>1, step_2=>1, step_3=>1, step_4=>1, step_5 => 1, step_6 => 1) unless $step;
+    if ( $step == 4 ) {
+        $template->param( categorycode => $borrower_data->{'categorycode'} );
+    }
 }
 if ( $op eq "duplicate" ) {
     $template->param( updtype => 'I' );
     $template->param( step_1 => 1, step_2 => 1, step_3 => 1, step_4 => 1, step_5 => 1, step_6 => 1 ) unless $step;
+    $data{'cardnumber'} = "";
 }
 
-$data{'cardnumber'}=fixup_cardnumber($data{'cardnumber'}) if $op eq 'add';
+$data{'cardnumber'}=fixup_cardnumber($data{'cardnumber'}) if ( ( $op eq 'add' ) or ( $op eq 'duplicate' ) );
 if(!defined($data{'sex'})){
     $template->param( none => 1);
 } elsif($data{'sex'} eq 'F'){
@@ -677,6 +691,7 @@ if (C4::Context->preference('EnhancedMessagingPreferences')) {
     }
     $template->param(SMSSendDriver => C4::Context->preference("SMSSendDriver"));
     $template->param(SMSnumber     => defined $data{'smsalertnumber'} ? $data{'smsalertnumber'} : $data{'mobile'});
+    $template->param(TalkingTechItivaPhone => C4::Context->preference("TalkingTechItivaPhoneNotification"));
 }
 
 $template->param( "showguarantor"  => ($category_type=~/A|I|S|X/) ? 0 : 1); # associate with step to know where you are
@@ -757,6 +772,8 @@ sub patron_attributes_form {
         return;
     }
     my $attributes = C4::Members::Attributes::GetBorrowerAttributes($borrowernumber);
+    my @classes = uniq( map {$_->{class}} @$attributes );
+    @classes = sort @classes;
 
     # map patron's attributes into a more convenient structure
     my %attr_hash = ();
@@ -766,14 +783,17 @@ sub patron_attributes_form {
 
     my @attribute_loop = ();
     my $i = 0;
+    my %items_by_class;
     foreach my $type_code (map { $_->{code} } @types) {
         my $attr_type = C4::Members::AttributeTypes->fetch($type_code);
         my $entry = {
+            class             => $attr_type->class(),
             code              => $attr_type->code(),
             description       => $attr_type->description(),
             repeatable        => $attr_type->repeatable(),
             password_allowed  => $attr_type->password_allowed(),
             category          => $attr_type->authorised_value_category(),
+            category_code     => $attr_type->category_code(),
             password          => '',
         };
         if (exists $attr_hash{$attr_type->code()}) {
@@ -788,8 +808,7 @@ sub patron_attributes_form {
                 }
                 $i++;
                 $newentry->{form_id} = "patron_attr_$i";
-                #use Data::Dumper; die Dumper($entry) if  $entry->{use_dropdown};
-                push @attribute_loop, $newentry;
+                push @{$items_by_class{$attr_type->class()}}, $newentry;
             }
         } else {
             $i++;
@@ -799,9 +818,18 @@ sub patron_attributes_form {
                 $newentry->{auth_val_loop} = GetAuthorisedValues($attr_type->authorised_value_category());
             }
             $newentry->{form_id} = "patron_attr_$i";
-            push @attribute_loop, $newentry;
+            push @{$items_by_class{$attr_type->class()}}, $newentry;
         }
     }
+    while ( my ($class, @items) = each %items_by_class ) {
+        my $lib = GetAuthorisedValueByCode( 'PA_CLASS', $class ) || $class;
+        push @attribute_loop, {
+            class => $class,
+            items => @items,
+            lib   => $lib,
+        }
+    }
+
     $template->param(patron_attributes => \@attribute_loop);
 
 }

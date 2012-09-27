@@ -23,10 +23,8 @@ use strict;
 use C4::Context;
 use C4::Output;
 use CGI;
-use C4::Auth;
+use C4::Auth qw/:DEFAULT get_session/;
 use C4::Reserves;
-use C4::Branch;
-use C4::Dates qw/format_date format_date_in_iso/;
 
 use vars qw($debug);
 
@@ -35,13 +33,16 @@ BEGIN {
 }
 
 my $input = new CGI;
+my $sessionID = $input->cookie("CGISESSID");
+my $session = get_session($sessionID);
+
 my $biblionumber = $input->param('biblionumber');
 my $borrowernumber = $input->param('borrowernumber');
 my $transfer = $input->param('transfer');
 
 my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
     {   
-        template_name   => "circ/hold-transfer-slip.tmpl",
+        template_name   => "circ/printslip.tmpl",
         query           => $input,
         type            => "intranet",
         authnotrequired => 0,
@@ -50,14 +51,21 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
     }
 );
 
-my $reserveinfo = GetReserveInfo($borrowernumber,$biblionumber );
-my $pulldate = C4::Dates->new();
-$reserveinfo->{'pulldate'} = $pulldate->output();
-$reserveinfo->{'branchname'} = GetBranchName($reserveinfo->{'branchcode'});
-$reserveinfo->{'transferrequired'} = $transfer;
-
-$template->param( reservedata => [ $reserveinfo ] ,
-				);
+my $userenv = C4::Context->userenv;
+my ($slip, $is_html);
+if ( my $letter = ReserveSlip ($session->param('branch') || $userenv->{branch}, $borrowernumber, $biblionumber) ) {
+    $slip = $letter->{content};
+    $is_html = $letter->{is_html};
+}
+else {
+    $slip = "Reserve not found";
+}
+$template->param(
+    slip => $slip,
+    plain => !$is_html,
+    title => "Koha -- Circulation: Transfers",
+    stylesheet => C4::Context->preference("SlipCSS"),
+);
 
 output_html_with_http_headers $input, $cookie, $template->output;
 

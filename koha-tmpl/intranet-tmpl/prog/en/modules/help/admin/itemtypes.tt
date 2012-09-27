@@ -11,7 +11,7 @@
 <p>To add a new item type, simply click the 'New Item Type' button at the top of the Item Types page.</p>
 
 <ul>
-	<li>In the 'Item Type' field, enter a short code for your item type</li>
+   <li>In the 'Item Type' field, enter a short code for your item type</li>
 	<li>The description is the plain text definition of the item type</li>
 	<li>You can choose to have an image associated with your item type
 <ul>
@@ -20,7 +20,7 @@
 	<li>Or you can just have no image associated with the item type</li>
 	<li style="color: #990000;">Important: To have your item type images appear in the OPAC you need to set noItemTypeImages to 'Show'
 <ul>
-	<li>Get there: More &gt; Administration &gt; Global System Preferences &gt; Admin</li>
+ <li>Get there: More &gt; Administration &gt; Global System Preferences &gt; Admin</li>
 </ul>
 </li>
 </ul>
@@ -37,9 +37,9 @@
 	<li>This will charge the patron on checkout</li>
 </ul>
 </li>
-	<li>When finished, click 'Save Changes'
+  <li>When finished, click 'Save Changes'
 <ul>
-	<li>Tip: All fields, with the exception of the 'Item Type' will be editable from the Item Types list</li>
+   <li>Tip: All fields, with the exception of the 'Item Type' will be editable from the Item Types list</li>
 </ul>
 </li>
 	<li>Your new item type will now appear on the list</li>
@@ -57,6 +57,6 @@
 
 <p>You will not be able to delete item types that are being used by items within your system.</p>
 
-<p><strong>See the full documentation for Item Types in the <a href="http://manual.koha-community.org/3.6/en/basicparams.html#itemtypeadmin">manual</a> (online).</strong></p>
+<p><strong>See the full documentation for Item Types in the <a href="http://manual.koha-community.org/3.8/en/basicparams.html#itemtypeadmin">manual</a> (online).</strong></p>
 
 [% INCLUDE 'help-bottom.inc' %]

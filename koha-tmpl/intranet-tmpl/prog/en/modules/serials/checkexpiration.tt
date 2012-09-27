@@ -1,5 +1,5 @@
 [% INCLUDE 'doc-head-open.inc' %]
-<title>Koha &rsaquo; Serials &rsaquo; Check Expiration</title>
+<title>Koha &rsaquo; Serials &rsaquo; Check expiration</title>
 [% INCLUDE 'doc-head-close.inc' %]
 [% INCLUDE 'calendar.inc' %]
 <script type="text/javascript" language="JavaScript">
@@ -27,7 +27,7 @@
 </script>
 <!-- End of additions -->
 </head>
-<body>
+<body id="ser_checkexpiration" class="ser">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'serials-search.inc' %]
 
@@ -53,17 +53,8 @@
         <input id="issn" type="text" name="issn" size="15" value="[% issn %]" /></li>
 
         <li><label for="date" class="required" title="Required field">Expiring before:</label>
-        <input id="date" type="text" name="date" size="10" value="[% date %]" class="focus" />
-				<img src="[% themelang %]/lib/calendar/cal.gif" alt="Show Calendar" border="0" id="openCalendar" style="cursor: pointer;" />
-            <script type="text/javascript">
-                Calendar.setup(
-                 {
-					button : "openCalendar",
-                     inputField : "date",
-                     ifFormat : "[% DHTMLcalendar_dateformat %]"
-                 }
-                );
-            </script> <span class="required">Required</span>
+        <input id="date" type="text" name="date" size="10" value="[% date %]" class="focus datepicker" />
+        <span class="required">Required</span>
 			<div class="hint">[% INCLUDE 'date-format.inc' %]</div></li>
 			</ol>
         

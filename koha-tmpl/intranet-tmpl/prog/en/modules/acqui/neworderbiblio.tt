@@ -1,13 +1,29 @@
 [% INCLUDE 'doc-head-open.inc' %]
-<title>Koha &rsaquo; Acquisitions &rsaquo; Search Existing Records</title>
+<title>Koha &rsaquo; Acquisitions &rsaquo; Search existing records</title>
+<link rel="stylesheet" type="text/css" href="[% themelang %]/css/datatables.css" />
 [% INCLUDE 'greybox.inc' %]
 [% INCLUDE 'doc-head-close.inc' %]
+<script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.dataTables.min.js"></script>
+[% INCLUDE 'datatables-strings.inc' %]
+<script type="text/javascript" src="[% themelang %]/js/datatables.js"></script>
+<script type="text/javascript">
+//<![CDATA[
+ $(document).ready(function() {
+    var resultst = $("#resultst").dataTable($.extend(true, {}, dataTablesDefaults, {
+        'bPaginate': false,
+        'bFilter': false,
+        'bInfo': false,
+        'bSort': false,
+    } ) );
+ });
+ //]]>
+</script>
 </head>
-<body>
+<body id="acq_neworderbiblio" class="acq">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'acquisitions-search.inc' %]
 
-<div id="breadcrumbs"><a href="/cgi-bin/koha/mainpage.pl">Home</a> &rsaquo; <a href="/cgi-bin/koha/acqui/acqui-home.pl">Acquisitions</a> &rsaquo; <a href="/cgi-bin/koha/acqui/supplier.pl?booksellerid=[% booksellerid %]">[% name %]</a> &rsaquo; <a href="/cgi-bin/koha/acqui/basket.pl?=[% basketno %]">Basket [% basketno %]</a> &rsaquo; Search Existing Records</div>
+<div id="breadcrumbs"><a href="/cgi-bin/koha/mainpage.pl">Home</a> &rsaquo; <a href="/cgi-bin/koha/acqui/acqui-home.pl">Acquisitions</a> &rsaquo; <a href="/cgi-bin/koha/acqui/supplier.pl?booksellerid=[% booksellerid %]">[% name %]</a> &rsaquo; <a href="/cgi-bin/koha/acqui/basket.pl?=[% basketno %]">Basket [% basketno %]</a> &rsaquo; Search existing records</div>
 
 <div id="doc3" class="yui-t2">
    
@@ -15,7 +31,7 @@
 	<div id="yui-main">
 	<div class="yui-b">
 	
-<h1>Search Existing Records</h1>
+<h1>Search existing records</h1>
 
 
 [% IF ( total ) %]
@@ -29,23 +45,23 @@
 [% END %]
 
 [% IF ( query_error ) %]
-<br /><br />
-<b>Error:</b>
-<span class="problem">
-    [% query_error %]
-</span>
+    <div class="dialog alert"><p><strong>Error:</strong> [% query_error %]</p></div>
 [% END %]
 
 [% IF ( total ) %]
 <div class="searchresults">
-    <table>
-    <tr>
-       <th>Summary</th>
-       <th>Publisher</th>
-       <th>Copyright</th>
-       <th colspan="2">&nbsp;</th>
-    </tr>
-    [% FOREACH biblio IN resultsloop %]
+    <table id="resultst">
+    <thead>
+      <tr>
+         <th>Summary</th>
+         <th>Publisher</th>
+         <th>Copyright</th>
+         <th>&nbsp;</th>
+         <th>&nbsp;</th>
+      </tr>
+    </thead>
+    <tbody>
+      [% FOREACH biblio IN resultsloop %]
         <tr>
             <td>
                 <p><span class="title">[% biblio.title |html %]</span>
@@ -72,7 +88,8 @@
             </a>
             </td>
         </tr>
-    [% END %]
+      [% END %]
+    </tbody>
     </table>
 </div>
 [% END %]

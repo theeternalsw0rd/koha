@@ -220,6 +220,22 @@ function dt_overwrite_html_sorting_localeCompare() {
             return (b > a) ? 1 : ((b < a) ? -1 : 0);
         }
     };
+
+    jQuery.fn.dataTableExt.oSort['num-html-asc']  = function(a,b) {
+        var x = a.replace( /<.*?>/g, "" );
+        var y = b.replace( /<.*?>/g, "" );
+        x = parseFloat( x );
+        y = parseFloat( y );
+        return ((x < y) ? -1 : ((x > y) ?  1 : 0));
+    };
+
+    jQuery.fn.dataTableExt.oSort['num-html-desc'] = function(a,b) {
+        var x = a.replace( /<.*?>/g, "" );
+        var y = b.replace( /<.*?>/g, "" );
+        x = parseFloat( x );
+        y = parseFloat( y );
+        return ((x < y) ?  1 : ((x > y) ? -1 : 0));
+    };
 }
 
 // Sorting on string without accentued characters
@@ -297,10 +313,10 @@ $.fn.dataTableExt.oPagination.four_button = {
         nNext = document.createElement( 'span' );
         nLast = document.createElement( 'span' );
 
-/*        nFirst.appendChild( document.createTextNode( oSettings.oLanguage.oPaginate.sFirst ) );
+        nFirst.appendChild( document.createTextNode( oSettings.oLanguage.oPaginate.sFirst ) );
         nPrevious.appendChild( document.createTextNode( oSettings.oLanguage.oPaginate.sPrevious ) );
         nNext.appendChild( document.createTextNode( oSettings.oLanguage.oPaginate.sNext ) );
-        nLast.appendChild( document.createTextNode( oSettings.oLanguage.oPaginate.sLast ) );*/
+        nLast.appendChild( document.createTextNode( oSettings.oLanguage.oPaginate.sLast ) );
 
         nFirst.className = "paginate_button first";
         nPrevious.className = "paginate_button previous";
@@ -360,25 +376,41 @@ $.fn.dataTableExt.oPagination.four_button = {
             var buttons = an[i].getElementsByTagName('span');
             if ( oSettings._iDisplayStart === 0 )
             {
-                buttons[0].className = "paginate_disabled_first";
+                buttons[0].className = "paginate_disabled_previous";
                 buttons[1].className = "paginate_disabled_previous";
             }
             else
             {
-                buttons[0].className = "paginate_enabled_first";
+                buttons[0].className = "paginate_enabled_previous";
                 buttons[1].className = "paginate_enabled_previous";
             }
 
             if ( oSettings.fnDisplayEnd() == oSettings.fnRecordsDisplay() )
             {
                 buttons[2].className = "paginate_disabled_next";
-                buttons[3].className = "paginate_disabled_last";
+                buttons[3].className = "paginate_disabled_next";
             }
             else
             {
                 buttons[2].className = "paginate_enabled_next";
-                buttons[3].className = "paginate_enabled_last";
+                buttons[3].className = "paginate_enabled_next";
             }
         }
     }
+};
+
+$.fn.dataTableExt.oSort['num-html-asc']  = function(a,b) {
+    var x = a.replace( /<.*?>/g, "" );
+    var y = b.replace( /<.*?>/g, "" );
+    x = parseFloat( x );
+    y = parseFloat( y );
+    return ((x < y) ? -1 : ((x > y) ?  1 : 0));
+};
+
+$.fn.dataTableExt.oSort['num-html-desc'] = function(a,b) {
+    var x = a.replace( /<.*?>/g, "" );
+    var y = b.replace( /<.*?>/g, "" );
+    x = parseFloat( x );
+    y = parseFloat( y );
+    return ((x < y) ?  1 : ((x > y) ? -1 : 0));
 };

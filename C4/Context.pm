@@ -95,7 +95,7 @@ BEGIN {
     $ismemcached = $memcached->set('ismemcached','1');
     }
 
-    $VERSION = '3.00.00.036';
+    $VERSION = '3.07.00.049';
 }
 
 use DBI;
@@ -104,6 +104,7 @@ use XML::Simple;
 use C4::Boolean;
 use C4::Debug;
 use POSIX ();
+use DateTime::TimeZone;
 
 =head1 NAME
 
@@ -275,7 +276,7 @@ sub memcached {
     if ($ismemcached) {
       return $memcached;
     } else {
-      return undef;
+      return;
     }
 }
 
@@ -292,7 +293,7 @@ sub db_scheme2dbi {
         if (/Postgres|Pg|PostgresSQL/) { return("Pg"); }
         if (/oracle/) { return("Oracle"); }
     }
-    return undef;         # Just in case
+    return;         # Just in case
 }
 
 sub import {
@@ -357,7 +358,7 @@ sub new {
             $conf_fname = CONFIG_FNAME;
         } else {
             warn "unable to locate Koha configuration file koha-conf.xml";
-            return undef;
+            return;
         }
     }
     
@@ -375,7 +376,7 @@ sub new {
 
     $self->{"config_file"} = $conf_fname;
     warn "read_config_file($conf_fname) returned undef" if !defined($self->{"config"});
-    return undef if !defined($self->{"config"});
+    return if !defined($self->{"config"});
 
     $self->{"dbh"} = undef;        # Database handle
     $self->{"Zconn"} = undef;    # Zebra Connections
@@ -384,6 +385,7 @@ sub new {
     $self->{"userenv"} = undef;        # User env
     $self->{"activeuser"} = undef;        # current active user
     $self->{"shelves"} = undef;
+    $self->{tz} = undef; # local timezone object
 
     bless $self, $class;
     return $self;
@@ -478,10 +480,10 @@ C<C4::Config-E<gt>new> will not return it.
 
 =cut
 
-sub _common_config ($$) {
+sub _common_config {
 	my $var = shift;
 	my $term = shift;
-    return undef if !defined($context->{$term});
+    return if !defined($context->{$term});
        # Presumably $self->{$term} might be
        # undefined if the config file given to &new
        # didn't exist, and the caller didn't bother
@@ -543,7 +545,7 @@ END_SQL
     return $sysprefs{$var};
 }
 
-sub boolean_preference ($) {
+sub boolean_preference {
     my $self = shift;
     my $var = shift;        # The system preference to return
     my $it = preference($self, $var);
@@ -1007,7 +1009,7 @@ set_userenv is called in Auth.pm
 #'
 sub set_userenv {
     my ($usernum, $userid, $usercnum, $userfirstname, $usersurname, $userbranch, $branchname, $userflags, $emailaddress, $branchprinter)= @_;
-    my $var=$context->{"activeuser"};
+    my $var=$context->{"activeuser"} || '';
     my $cell = {
         "number"     => $usernum,
         "id"         => $userid,
@@ -1025,19 +1027,19 @@ sub set_userenv {
     return $cell;
 }
 
-sub set_shelves_userenv ($$) {
-	my ($type, $shelves) = @_ or return undef;
-	my $activeuser = $context->{activeuser} or return undef;
+sub set_shelves_userenv {
+	my ($type, $shelves) = @_ or return;
+	my $activeuser = $context->{activeuser} or return;
 	$context->{userenv}->{$activeuser}->{barshelves} = $shelves if $type eq 'bar';
 	$context->{userenv}->{$activeuser}->{pubshelves} = $shelves if $type eq 'pub';
 	$context->{userenv}->{$activeuser}->{totshelves} = $shelves if $type eq 'tot';
 }
 
-sub get_shelves_userenv () {
+sub get_shelves_userenv {
 	my $active;
 	unless ($active = $context->{userenv}->{$context->{activeuser}}) {
 		$debug and warn "get_shelves_userenv cannot retrieve context->{userenv}->{context->{activeuser}}";
-		return undef;
+		return;
 	}
 	my $totshelves = $active->{totshelves} or undef;
 	my $pubshelves = $active->{pubshelves} or undef;
@@ -1110,6 +1112,24 @@ sub get_versions {
     }
     return %versions;
 }
+
+
+=head2 tz
+
+  C4::Context->tz
+
+  Returns a DateTime::TimeZone object for the system timezone
+
+=cut
+
+sub tz {
+    my $self = shift;
+    if (!defined $context->{tz}) {
+        $context->{tz} = DateTime::TimeZone->new(name => 'local');
+    }
+    return $context->{tz};
+}
+
 
 
 1;

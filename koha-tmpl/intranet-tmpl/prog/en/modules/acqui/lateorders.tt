@@ -1,10 +1,24 @@
+[% USE KohaDates %]
 [% INCLUDE 'doc-head-open.inc' %]
 <title>Koha &rsaquo; Acquisitions &rsaquo; Late orders</title>
+<link rel="stylesheet" type="text/css" href="[% themelang %]/css/datatables.css" />
 [% INCLUDE 'doc-head-close.inc' %]
+<script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.dataTables.min.js"></script>
+[% INCLUDE 'datatables-strings.inc' %]
+<script type="text/javascript" src="[% themelang %]/js/datatables.js"></script>
+<script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.checkboxes.min.js"></script>
+[% INCLUDE 'calendar.inc' %]
 <script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.checkboxes.min.js"></script>
 <script type="text/javascript">
 //<![CDATA[
 $(document).ready(function() {
+    var late_orderst = $("#late_orders").dataTable($.extend(true, {}, dataTablesDefaults, {
+        "aoColumnDefs": [
+            { "aTargets": [ -1 ], "bSortable": false, "bSearchable": false },
+        ],
+        "sPaginationType": "four_button"
+    } ) );
+
     $("input:checkbox[name=claim_for]").click(function(){
         var booksellerid = $(this).attr('booksellerid');
         if ( $("input:checkbox[name=claim_for]:checked").length > 0) {
@@ -19,7 +33,7 @@ $(document).ready(function() {
 //]]>
 </script>
 </head>
-<body>
+<body id="acq_lateorders" class="acq">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'acquisitions-search.inc' %]
 
@@ -58,8 +72,10 @@ $(document).ready(function() {
 	</p>
 	[% END %]
     <table id="late_orders">
+        <thead>
         <tr>
-            <th>Order Date</th>
+            <th>Order date</th>
+            <th>Estimated delivery date</th>
             <th>Vendor</th>
             <th>Information</th>
             <th>Total cost</th>
@@ -72,6 +88,8 @@ $(document).ready(function() {
                 <th></th>
             [% END %]
         </tr>
+        </thead>
+        <tbody>
     [% FOREACH lateorder IN lateorders %]
         [% UNLESS ( loop.odd ) %]<tr class="highlight">
         [% ELSE %]<tr>[% END %]
@@ -79,6 +97,11 @@ $(document).ready(function() {
                 ([% lateorder.supplierid %])
                 [% lateorder.orderdate %]
                 ([% lateorder.latesince %] days)
+            </td>
+            <td>
+                [% IF ( lateorder.estimateddeliverydate ) %]
+                    [% lateorder.estimateddeliverydate | $KohaDates  %]
+                [% END %]
             </td>
             <td>
                 [% lateorder.supplier %]
@@ -115,9 +138,13 @@ $(document).ready(function() {
             </td>
         </tr>
         [% END %]
+    </tbody>
+    <tfoot>
         <tr> 
             <th>Total</th>
-            <th colspan="2">&nbsp;</th>
+            <th>&nbsp;</th>
+            <th>&nbsp;</th>
+            <th>&nbsp;</th>
             <th>[% total %]</th>
             <th>&nbsp;</th>
             <th>&nbsp;</th>
@@ -126,8 +153,9 @@ $(document).ready(function() {
                 <input type="submit" value="Claim Order" />
             </td>
         </tr>
+    </tfoot>
     </table>
-     </form>
+</form>
 [% ELSE %]<p>There are no late orders.</p>
 [% END %]
 </div>
@@ -140,7 +168,17 @@ $(document).ready(function() {
 [% FOREACH ERROR_LOO IN ERROR_LOOP %]
 [% IF ( ERROR_LOO.delay_digits ) %]<p class="error">The number of days ([% ERROR_LOO.bad_delay %]) must be a number between 0 and 999.</p>[% END %]
 [% END %]
-<ol><li><label for="delay">Order date:</label><input size="3" maxlength="3" id="delay" type="text" name="delay" value="[% delay %]" /> days ago</li>
+<ol>
+    <li><label for="delay">Order date:</label><input size="3" maxlength="3" id="delay" type="text" name="delay" value="[% delay %]" /> days ago</li>
+    <li><label for="from">Estimated delivery date from: </label>
+        <input type="text" size="10" id="from" name="estimateddeliverydatefrom" value="[% estimateddeliverydatefrom %]" class="datepickerfrom" />
+        <div class="hint">[% INCLUDE 'date-format.inc' %]</div>
+    </li>
+    <li><label for="to">To: </label>
+        <input type="text" size="10" id="to" name="estimateddeliverydateto" value="[% estimateddeliverydateto %]" class="datepickerto" />
+        <div class="hint">[% INCLUDE 'date-format.inc' %]</div>
+    </li>
+
 	<li><label for="booksellerid">Vendor:</label>
 		<select id="booksellerid" size="1" tabindex="" name="booksellerid">
 			<option value=""/>

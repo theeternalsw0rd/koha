@@ -22,13 +22,18 @@ package C4::Koha;
 
 use strict;
 #use warnings; FIXME - Bug 2505
-use C4::Context;
-use Memoize;
 
-use vars qw($VERSION @ISA @EXPORT $DEBUG);
+use C4::Context;
+use C4::Branch qw(GetBranchesCount);
+use Memoize;
+use DateTime;
+use DateTime::Format::MySQL;
+use autouse 'Data::Dumper' => qw(Dumper);
+
+use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $DEBUG);
 
 BEGIN {
-	$VERSION = 3.01;
+    $VERSION = 3.07.00.049;
 	require Exporter;
 	@ISA    = qw(Exporter);
 	@EXPORT = qw(
@@ -67,6 +72,7 @@ BEGIN {
 		$DEBUG
 	);
 	$DEBUG = 0;
+@EXPORT_OK = qw( GetDailyQuote );
 }
 
 # expensive functions
@@ -106,7 +112,7 @@ sub slashifyDate {
 }
 
 # FIXME.. this should be moved to a MARC-specific module
-sub subfield_is_koha_internal_p ($) {
+sub subfield_is_koha_internal_p {
     my ($subfield) = @_;
 
     # We could match on 'lib' and 'tab' (and 'mandatory', & more to come!)
@@ -465,7 +471,7 @@ sub getitemtypeimagesrc {
 	}
 }
 
-sub getitemtypeimagelocation($$) {
+sub getitemtypeimagelocation {
 	my ( $src, $image ) = @_;
 
 	return '' if ( !$image );
@@ -624,7 +630,7 @@ sub GetPrinters {
 
 =cut
 
-sub GetPrinter ($$) {
+sub GetPrinter {
     my ( $query, $printers ) = @_;    # get printer for this query from printers
     my $printer = $query->param('printer');
     my %cookie = $query->cookie('userenv');
@@ -668,6 +674,7 @@ sub getallthemes {
     opendir D, "$htdocs";
     my @dirlist = readdir D;
     foreach my $directory (@dirlist) {
+        next if $directory eq 'lib';
         -d "$htdocs/$directory/en" and push @themes, $directory;
     }
     return @themes;
@@ -678,98 +685,114 @@ sub getFacets {
     if ( C4::Context->preference("marcflavour") eq "UNIMARC" ) {
         $facets = [
             {
-                link_value  => 'su-to',
-                label_value => 'Topics',
-                tags        =>
-                  [ '600', '601', '602', '603', '604', '605', '606', '610' ],
-                subfield => 'a',
+                idx   => 'su-to',
+                label => 'Topics',
+                tags  => [ qw/ 600a 601a 602a 603a 604a 605a 606ax 610a/ ],
+                sep   => ' - ',
             },
             {
-                link_value  => 'su-geo',
-                label_value => 'Places',
-                tags        => ['651'],
-                subfield    => 'a',
+                idx   => 'su-geo',
+                label => 'Places',
+                tags  => [ qw/ 651a / ],
+                sep   => ' - ',
             },
             {
-                link_value  => 'su-ut',
-                label_value => 'Titles',
-                tags        => [ '500', '501', '502', '503', '504', ],
-                subfield    => 'a',
+                idx   => 'su-ut',
+                label => 'Titles',
+                tags  => [ qw/ 500a 501a 502a 503a 504a / ],
+                sep   => ', ',
             },
             {
-                link_value  => 'au',
-                label_value => 'Authors',
-                tags        => [ '700', '701', '702', ],
-                subfield    => 'a',
+                idx   => 'au',
+                label => 'Authors',
+                tags  => [ qw/ 700ab 701ab 702ab / ],
+                sep   => ', ',
             },
             {
-                link_value  => 'se',
-                label_value => 'Series',
-                tags        => ['225'],
-                subfield    => 'a',
+                idx   => 'se',
+                label => 'Series',
+                tags  => [ qw/ 225a / ],
+                sep   => ', ',
             },
             ];
 
             my $library_facet;
-
-            $library_facet = {
-                link_value  => 'branch',
-                label_value => 'Libraries',
-                tags        => [ '995', ],
-                subfield    => 'b',
-                expanded    => '1',
-            };
-            push @$facets, $library_facet unless C4::Context->preference("singleBranchMode");
+            unless ( C4::Context->preference("singleBranchMode") || GetBranchesCount() == 1 ) {
+                $library_facet = {
+                    idx  => 'branch',
+                    label => 'Libraries',
+                    tags        => [ qw/ 995b / ],
+                };
+            } else {
+                $library_facet = {
+                    idx  => 'location',
+                    label => 'Location',
+                    tags        => [ qw/ 995c / ],
+                };
+            }
+            push( @$facets, $library_facet );
     }
     else {
         $facets = [
             {
-                link_value  => 'su-to',
-                label_value => 'Topics',
-                tags        => ['650'],
-                subfield    => 'a',
+                idx   => 'su-to',
+                label => 'Topics',
+                tags  => [ qw/ 650a / ],
+                sep   => '--',
             },
-
             #        {
-            #        link_value => 'su-na',
-            #        label_value => 'People and Organizations',
-            #        tags => ['600', '610', '611'],
-            #        subfield => 'a',
+            #        idx   => 'su-na',
+            #        label => 'People and Organizations',
+            #        tags  => [ qw/ 600a 610a 611a / ],
+            #        sep   => 'a',
             #        },
             {
-                link_value  => 'su-geo',
-                label_value => 'Places',
-                tags        => ['651'],
-                subfield    => 'a',
+                idx   => 'su-geo',
+                label => 'Places',
+                tags  => [ qw/ 651a / ],
+                sep   => '--',
             },
             {
-                link_value  => 'su-ut',
-                label_value => 'Titles',
-                tags        => ['630'],
-                subfield    => 'a',
+                idx   => 'su-ut',
+                label => 'Titles',
+                tags  => [ qw/ 630a / ],
+                sep   => '--',
             },
             {
-                link_value  => 'au',
-                label_value => 'Authors',
-                tags        => [ '100', '110', '700', ],
-                subfield    => 'a',
+                idx   => 'au',
+                label => 'Authors',
+                tags  => [ qw/ 100a 110a 700a / ],
+                sep   => ', ',
             },
             {
-                link_value  => 'se',
-                label_value => 'Series',
-                tags        => [ '440', '490', ],
-                subfield    => 'a',
+                idx   => 'se',
+                label => 'Series',
+                tags  => [ qw/ 440a 490a / ],
+                sep   => ', ',
+            },
+            {
+                idx   => 'itype',
+                label => 'ItemTypes',
+                tags  => [ qw/ 952y 942c / ],
+                sep   => ', ',
             },
             ];
+
             my $library_facet;
-            $library_facet = {
-                link_value  => 'branch',
-                label_value => 'Libraries',
-                tags        => [ '952', ],
-                subfield    => 'b',
-                expanded    => '1',
-            };
-            push @$facets, $library_facet unless C4::Context->preference("singleBranchMode");
+            unless ( C4::Context->preference("singleBranchMode") || GetBranchesCount() == 1 ) {
+                $library_facet = {
+                    idx  => 'branch',
+                    label => 'Libraries',
+                    tags        => [ qw / 952b / ],
+                };
+            } else {
+                $library_facet = {
+                    idx => 'location',
+                    label => 'Location',
+                    tags => [ qw / 952c / ],
+                };
+            }
+            push( @$facets, $library_facet );
     }
     return $facets;
 }
@@ -1014,22 +1037,25 @@ C<$opac> If set to a true value, displays OPAC descriptions rather than normal o
 
 sub GetAuthorisedValues {
     my ($category,$selected,$opac) = @_;
-	my @results;
+    my @results;
     my $dbh      = C4::Context->dbh;
     my $query    = "SELECT * FROM authorised_values";
     $query .= " WHERE category = '" . $category . "'" if $category;
     $query .= " ORDER BY category, lib, lib_opac";
     my $sth = $dbh->prepare($query);
     $sth->execute;
-	while (my $data=$sth->fetchrow_hashref) {
-	    if ($selected && $selected eq $data->{'authorised_value'} ) {
-		    $data->{'selected'} = 1;
-	    }
-	    if ($opac && $data->{'lib_opac'}) {
-		$data->{'lib'} = $data->{'lib_opac'};
-	    }
-	    push @results, $data;
-	}
+    while (my $data=$sth->fetchrow_hashref) {
+        if ( (defined($selected)) && ($selected eq $data->{'authorised_value'}) ) {
+            $data->{'selected'} = 1;
+        }
+        else {
+            $data->{'selected'} = 0;
+        }
+        if ($opac && $data->{'lib_opac'}) {
+            $data->{'lib'} = $data->{'lib_opac'};
+        }
+        push @results, $data;
+    }
     #my $data = $sth->fetchall_arrayref({});
     return \@results; #$data;
 }
@@ -1064,13 +1090,14 @@ by the passed category and code
 =cut
 
 sub GetAuthorisedValueByCode {
-    my ( $category, $authvalcode ) = @_;
+    my ( $category, $authvalcode, $opac ) = @_;
 
+    my $field = $opac ? 'lib_opac' : 'lib';
     my $dbh = C4::Context->dbh;
-    my $sth = $dbh->prepare("SELECT lib FROM authorised_values WHERE category=? AND authorised_value =?");
+    my $sth = $dbh->prepare("SELECT $field FROM authorised_values WHERE category=? AND authorised_value =?");
     $sth->execute( $category, $authvalcode );
     while ( my $data = $sth->fetchrow_hashref ) {
-        return $data->{'lib'};
+        return $data->{ $field };
     }
 }
 
@@ -1100,7 +1127,7 @@ sub GetKohaAuthorisedValues {
    	}
    	return \%values;
   } else {
-  	return undef;
+	return;
   }
 }
 
@@ -1131,7 +1158,7 @@ sub GetKohaAuthorisedValuesFromField {
    	}
    	return \%values;
   } else {
-  	return undef;
+	return;
   }
 }
 
@@ -1223,7 +1250,7 @@ sub GetNormalizedUPC {
 }
 
 # Normalizes and returns the first valid ISBN found in the record
-# ISBN13 are converted into ISBN10. This is required to get Amazon cover book.
+# ISBN13 are converted into ISBN10. This is required to get some book cover images.
 sub GetNormalizedISBN {
     my ($isbn,$record,$marcflavour) = @_;
     my @fields;
@@ -1233,7 +1260,7 @@ sub GetNormalizedISBN {
         $isbn =~ s/(.*)( \| )(.*)/$1/;
         return _isbn_cleanup($isbn);
     }
-    return undef unless $record;
+    return unless $record;
 
     if ($marcflavour eq 'UNIMARC') {
         @fields = $record->field('010');
@@ -1242,7 +1269,7 @@ sub GetNormalizedISBN {
             if ($isbn) {
                 return _isbn_cleanup($isbn);
             } else {
-                return undef;
+                return;
             }
         }
     }
@@ -1253,7 +1280,7 @@ sub GetNormalizedISBN {
             if ($isbn) {
                 return _isbn_cleanup($isbn);
             } else {
-                return undef;
+                return;
             }
         }
     }
@@ -1298,10 +1325,82 @@ sub GetNormalizedOCLCNumber {
                 $oclc =~ s/\(OCoLC\)//;
                 return $oclc;
             } else {
-                return undef;
+                return;
             }
         }
     }
+}
+
+=head2 GetDailyQuote($opts)
+
+Takes a hashref of options
+
+Currently supported options are:
+
+'id'        An exact quote id
+'random'    Select a random quote
+noop        When no option is passed in, this sub will return the quote timestamped for the current day
+
+The function returns an anonymous hash following this format:
+
+        {
+          'source' => 'source-of-quote',
+          'timestamp' => 'timestamp-value',
+          'text' => 'text-of-quote',
+          'id' => 'quote-id'
+        };
+
+=cut
+
+# This is definitely a candidate for some sort of caching once we finally settle caching/persistence issues...
+# at least for default option
+
+sub GetDailyQuote {
+    my %opts = @_;
+    my $dbh = C4::Context->dbh;
+    my $query = '';
+    my $sth = undef;
+    my $quote = undef;
+    if ($opts{'id'}) {
+        $query = 'SELECT * FROM quotes WHERE id = ?';
+        $sth = $dbh->prepare($query);
+        $sth->execute($opts{'id'});
+        $quote = $sth->fetchrow_hashref();
+    }
+    elsif ($opts{'random'}) {
+        # Fall through... we also return a random quote as a catch-all if all else fails
+    }
+    else {
+        $query = 'SELECT * FROM quotes WHERE timestamp LIKE CONCAT(CURRENT_DATE,\'%\') ORDER BY timestamp DESC LIMIT 0,1';
+        $sth = $dbh->prepare($query);
+        $sth->execute();
+        $quote = $sth->fetchrow_hashref();
+    }
+    unless ($quote) {        # if there are not matches, choose a random quote
+        # get a list of all available quote ids
+        $sth = C4::Context->dbh->prepare('SELECT count(*) FROM quotes;');
+        $sth->execute;
+        my $range = ($sth->fetchrow_array)[0];
+        if ($range > 1) {
+            # chose a random id within that range if there is more than one quote
+            my $id = int(rand($range));
+            # grab it
+            $query = 'SELECT * FROM quotes WHERE id = ?;';
+            $sth = C4::Context->dbh->prepare($query);
+            $sth->execute($id);
+        }
+        else {
+            $query = 'SELECT * FROM quotes;';
+            $sth = C4::Context->dbh->prepare($query);
+            $sth->execute();
+        }
+        $quote = $sth->fetchrow_hashref();
+        # update the timestamp for that quote
+        $query = 'UPDATE quotes SET timestamp = ? WHERE id = ?';
+        $sth = C4::Context->dbh->prepare($query);
+        $sth->execute(DateTime::Format::MySQL->format_datetime(DateTime->now), $quote->{'id'});
+    }
+    return $quote;
 }
 
 sub _normalize_match_point {

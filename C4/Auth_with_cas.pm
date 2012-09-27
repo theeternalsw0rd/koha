@@ -32,7 +32,7 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $debug);
 
 BEGIN {
 	require Exporter;
-	$VERSION = 3.03;	# set the version for version checking
+    $VERSION = 3.07.00.049;	# set the version for version checking
 	$debug = $ENV{DEBUG};
 	@ISA    = qw(Exporter);
 	@EXPORT = qw(check_api_auth_cas checkpw_cas login_cas logout_cas login_cas_url);
@@ -66,7 +66,7 @@ sub getMultipleAuth {
 # Logout from CAS
 sub logout_cas {
     my ($query) = @_;
-    my $uri = $ENV{'SCRIPT_URI'};
+    my $uri = C4::Context->preference('OPACBaseURL') . $query->script_name();
     my $casparam = $query->param('cas');
     # FIXME: This should be more generic and handle whatever parameters there might be
     $uri .= "?cas=" . $casparam if (defined $casparam);
@@ -78,7 +78,7 @@ sub logout_cas {
 # Login to CAS
 sub login_cas {
     my ($query) = @_;
-    my $uri = $ENV{'SCRIPT_URI'};
+    my $uri = C4::Context->preference('OPACBaseURL') . $query->script_name();
     my $casparam = $query->param('cas');
     # FIXME: This should be more generic and handle whatever parameters there might be
     $uri .= "?cas=" . $casparam if (defined $casparam);
@@ -91,7 +91,7 @@ sub login_cas {
 sub login_cas_url {
 
     my ($query, $key) = @_;
-    my $uri = $ENV{'SCRIPT_URI'};
+    my $uri = C4::Context->preference('OPACBaseURL') . $query->script_name();
     my $casparam = $query->param('cas');
     # FIXME: This should be more generic and handle whatever parameters there might be
     $uri .= "?cas=" . $casparam if (defined $casparam);
@@ -107,7 +107,7 @@ sub checkpw_cas {
     $debug and warn "checkpw_cas";
     my ($dbh, $ticket, $query) = @_;
     my $retnumber;
-    my $uri = $ENV{'SCRIPT_URI'};
+    my $uri = C4::Context->preference('OPACBaseURL') . $query->script_name();
     my $casparam = $query->param('cas');
     # FIXME: This should be more generic and handle whatever parameters there might be
     $uri .= "?cas=" . $casparam if (defined $casparam);
@@ -145,7 +145,10 @@ sub checkpw_cas {
             $debug and warn "User $userid is not a valid Koha user";
 
         } else {
-            $debug and warn "Invalid session ticket : $ticket";
+            $debug and warn "Problem when validating ticket : $ticket";
+            $debug and warn "Authen::CAS::Client::Response::Error: " . $val->error() if $val->is_error();
+            $debug and warn "Authen::CAS::Client::Response::Failure: " . $val->message() if $val->is_failure();
+            $debug and warn Data::Dumper::Dumper($@) if $val->is_error() or $val->is_failure();
             return 0;
         }
     }
@@ -157,7 +160,7 @@ sub check_api_auth_cas {
     $debug and warn "check_api_auth_cas";
     my ($dbh, $PT, $query) = @_;
     my $retnumber;
-    my $url = $query->url();
+    my $url = C4::Context->preference('OPACBaseURL') . $query->script_name();
 
     my $casparam = $query->param('cas');
     $casparam = $defaultcasserver if (not defined $casparam);

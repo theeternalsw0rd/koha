@@ -13,19 +13,19 @@
 <p>To add a new framework</p>
 
 <ul>
-	<li>Click 'New Framework'
+   <li>Click 'New Framework'
 <ul>
 	<li>Enter a code of 4 or fewer characters</li>
-	<li>Use the Description field to enter a more detailed definition of your framework</li>
+ <li>Use the Description field to enter a more detailed definition of your framework</li>
 </ul>
 </li>
 	<li>Click 'Submit'</li>
-	<li>Once your Framework is added click 'MARC structure' to the right of it on the list of Frameworks
+  <li>Once your Framework is added click 'MARC structure' to the right of it on the list of Frameworks
 <ul>
-	<li>You will be asked to choose a Framework to base your new Framework off of, this will make it easier than starting from scratch</li>
+      <li>You will be asked to choose a Framework to base your new Framework off of, this will make it easier than starting from scratch</li>
 </ul>
 </li>
-	<li>Once your Framework appears on the screen you can edit or delete each field by following the instructions for editing subfields</li>
+    <li>Once your Framework appears on the screen you can edit or delete each field by following the instructions for editing subfields</li>
 </ul>
 
 <h2>Edit Existing Frameworks</h2>
@@ -34,6 +34,6 @@
 
 <p>To make edits to the fields associated with the Framework you must first click 'MARC Structure' and then follow the instructions for editing subfields</p>
 
-<p><strong>See the full documentation for Frameworks in the <a href="http://manual.koha-community.org/3.6/en/catadmin.html#marcbibframeworks">manual</a> (online).</strong></p>
+<p><strong>See the full documentation for Frameworks in the <a href="http://manual.koha-community.org/3.8/en/catadmin.html#marcbibframeworks">manual</a> (online).</strong></p>
 
 [% INCLUDE 'help-bottom.inc' %]

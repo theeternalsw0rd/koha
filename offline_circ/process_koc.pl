@@ -13,9 +13,9 @@
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License along with
-# Koha; if not, write to the Free Software Foundation, Inc., 59 Temple Place,
-# Suite 330, Boston, MA  02111-1307 USA
+# You should have received a copy of the GNU General Public License along
+# with Koha; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 
 use strict;
@@ -29,6 +29,7 @@ use C4::Context;
 use C4::Biblio;
 use C4::Accounts;
 use C4::Circulation;
+use C4::Items;
 use C4::Members;
 use C4::Stats;
 use C4::UploadedFile;
@@ -323,13 +324,17 @@ sub kocReturnItem {
     #warn( Data::Dumper->Dump( [ $circ, $item ], [ qw( circ item ) ] ) );
     my $borrowernumber = _get_borrowernumber_from_barcode( $circ->{'barcode'} );
     if ( $borrowernumber ) {
-        my $borrower = GetMember( 'borrowernumber' =>$borrowernumber );
+        my $borrower = GetMember( 'borrowernumber' => $borrowernumber );
         C4::Circulation::MarkIssueReturned(
             $borrowernumber,
             $item->{'itemnumber'},
             undef,
-            $circ->{'date'}
+            $circ->{'date'},
+            $borrower->{'privacy'}
         );
+
+        ModItem({ onloan => undef }, $item->{'biblionumber'}, $item->{'itemnumber'});
+        ModDateLastSeen( $item->{'itemnumber'} );
 
         push @output, {
             return => 1,

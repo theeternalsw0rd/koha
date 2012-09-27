@@ -29,7 +29,7 @@ use strict;
 use warnings;
 use utf8;
 
-use C4::Branch qw(GetBranchDetail);
+use C4::Branch qw(GetBranchDetail GetBranchName);
 
 BEGIN {
          use Exporter   ();
@@ -92,7 +92,12 @@ sub printorders {
         $text->font( $pdf->corefont("Times", -encoding => "utf8"), 6/mm );
         $text->translate(20/mm,  ($height-15)/mm);
         $text->text("Order N°".$basketgroup->{'id'}.". Basket N° ".$basket->{basketno}.". ".$basket->{booksellernote});
-        
+        $text->translate(20/mm,  ($height-20)/mm);
+        $text->text( ( $basket->{billingplace} ? "Billing at " . C4::Branch::GetBranchName( $basket->{billingplace} ) : "" )
+            . ( $basket->{billingplace} and $basket->{deliveryplace} ? " and " : "" )
+            . ( $basket->{deliveryplace} ? "delivery at " . C4::Branch::GetBranchName( $basket->{deliveryplace}) : "" )
+        );
+
         my $pdftable = new PDF::Table();
         my $abaskets;
         my $arrbasket;
@@ -104,7 +109,7 @@ sub printorders {
 #         @{$orders->{$basket->{basketno}}});
         foreach my $line (@{$orders->{$basket->{basketno}}}) {
             $arrbasket = undef;
-            push(@$arrbasket, @$line[3]." / ".@$line[2].(@$line[0]?" ISBN : ".@$line[0]:'').(@$line[10]?" EN : ".@$line[10]:'').", ".@$line[1].(@$line[4]?' publié par '.@$line[4]:''), @$line[5],$num->format_price(@$line[6]),$num->format_price(@$line[8]).'%',$num->format_price(@$line[7]/(1+@$line[9]/100)),$num->format_price(@$line[9]).'%',$num->format_price($num->round(@$line[7])*@$line[5]));
+            push(@$arrbasket, @$line[3]." / ".@$line[2].(@$line[0]?" ISBN : ".@$line[0]:'').(@$line[10]?" EN : ".@$line[10]:'').", ".@$line[1].(@$line[4]?' published by '.@$line[4]:''), @$line[5],$num->format_price(@$line[6]),$num->format_price(@$line[8]).'%',$num->format_price(@$line[7]/(1+@$line[9]/100)),$num->format_price(@$line[9]).'%',$num->format_price($num->round(@$line[7])*@$line[5]));
             push(@$abaskets, $arrbasket);
         }
         

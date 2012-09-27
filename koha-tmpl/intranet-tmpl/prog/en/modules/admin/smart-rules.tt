@@ -1,7 +1,7 @@
 [% INCLUDE 'doc-head-open.inc' %]
-<title>Koha &rsaquo; Administration &rsaquo; Circulation and Fine Rules</title>
+<title>Koha &rsaquo; Administration &rsaquo; Circulation and fine rules</title>
 [% INCLUDE 'doc-head-close.inc' %]
-
+[% INCLUDE 'calendar.inc' %]
 <script type="text/javascript">
 //<![CDATA[
 $(document).ready(function() {
@@ -12,18 +12,12 @@ $(document).ready(function() {
 });
 //]]>
 </script>
-<!-- Enable Calendar system -->
-<link rel="stylesheet" type="text/css" href="[% themelang %]/lib/calendar/calendar-system.css" />
-<script type="text/javascript" src="[% themelang %]/lib/calendar/calendar.js"></script>
-<script type="text/javascript" src="[% themelang %]/lib/calendar/calendar-en.js"></script>
-<script type="text/javascript" src="[% themelang %]/lib/calendar/calendar-setup.js"></script>
-<!-- End Calendar system additions -->
 </head>
-<body>
+<body id="admin_smart-rules" class="admin">
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'cat-search.inc' %]
 
-<div id="breadcrumbs"><a href="/cgi-bin/koha/mainpage.pl">Home</a> &rsaquo; <a href="/cgi-bin/koha/admin/admin-home.pl">Administration</a> &rsaquo; Circulation and Fine Rules</div>
+<div id="breadcrumbs"><a href="/cgi-bin/koha/mainpage.pl">Home</a> &rsaquo; <a href="/cgi-bin/koha/admin/admin-home.pl">Administration</a> &rsaquo; Circulation and fine rules</div>
 
 <div id="doc3" class="yui-t1">
 
@@ -69,18 +63,20 @@ for="tobranch"><strong>Clone these rules to:</strong></label> <input type="hidde
             <input type="hidden" name="op" value="add" />
             <table>
             <tr>
-                <th>Patron Category</th>
-                <th>Item Type</th>
-                <th>Current Checkouts Allowed</th>
-                <th>Loan Period (day)</th>
-                <th>Hard Due Date</th>
-                <th>Fine Amount</th>
-                <th>Fine Charging Interval</th>
-                <th>Fine Grace period (day)</th>
-                <th>Suspension in Days (day)</th>
-                <th>Renewals Allowed (count)</th>
-                <th>Holds Allowed (count)</th>
-		        <th>Rental Discount (%)</th>
+                <th>Patron category</th>
+                <th>Item type</th>
+                <th>Current checkouts allowed</th>
+                <th>Loan period</th>
+                <th>Unit</th>
+                <th>Hard due date</th>
+                <th>Fine amount</th>
+                <th>Fine charging interval</th>
+                <th>Fine grace period (day)</th>
+                <th>Overdue Fines Cap ($)</th>
+                <th>Suspension in days (day)</th>
+                <th>Renewals allowed (count)</th>
+                <th>Holds allowed (count)</th>
+		<th>Rental discount (%)</th>
 				<th>&nbsp;</th>
             </tr>
 				[% FOREACH rule IN rules %]
@@ -108,6 +104,9 @@ for="tobranch"><strong>Clone these rules to:</strong></label> <input type="hidde
 								[% END %]
 							</td>
 							<td>[% rule.issuelength %]</td>
+							<td>
+							    [% rule.lengthunit %]
+							</td>
                                                         <td>[% IF ( rule.hardduedate ) %]
                                                                [% IF ( rule.hardduedatebefore ) %]before [% rule.hardduedate %]</td>
                                                                [% ELSE %][% IF ( rule.hardduedateexact ) %]on [% rule.hardduedate %]</td>
@@ -118,6 +117,7 @@ for="tobranch"><strong>Clone these rules to:</strong></label> <input type="hidde
 							<td>[% rule.fine %]</td>
 							<td>[% rule.chargeperiod %]</td>
 							<td>[% rule.firstremind %]</td>
+                            <td>[% rule.overduefinescap FILTER format("%.2f") %]</td>
 							<td>[% rule.finedays %]</td>
 							<td>[% rule.renewalsallowed %]</td>
 							<td>[% rule.reservesallowed %]</td>
@@ -146,32 +146,24 @@ for="tobranch"><strong>Clone these rules to:</strong></label> <input type="hidde
                     </td>
                     <td><input name="maxissueqty" size="3" /></td>
                     <td><input name="issuelength" size="3" /> </td>
+                    <td>
+		      <select name="lengthunit">
+			<option value="days" selected>Days</option>
+			<option value="hours">Hours</option>
+		      </select>
+		    </td>
                     <td><select name="hardduedatecompare">
                            <option value="-1">Before</option>
                            <option value="0">Exactly on</option>
                            <option value="1">After</option>
                         </select>
-                        <input type="text" size="10" id="hardduedate" name="hardduedate" value="[% hardduedate %]" />
-                        [% INCLUDE 'date-format.inc' %]
-                        <img src="[% themelang %]/lib/calendar/cal.gif" alt="Show Calendar"  border="0" id="CalendarDueDate" style="cursor: pointer;"/>
-                        <script language="JavaScript" type="text/javascript">
-                             function refocus(calendar) {
-                                 document.getElementById('hardduedate').focus();
-                                 calendar.hide();
-                             };
-                             Calendar.setup(
-                             {
-                             inputField : "hardduedate",
-                             ifFormat : "%m/%d/%Y",
-                             button : "CalendarDueDate",
-                             onClose: refocus
-                             }
-                             );
-                 </script>
+                        <input type="text" size="10" id="hardduedate" name="hardduedate" value="[% hardduedate %]" class="datepicker" />
+                        <div class="hint">[% INCLUDE 'date-format.inc' %]</div>
                     </td>
                     <td><input name="fine" size="4" /></td>
                     <td><input name="chargeperiod" size="2" /></td>
                     <td><input name="firstremind" size="2" /> </td>
+                    <td><input name="overduefinescap" size="6" /> </td>
                     <td><input name="finedays" size="3" /> </td>
                     <td><input name="renewalsallowed" size="2" /></td>
                     <td><input name="reservesallowed" size="2" /></td>
@@ -182,16 +174,17 @@ for="tobranch"><strong>Clone these rules to:</strong></label> <input type="hidde
         </form>
     </div>
     <div id="defaults-for-this-library" class="container">
-    <h3>Default checkout and hold policy for [% IF ( humanbranch ) %][% humanbranch %][% ELSE %]all libraries[% END %]</h3>
-        <p>You can set a default maximum number of checkouts and hold policy that will be used if none is defined below for a particular item type or category.</p>
+    <h3>Default checkout, hold and return policy for [% IF ( humanbranch ) %][% humanbranch %][% ELSE %]all libraries[% END %]</h3>
+        <p>You can set a default maximum number of checkouts, hold policy and return policy that will be used if none is defined below for a particular item type or category.</p>
         <form method="post" action="/cgi-bin/koha/admin/smart-rules.pl">
             <input type="hidden" name="op" value="set-branch-defaults" />
             <input type="hidden" name="branch" value="[% current_branch %]"/>
             <table>
                 <tr>
                     <th>&nbsp;</th>
-                    <th>Total Current Checkouts Allowed</th>
-                    <th>Hold Policy</th>
+                    <th>Total current checkouts allowed</th>
+                    <th>Hold policy</th>
+                    <th>Return policy</th>
                     <th>&nbsp;</th>
                     <th>&nbsp;</th>
                 </tr>
@@ -205,21 +198,46 @@ for="tobranch"><strong>Clone these rules to:</strong></label> <input type="hidde
                             [% ELSE %]
                             <option value="2">
                             [% END %]
-                                From Any Library
+                                From any library
                             </option>
                             [% IF ( default_holdallowed_same ) %]
                             <option value="1" selected="selected">
                             [% ELSE %]
                             <option value="1">
                             [% END %]
-                                From Home Library
+                                From home library
                             </option>
                             [% IF ( default_holdallowed_none ) %]
                             <option value="0" selected="selected">
                             [% ELSE %]
                             <option value="0">
                             [% END %]
-                                No Holds Allowed
+                                No holds allowed
+                            </option>
+                        </select>
+                    </td>
+                    <td>
+                        <select name="returnbranch">
+                            [% IF ( default_returnbranch == 'homebranch' ) %]
+                            <option value="homebranch" selected="selected">
+                            [% ELSE %]
+                            <option value="homebranch">
+                            [% END %]
+                                Item returns home
+                            </option>
+                            [% IF ( default_returnbranch == 'holdingbranch' ) %]
+                            <option value="holdingbranch" selected="selected">
+                            [% ELSE %]
+                            <option value="holdingbranch">
+                            [% END %]
+                                Item returns to issuing branch
+                            </option>
+                            [% IF ( default_returnbranch == 'noreturn' ) %]
+                            <option value="noreturn" selected="selected">
+                            [% ELSE %]
+                            <option value="noreturn">
+                            [% END %]
+                                Item floats
                             </option>
                         </select>
                     </td>
@@ -245,8 +263,8 @@ for="tobranch"><strong>Clone these rules to:</strong></label> <input type="hidde
             <input type="hidden" name="branch" value="[% current_branch %]"/>
             <table>
                 <tr>
-                    <th>Patron Category</th>
-                    <th>Total Current Checkouts Allowed</th>
+                    <th>Patron category</th>
+                    <th>Total current checkouts allowed</th>
                     <th>&nbsp;</th>
                 </tr>
                 [% FOREACH branch_cat_rule_loo IN branch_cat_rule_loop %]
@@ -298,9 +316,9 @@ for="tobranch"><strong>Clone these rules to:</strong></label> <input type="hidde
             The various policies have the following effects:
         </p>
         <ul>
-            <li><strong>From Any Library:</strong> Patrons from any library may put this item on hold. <cite>(default if none is defined)</cite></li>
-            <li><strong>From Home Library:</strong> Only patrons from the item's home library may put this book on hold.</li>
-            <li><strong>No Holds Allowed:</strong> No patron may put this book on hold.</li>
+            <li><strong>From any library:</strong> Patrons from any library may put this item on hold. <cite>(default if none is defined)</cite></li>
+            <li><strong>From home library:</strong> Only patrons from the item's home library may put this book on hold.</li>
+            <li><strong>No holds allowed:</strong> No patron may put this book on hold.</li>
         </ul>
         <p>
             Note that if the system preference
@@ -314,8 +332,9 @@ for="tobranch"><strong>Clone these rules to:</strong></label> <input type="hidde
             <input type="hidden" name="branch" value="[% current_branch %]"/>
             <table>
                 <tr>
-                    <th>Item Type</th>
-                    <th>Hold Policy</th>
+                    <th>Item type</th>
+                    <th>Hold policy</th>
+                    <th>Return policy</th>
                     <th>&nbsp;</th>
                 </tr>
                 [% FOREACH branch_item_rule_loo IN branch_item_rule_loop %]
@@ -331,11 +350,21 @@ for="tobranch"><strong>Clone these rules to:</strong></label> <input type="hidde
                             [% END %]
                         </td>
                         <td>[% IF ( branch_item_rule_loo.holdallowed_any ) %]
-                                From Any Library
+                                From any library
                             [% ELSIF ( branch_item_rule_loo.holdallowed_same ) %]
-                                From Home Library
+                                From home library
                             [% ELSE %]
-                                No Holds Allowed
+                                No holds allowed
+                            [% END %]
+                        </td>
+                        <td>[% IF ( branch_item_rule_loo.returnbranch == 'homebranch' ) %]
+                                Item returns home
+                            [% ELSIF ( branch_item_rule_loo.returnbranch == 'holdingbranch' ) %]
+                                Item returns to issuing branch
+                            [% ELSIF ( branch_item_rule_loo.returnbranch == 'noreturn' ) %]
+                                Item floats
+                            [% ELSE %]
+                                Error - unknown option
                             [% END %]
                         </td>
                         <td>
@@ -353,9 +382,16 @@ for="tobranch"><strong>Clone these rules to:</strong></label> <input type="hidde
                     </td>
                     <td>
                         <select name="holdallowed">
-                            <option value="2">From Any Library</option>
-                            <option value="1">From Home Library</option>
-                            <option value="0">No Holds Allowed</option>
+                            <option value="2">From any library</option>
+                            <option value="1">From home library</option>
+                            <option value="0">No holds allowed</option>
+                        </select>
+                    </td>
+                    <td>
+                        <select name="returnbranch">
+                            <option value="homebranch">Item returns home</option>
+                            <option value="holdingbranch">Item returns to issuing branch</option>
+                            <option value="noreturn">Item floats</option>
                         </select>
                     </td>
                     <td><input type="submit" value="Add" class="submit" /></td>

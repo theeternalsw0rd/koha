@@ -7,6 +7,7 @@
 	 $(document).ready(function() {
 	    $("#newmenuc").empty();
 	    $("#delAuthc").empty();
+        $("#savemenuc").empty();
 	    yuiToolbar();
 	 });
 
@@ -21,7 +22,7 @@
 
 	    new YAHOO.widget.Button({
 	        type: "menu",
-	        label: _("New Authority"),
+            label: _("New authority"),
 	        name: "newmenubutton",
 	        menu: newmenu,
 	        container: "newmenuc"
@@ -35,7 +36,22 @@
           label: _("Delete"), 
           container: "delAuthc",
 		  onclick: {fn: confirm_deletion }
-      });
+        });
+
+        var savemenu = [
+            { text: _("MADS (XML)"), url: "/cgi-bin/koha/authorities/export.pl?format=mads&op=export&authid=[% authid %]" },
+            { text: _("MARCXML"), url: "/cgi-bin/koha/authorities/export.pl?format=marcxml&op=export&authid=[% authid %]" },
+            { text: _("MARC (non-Unicode/MARC-8)"), url: "/cgi-bin/koha/authorities/export.pl?format=marc8&op=export&authid=[% authid %]" },
+            { text: _("MARC (Unicode/UTF-8)"), url: "/cgi-bin/koha/authorities/export.pl?format=utf8&op=export&authid=[% authid %]" },
+        ];
+
+        new YAHOO.widget.Button({
+            type: "menu",
+            label: _("Save"),
+            name: "savemenubutton",
+            menu: savemenu,
+            container: "savemenuc"
+        });
 	}
 
 	//]]>
@@ -46,7 +62,9 @@
     
     [% UNLESS ( count ) %]
     <span id="delAuthc"><a id="delAuth" href="javascript:confirm_deletion()">Delete</a></span>
-    [% END %][% ELSE %]&nbsp;[% END %]
+    [% END %]
+    <span id="savemenuc">Save</span>
+[% ELSE %]&nbsp;[% END %]
   
   <span id="newmenuc">
 	<label for="add_authtypecode">New: </label>

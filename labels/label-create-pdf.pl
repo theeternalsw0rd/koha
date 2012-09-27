@@ -24,12 +24,12 @@ use warnings;
 use CGI;
 use C4::Auth;
 use C4::Debug;
-use C4::Creators 1.000000;
-use C4::Labels 1.000000;
+use C4::Creators;
+use C4::Labels;
 
 my $cgi = new CGI;
 
-my ( $template, $loggedinuser, $cookie ) = get_template_and_user({
+my ( undef, $loggedinuser, $cookie ) = get_template_and_user({
 								     template_name   => "labels/label-home.tt",
 								     query           => $cgi,
 								     type            => "intranet",
@@ -58,9 +58,9 @@ print $cgi->header( -type       => 'application/pdf',
                     -attachment => "$pdf_file.pdf",
                   );
 
-my $pdf = C4::Creators::PDF->new(InitVars => 0);
+our $pdf = C4::Creators::PDF->new(InitVars => 0);
 my $batch = C4::Labels::Batch->retrieve(batch_id => $batch_id);
-my $template = C4::Labels::Template->retrieve(template_id => $template_id, profile_id => 1);
+our $template = C4::Labels::Template->retrieve(template_id => $template_id, profile_id => 1);
 my $layout = C4::Labels::Layout->retrieve(layout_id => $layout_id);
 
 sub _calc_next_label_pos {
@@ -90,6 +90,7 @@ sub _print_text {
     foreach my $text_line (@$label_text) {
         my $pdf_font = $pdf->Font($text_line->{'font'});
         my $line = "BT /$pdf_font $text_line->{'font_size'} Tf $text_line->{'text_llx'} $text_line->{'text_lly'} Td ($text_line->{'line'}) Tj ET";
+    utf8::decode($line);
         $pdf->Add($line);
     }
 }
@@ -204,7 +205,7 @@ foreach my $item (@{$items}) {
 
 $pdf->End();
 
-exit(1);
+__END__
 
 =head1 NAME
 

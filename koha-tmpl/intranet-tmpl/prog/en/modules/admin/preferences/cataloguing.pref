@@ -40,6 +40,10 @@ Cataloging:
         -
     Record Structure:
         -
+            - Fill in the default language for field 008 Range 35-37 (e.g. eng, nor, ger, see <a href="http://www.loc.gov/marc/languages/language_code.html">MARC Code List for Languages</a>)
+            - pref: DefaultLanguageField008
+            - " Empty defaults to eng."
+        -
             - Interpret and store MARC records in the
             - pref: marcflavour
               choices:
@@ -89,7 +93,18 @@ Cataloging:
                   incremental: generated in the form 1, 2, 3.
                   annual: generated in the form &lt;year&gt;-0001, &lt;year&gt;-0002.
                   hbyymmincr: generated in the form &lt;branchcode&gt;yymm0001.
+                  EAN13: incremental EAN-13 barcodes
                   "OFF": not generated automatically.
+        -
+            - When a new item is added, should it be prefilled with last created item values?
+            - pref: PrefillItem
+              choices:
+                  yes: the new item is prefilled with last created item values
+                  no: the new item is not prefilled with last created item values
+        -
+            - Define a list of subfields to use when prefilling items (separated by space)
+            - pref: SubfieldsToUseWhenPrefill
+
     Display:
         -
             - 'Separate multiple displayed authors, series or subjects with '
@@ -137,4 +152,8 @@ Cataloging:
                   yes: Hide
                   no: "Don't hide"
             - items marked as suppressed from OPAC search results. Note that you must have the <code>Suppress</code> index set up in Zebra and at least one suppressed item, or your searches will be broken.
+            - Restrict the suppression to IP adresses outside of the IP range
+            - pref: OpacSuppressionByIPRange
+              class: short
+            - (Leave blank if not used. Define a range like <code>192.168.</code>.)
 

@@ -39,6 +39,7 @@ use C4::Tags qw(get_tags);
 use C4::VirtualShelves;
 use C4::XSLT;
 use C4::Images;
+use Koha::DateUtils;
 
 # use Smart::Comments;
 
@@ -84,7 +85,7 @@ my $marcflavour  = C4::Context->preference("marcflavour");
 # XSLT processing of some stuff
 if (C4::Context->preference("XSLTDetailsDisplay") ) {
     $template->param('XSLTDetailsDisplay' =>'1',
-        'XSLTBloc' => XSLTParse4Display($biblionumber, $record, 'Detail','intranet') );
+        'XSLTBloc' => XSLTParse4Display($biblionumber, $record, "XSLTDetailsDisplay") );
 }
 
 $template->param( 'SpineLabelShowPrintOnBibDetails' => C4::Context->preference("SpineLabelShowPrintOnBibDetails") );
@@ -141,14 +142,14 @@ my ( $holdcount, $holds ) = GetReservesFromBiblionumber($biblionumber,1);
 
 #coping with subscriptions
 my $subscriptionsnumber = CountSubscriptionFromBiblionumber($biblionumber);
-my @subscriptions       = GetSubscriptions( $dat->{title}, $dat->{issn}, $biblionumber );
+my @subscriptions       = GetSubscriptions( $dat->{title}, $dat->{issn}, undef, $biblionumber );
 my @subs;
 
 foreach my $subscription (@subscriptions) {
     my %cell;
 	my $serials_to_display;
     $cell{subscriptionid}    = $subscription->{subscriptionid};
-    $cell{subscriptionnotes} = $subscription->{notes};
+    $cell{subscriptionnotes} = $subscription->{internalnotes};
     $cell{branchcode}        = $subscription->{branchcode};
     $cell{branchname}        = GetBranchName($subscription->{branchcode});
     $cell{hasalert}          = $subscription->{hasalert};
@@ -171,6 +172,7 @@ $dat->{'hiddencount'} = scalar @all_items + @hostitems - scalar @items;
 
 my $shelflocations = GetKohaAuthorisedValues('items.location', $fw);
 my $collections    = GetKohaAuthorisedValues('items.ccode'   , $fw);
+my $copynumbers    = GetKohaAuthorisedValues('items.copynumber', $fw);
 my (@itemloop, %itemfields);
 my $norequests = 1;
 my $authvalcode_items_itemlost = GetAuthValCode('items.itemlost',$fw);
@@ -192,19 +194,23 @@ foreach my $item (@items) {
     $item->{imageurl} = defined $item->{itype} ? getitemtypeimagelocation('intranet', $itemtypes->{ $item->{itype} }{imageurl})
                                                : '';
 
-	foreach (qw(datedue datelastseen onloan)) {
+	foreach (qw(datelastseen onloan)) {
 		$item->{$_} = format_date($item->{$_});
-	}
+    }
+    $item->{datedue} = format_sqldatetime($item->{datedue});
     # item damaged, lost, withdrawn loops
     $item->{itemlostloop} = GetAuthorisedValues($authvalcode_items_itemlost, $item->{itemlost}) if $authvalcode_items_itemlost;
     if ($item->{damaged}) {
         $item->{itemdamagedloop} = GetAuthorisedValues($authvalcode_items_damaged, $item->{damaged}) if $authvalcode_items_damaged;
     }
     #get shelf location and collection code description if they are authorised value.
+    # same thing for copy number
     my $shelfcode = $item->{'location'};
     $item->{'location'} = $shelflocations->{$shelfcode} if ( defined( $shelfcode ) && defined($shelflocations) && exists( $shelflocations->{$shelfcode} ) );
     my $ccode = $item->{'ccode'};
     $item->{'ccode'} = $collections->{$ccode} if ( defined( $ccode ) && defined($collections) && exists( $collections->{$ccode} ) );
+    my $copynumber = $item->{'copynumber'};
+    $item->{'copynumber'} = $copynumbers->{$copynumber} if ( defined($copynumber) && defined($copynumbers) && exists( $copynumbers->{$copynumber} ) );
     foreach (qw(ccode enumchron copynumber itemnotes uri)) {
         $itemfields{$_} = 1 if ( $item->{$_} );
     }
@@ -319,7 +325,7 @@ foreach ( keys %{$dat} ) {
 
 # does not work: my %views_enabled = map { $_ => 1 } $template->query(loop => 'EnableViews');
 # method query not found?!?!
-
+$template->param( AmazonTld => get_amazon_tld() ) if ( C4::Context->preference("AmazonCoverImages"));
 $template->param(
     itemloop        => \@itemloop,
     biblionumber        => $biblionumber,
@@ -345,45 +351,6 @@ if (C4::Context->preference("FRBRizeEditions")==1) {
         );
     };
     if ($@) { warn "XISBN Failed $@"; }
-}
-if ( C4::Context->preference("AmazonEnabled") == 1 ) {
-    $template->param( AmazonTld => get_amazon_tld() );
-    my $amazon_reviews  = C4::Context->preference("AmazonReviews");
-    my $amazon_similars = C4::Context->preference("AmazonSimilarItems");
-    my @services;
-    if ( $amazon_reviews ) {
-        $template->param( AmazonReviews => 1 );
-        push( @services, 'EditorialReview' );
-    }
-    if ( $amazon_similars ) {
-        $template->param( AmazonSimilarItems => 1 );
-        push( @services, 'Similarities' );
-    }
-    my $amazon_details = &get_amazon_details( $isbn, $record, $marcflavour, \@services );
-    if ( $amazon_similars ) {
-        my $similar_products_exist;
-        my @similar_products;
-        for my $similar_product (@{$amazon_details->{Items}->{Item}->[0]->{SimilarProducts}->{SimilarProduct}}) {
-            # do we have any of these isbns in our collection?
-            my $similar_biblionumbers = get_biblionumber_from_isbn($similar_product->{ASIN});
-            # verify that there is at least one similar item
-		    if (scalar(@$similar_biblionumbers)){            
-			    $similar_products_exist++ if ($similar_biblionumbers && $similar_biblionumbers->[0]);
-                push @similar_products, +{ similar_biblionumbers => $similar_biblionumbers, title => $similar_product->{Title}, ASIN => $similar_product->{ASIN}  };
-            }
-        }
-        $template->param( AmazonSimilarItems       => $similar_products_exist );
-        $template->param( AMAZON_SIMILAR_PRODUCTS  => \@similar_products      );
-    }
-    if ( $amazon_reviews ) {
-        my $item = $amazon_details->{Items}->{Item}->[0];
-        my $editorial_reviews = \@{ $item->{EditorialReviews}->{EditorialReview} };
-        #my $customer_reviews  = \@{$amazon_details->{Items}->{Item}->[0]->{CustomerReviews}->{Review}};
-        #my $average_rating = $amazon_details->{Items}->{Item}->[0]->{CustomerReviews}->{AverageRating} || 0;
-        #$template->param( amazon_average_rating    => $average_rating * 20    );
-        #$template->param( AMAZON_CUSTOMER_REVIEWS  => $customer_reviews       );
-        $template->param( AMAZON_EDITORIAL_REVIEWS => $editorial_reviews      );
-    }
 }
 
 if ( C4::Context->preference("LocalCoverImages") == 1 ) {

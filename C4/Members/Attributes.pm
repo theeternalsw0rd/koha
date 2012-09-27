@@ -29,11 +29,12 @@ our ($csv, $AttributeTypes);
 
 BEGIN {
     # set the version for version checking
-    $VERSION = 3.01;
+    $VERSION = 3.07.00.049;
     @ISA = qw(Exporter);
     @EXPORT_OK = qw(GetBorrowerAttributes GetBorrowerAttributeValue CheckUniqueness SetBorrowerAttributes
+                    DeleteBorrowerAttribute UpdateBorrowerAttribute
                     extended_attributes_code_value_arrayref extended_attributes_merge
-					SearchIdMatchingAttribute);
+                    SearchIdMatchingAttribute);
     %EXPORT_TAGS = ( all => \@EXPORT_OK );
 }
 
@@ -72,7 +73,7 @@ sub GetBorrowerAttributes {
     my $opac_only = @_ ? shift : 0;
 
     my $dbh = C4::Context->dbh();
-    my $query = "SELECT code, description, attribute, lib, password, display_checkout
+    my $query = "SELECT code, description, attribute, lib, password, display_checkout, category_code, class
                  FROM borrower_attributes
                  JOIN borrower_attribute_types USING (code)
                  LEFT JOIN authorised_values ON (category = authorised_value_category AND attribute = authorised_value)
@@ -86,13 +87,33 @@ sub GetBorrowerAttributes {
         push @results, {
             code              => $row->{'code'},
             description       => $row->{'description'},
-            value             => $row->{'attribute'},  
-            value_description => $row->{'lib'},  
+            value             => $row->{'attribute'},
+            value_description => $row->{'lib'},
             password          => $row->{'password'},
             display_checkout  => $row->{'display_checkout'},
+            category_code     => $row->{'category_code'},
+            class             => $row->{'class'},
         }
     }
     return \@results;
+}
+
+=head2 GetAttributes
+
+  my $attributes = C4::Members::Attributes::GetAttributes([$opac_only]);
+
+Retrieve an arrayref of extended attribute codes
+
+=cut
+
+sub GetAttributes {
+    my ($opac_only) = @_;
+
+    my $dbh = C4::Context->dbh();
+    my $query = "SELECT code FROM borrower_attribute_types";
+    $query .= "\nWHERE opac_display = 1" if $opac_only;
+    $query .= "\nORDER BY code";
+    return $dbh->selectcol_arrayref($query);
 }
 
 =head2 GetBorrowerAttributeValue
@@ -212,6 +233,50 @@ sub SetBorrowerAttributes {
     }
     return 1; # borower attributes successfully set
 }
+
+=head2 DeleteBorrowerAttribute
+
+  DeleteBorrowerAttribute($borrowernumber, $attribute);
+
+Delete a borrower attribute for the patron identified by C<$borrowernumber> and the attribute code of C<$attribute>
+
+=cut
+sub DeleteBorrowerAttribute {
+    my ( $borrowernumber, $attribute ) = @_;
+
+    my $dbh = C4::Context->dbh;
+    my $sth = $dbh->prepare(qq{
+        DELETE FROM borrower_attributes
+            WHERE borrowernumber = ?
+            AND code = ?
+    } );
+    $sth->execute( $borrowernumber, $attribute->{code} );
+}
+
+=head2 UpdateBorrowerAttribute
+
+  UpdateBorrowerAttribute($borrowernumber, $attribute );
+
+Update a borrower attribute C<$attribute> for the patron identified by C<$borrowernumber>,
+
+=cut
+sub UpdateBorrowerAttribute {
+    my ( $borrowernumber, $attribute ) = @_;
+
+    DeleteBorrowerAttribute $borrowernumber, $attribute;
+
+    my $dbh = C4::Context->dbh;
+    my $query = "INSERT INTO borrower_attributes SET attribute = ?, code = ?, borrowernumber = ?";
+    my @params = ( $attribute->{attribute}, $attribute->{code}, $borrowernumber );
+    if ( defined $attribute->{password} ) {
+        $query .= ", password = ?";
+        push @params, $attribute->{password};
+    }
+    my $sth = $dbh->prepare( $query );
+
+    $sth->execute( @params );
+}
+
 
 =head2 extended_attributes_code_value_arrayref 
 

@@ -16,6 +16,11 @@ Staff Client:
               class: url
             - on all pages in the staff interface, instead of the default. (This should be a complete URL, starting with <code>http://</code>.)
         -
+            - "Use the following JavaScript for printing slips. Define at least function printThenClose(). For use e.g. with Firefox PlugIn jsPrintSetup, see http://jsprintsetup.mozdev.org/:"
+            - pref: IntranetSlipPrinterJS
+              type: textarea
+              class: code
+        -
             - "Include the following CSS on all pages in the staff client:"
             - pref: IntranetUserCSS
               type: textarea
@@ -41,7 +46,7 @@ Staff Client:
               type: textarea
               class: code
         -
-            - "Include the following JavaScript on all pages in the staff clien:"
+            - "Include the following JavaScript on all pages in the staff client:"
             - pref: intranetuserjs
               type: textarea
               class: code
@@ -51,17 +56,15 @@ Staff Client:
               class: url
             - for the Staff Client's favicon. (This should be a complete URL, starting with <code>http://</code>.)
         -
-            - Show biblio records on result page in the staff client
+            - 'Display results in the staff client using XSLT stylesheet at: '
             - pref: XSLTResultsDisplay
-              choices:
-                  yes: using XSLT stylesheets.
-                  no: normally.
+              class: file
+            - '<br />Options:<br />- leave empty for "no xslt"<br />- enter "default" for the default one<br />- put a path to define a xslt file<br />- put an URL for an external specific stylesheet.<br />{langcode} will be replaced with current interface language'
         -
-            - Show item details pages in the staff client
+            - 'Display details in the staff client using XSLT stylesheet at: '
             - pref: XSLTDetailsDisplay
-              choices:
-                  yes: using XSLT stylesheets.
-                  no: normally.
+              class: file
+            - '<br />Options:<br />- leave empty for "no xslt"<br />- enter "default" for the default one<br />- put a path to define a xslt file<br />- put an URL for an external specific stylesheet.<br />{langcode} will be replaced with current interface language'
         -
             - Use the Yahoo UI libraries
             - pref: yuipath
@@ -83,6 +86,11 @@ Staff Client:
                   Results: "Results page (for future use, Results XSLT not functional at this time)."
                   Both: "Both Results and Details pages (for future use, Results XSLT not functional at this time)."
             - 'Note: The corresponding XSLT option must be turned on.'
+        -
+            - Include the stylesheet at
+            - pref: SlipCSS
+              class: url
+            - on Issue and Reserve Slips. (This should be a complete URL, starting with <code>http://</code>.)
     Options:
         -
             - pref: viewMARC

@@ -24,7 +24,7 @@ use UNIVERSAL qw(can);	# make sure this is *after* C4 modules.
 use vars qw(@ISA $VERSION @EXPORT_OK);
 
 BEGIN {
-	$VERSION = 1.01;
+    $VERSION = 3.07.00.049;
 	@ISA = qw(Exporter);
 	@EXPORT_OK = qw(handle);
 }
@@ -293,11 +293,11 @@ sub new {
     if (!exists($handlers{$msgtag})) {
 		syslog("LOG_WARNING", "new Sip::MsgType: Skipping message of unknown type '%s' in '%s'",
 	       $msgtag, $msg);
-		return(undef);
+        return;
     } elsif (!exists($handlers{$msgtag}->{protocol}->{$protocol_version})) {
 		syslog("LOG_WARNING", "new Sip::MsgType: Skipping message '%s' unsupported by protocol rev. '%d'",
 	       $msgtag, $protocol_version);
-		return(undef);
+        return;
     }
 
     bless $self, $class;
@@ -405,7 +405,9 @@ sub handle {
 	}
 	unless ($self->{handler}) {
 		syslog("LOG_WARNING", "No handler defined for '%s'", $msg);
-		return undef;
+        $last_response = REQUEST_SC_RESEND;
+        print("$last_response\r");
+        return REQUEST_ACS_RESEND;
 	}
     return($self->{handler}->($self, $server));  # FIXME
 	# FIXME: Use of uninitialized value in subroutine entry
@@ -610,6 +612,7 @@ sub handle_checkin {
     my ($self, $server) = @_;
     my $account = $server->{account};
     my $ils     = $server->{ils};
+    my $my_branch = $ils->institution;
     my ($current_loc, $inst_id, $item_id, $terminal_pwd, $item_props, $cancel);
     my ($patron, $item, $status);
     my $resp = CHECKIN_RESP;
@@ -621,6 +624,9 @@ sub handle_checkin {
 	$item_id     = $fields->{(FID_ITEM_ID)};
 	$item_props  = $fields->{(FID_ITEM_PROPS)};
 	$cancel      = $fields->{(FID_CANCEL)};
+    if ($current_loc) {
+        $my_branch = $current_loc;# most scm do not set $current_loc
+    }
 
     $ils->check_inst_id($inst_id, "handle_checkin");
 
@@ -629,7 +635,7 @@ sub handle_checkin {
         syslog("LOG_WARNING", "received no-block checkin from terminal '%s'", $account->{id});
         $status = $ils->checkin_no_block($item_id, $trans_date, $return_date, $item_props, $cancel);
     } else {
-        $status = $ils->checkin($item_id, $trans_date, $return_date, $current_loc, $item_props, $cancel);
+        $status = $ils->checkin($item_id, $trans_date, $return_date, $my_branch, $item_props, $cancel);
     }
 
     $patron = $status->patron;
@@ -647,14 +653,7 @@ sub handle_checkin {
     # apparently we can't trust the returns from Checkin yet (because C4::Circulation::AddReturn is faulty)
     # So we reproduce the alert logic here.
     if (not $status->alert) {
-        if ($item->hold_patron_id) {
-            $status->alert(1);
-            if ($item->destination_loc and $item->destination_loc ne $current_loc) {
-                $status->alert_type('02');  # hold at other library
-            } else {
-                $status->alert_type('01');  # hold at this library
-            }
-        } elsif ($item->destination_loc and $item->destination_loc ne $current_loc) {
+        if ($item->destination_loc and $item->destination_loc ne $my_branch) {
             $status->alert(1);
             $status->alert_type('04');  # no hold, just send it
         }
@@ -797,8 +796,8 @@ sub handle_request_acs_resend {
     return REQUEST_ACS_RESEND;
 }
 
-sub login_core ($$$) {
-	my $server = shift or return undef;
+sub login_core  {
+    my $server = shift or return;
 	my $uid = shift;
 	my $pwd = shift;
     my $status = 1;		# Assume it all works
@@ -817,7 +816,7 @@ sub login_core ($$$) {
 		$server->{sip_username} = $uid;
 		$server->{sip_password} = $pwd;
 
-		my $auth_status = api_auth($uid,$pwd);
+        my $auth_status = api_auth($uid,$pwd,$inst);
 		if (!$auth_status or $auth_status !~ /^ok$/i) {
 			syslog("LOG_WARNING", "api_auth failed for SIP terminal '%s' of '%s': %s",
 						$uid, $inst, ($auth_status||'unknown'));
@@ -1347,7 +1346,7 @@ sub handle_renew {
     $patron = $status->patron;
     $item   = $status->item;
 
-    if ($status->ok) {
+    if ($status->renewal_ok) {
 	$resp .= '1';
 	$resp .= $status->renewal_ok ? 'Y' : 'N';
 	if ($ils->supports('magnetic media')) {
@@ -1360,7 +1359,11 @@ sub handle_renew {
 	$resp .= add_field(FID_PATRON_ID, $patron->id);
 	$resp .= add_field(FID_ITEM_ID,  $item->id);
 	$resp .= add_field(FID_TITLE_ID, $item->title_id);
-	$resp .= add_field(FID_DUE_DATE, Sip::timestamp($item->due_date));
+    if ($item->due_date) {
+        $resp .= add_field(FID_DUE_DATE, Sip::timestamp($item->due_date));
+    } else {
+        $resp .= add_field(FID_DUE_DATE, q{});
+    }
 	if ($ils->supports('security inhibit')) {
 	    $resp .= add_field(FID_SECURITY_INHIBIT,
 			       $status->security_inhibit);
@@ -1585,17 +1588,17 @@ sub patron_status_string {
     return $patron_status;
 }
 
-sub api_auth($$) {
-	# AUTH
-	my ($username,$password) = (shift,shift);
-	$ENV{REMOTE_USER} = $username;
-	my $query = CGI->new();
-	$query->param(userid   => $username);
-	$query->param(password => $password);
-	my ($status, $cookie, $sessionID) = check_api_auth($query, {circulate=>1}, "intranet");
-	# print STDERR "check_api_auth returns " . ($status || 'undef') . "\n";
-	# print "api_auth userenv = " . &dump_userenv;
-	return $status;
+sub api_auth {
+    my ($username,$password, $branch) = @_;
+    $ENV{REMOTE_USER} = $username;
+    my $query = CGI->new();
+    $query->param(userid   => $username);
+    $query->param(password => $password);
+    if ($branch) {
+        $query->param(branch => $branch);
+    }
+    my ($status, $cookie, $sessionID) = check_api_auth($query, {circulate=>1}, 'intranet');
+    return $status;
 }
 
 1;

@@ -36,7 +36,7 @@ use Data::Dumper; # used as part of logging item record changes, not just for
 use vars qw($VERSION @ISA @EXPORT);
 
 BEGIN {
-    $VERSION = 3.01;
+    $VERSION = 3.07.00.049;
 
 	require Exporter;
     @ISA = qw( Exporter );
@@ -48,7 +48,7 @@ BEGIN {
         AddItem
         AddItemBatchFromMarc
         ModItemFromMarc
-		Item2Marc
+    Item2Marc
         ModItem
         ModDateLastSeen
         ModItemTransfer
@@ -66,19 +66,23 @@ BEGIN {
         GetItemsInfo
 	GetItemsLocationInfo
 	GetHostItemsInfo
+        GetItemnumbersForBiblio
         get_itemnumbers_of
 	get_hostitemnumbers_of
         GetItemnumberFromBarcode
         GetBarcodeFromItemnumber
         GetHiddenItemnumbers
-		DelItemCheck
-		MoveItemFromBiblio 
-		GetLatestAcquisitions
+        DelItemCheck
+    MoveItemFromBiblio
+    GetLatestAcquisitions
+
         CartToShelf
+        ShelfToCart
 
 	GetAnalyticsCount
         GetItemHolds
 
+        SearchItems
 
         PrepareItemrecordDisplay
 
@@ -188,7 +192,30 @@ sub CartToShelf {
     }
 
     my $item = GetItem($itemnumber);
-    $item->{location} = $item->{permanent_location};
+    if ( $item->{location} eq 'CART' ) {
+        $item->{location} = $item->{permanent_location};
+        ModItem($item, undef, $itemnumber);
+    }
+}
+
+=head2 ShelfToCart
+
+  ShelfToCart($itemnumber);
+
+Set the current shelving location of the item
+to shelving cart ('CART').
+
+=cut
+
+sub ShelfToCart {
+    my ( $itemnumber ) = @_;
+
+    unless ( $itemnumber ) {
+        croak "FAILED ShelfToCart() - no itemnumber supplied";
+    }
+
+    my $item = GetItem($itemnumber);
+    $item->{'location'} = 'CART';
     ModItem($item, undef, $itemnumber);
 }
 
@@ -307,7 +334,7 @@ Sequence number of original item tag in the MARC record.
 Item barcode, provide to assist in the construction of
 useful error messages.
 
-=item error_condition
+=item error_code
 
 Code representing the error condition.  Can be 'duplicate_barcode',
 'invalid_homebranch', or 'invalid_holdingbranch'.
@@ -327,6 +354,9 @@ sub AddItemBatchFromMarc {
     my @errors = ();
     my $dbh = C4::Context->dbh;
 
+    # We modify the record, so lets work on a clone so we don't change the
+    # original.
+    $record = $record->clone();
     # loop through the item tags and start creating items
     my @bad_item_fields = ();
     my ($itemtag, $itemsubfield) = &GetMarcFromKohaField("items.itemnumber",'');
@@ -500,7 +530,7 @@ sub ModItem {
         $item->{'more_subfields_xml'} = _get_unlinked_subfields_xml($unlinked_item_subfields);
     };
 
-    $item->{'itemnumber'} = $itemnumber or return undef;
+    $item->{'itemnumber'} = $itemnumber or return;
 
     $item->{onloan} = undef if $item->{itemlost};
 
@@ -536,6 +566,9 @@ sub ModItemTransfer {
     my ( $itemnumber, $frombranch, $tobranch ) = @_;
 
     my $dbh = C4::Context->dbh;
+
+    # Remove the 'shelving cart' location status if it is being used.
+    CartToShelf( $itemnumber ) if ( C4::Context->preference("ReturnToShelvingCart") );
 
     #new entry in branchtransfers....
     my $sth = $dbh->prepare(
@@ -653,7 +686,7 @@ sub CheckItemPreSave {
 
     # check for valid home branch
     if (exists $item_ref->{'homebranch'} and defined $item_ref->{'homebranch'}) {
-        my $branch_name = GetBranchName($item_ref->{'homebranch'});
+        my $branch_name = C4::Branch::GetBranchName($item_ref->{'homebranch'});
         unless (defined $branch_name) {
             # relies on fact that branches.branchname is a non-NULL column,
             # so GetBranchName returns undef only if branch does not exist
@@ -663,7 +696,7 @@ sub CheckItemPreSave {
 
     # check for valid holding branch
     if (exists $item_ref->{'holdingbranch'} and defined $item_ref->{'holdingbranch'}) {
-        my $branch_name = GetBranchName($item_ref->{'holdingbranch'});
+        my $branch_name = C4::Branch::GetBranchName($item_ref->{'holdingbranch'});
         unless (defined $branch_name) {
             # relies on fact that branches.branchname is a non-NULL column,
             # so GetBranchName returns undef only if branch does not exist
@@ -903,7 +936,8 @@ sub GetLostItems {
     my $dbh     = C4::Context->dbh;
 
     my $query   = "
-        SELECT *
+        SELECT title, author, lib, itemlost, authorised_value, barcode, datelastseen, price, replacementprice, homebranch,
+               itype, itemtype, holdingbranch, location, itemnotes, items.biblionumber as biblionumber
         FROM   items
             LEFT JOIN biblio ON (items.biblionumber = biblio.biblionumber)
             LEFT JOIN biblioitems ON (items.biblionumber = biblioitems.biblionumber)
@@ -1185,14 +1219,17 @@ sub GetItemsInfo {
            items.notforloan as itemnotforloan,
            itemtypes.description,
            itemtypes.notforloan as notforloan_per_itemtype,
-           branchurl
+           holding.branchurl,
+           holding.branchname,
+           holding.opac_info as branch_opac_info
      FROM items
-     LEFT JOIN branches ON items.holdingbranch = branches.branchcode
+     LEFT JOIN branches AS holding ON items.holdingbranch = holding.branchcode
+     LEFT JOIN branches AS home ON items.homebranch=home.branchcode
      LEFT JOIN biblio      ON      biblio.biblionumber     = items.biblionumber
      LEFT JOIN biblioitems ON biblioitems.biblioitemnumber = items.biblioitemnumber
      LEFT JOIN itemtypes   ON   itemtypes.itemtype         = "
      . (C4::Context->preference('item-level_itypes') ? 'items.itype' : 'biblioitems.itemtype');
-    $query .= " WHERE items.biblionumber = ? ORDER BY branches.branchname,items.dateaccessioned desc" ;
+    $query .= " WHERE items.biblionumber = ? ORDER BY home.branchname, items.enumchron, LPAD( items.copynumber, 8, '0' ), items.dateaccessioned DESC" ;
     my $sth = $dbh->prepare($query);
     $sth->execute($biblionumber);
     my $i = 0;
@@ -1239,73 +1276,19 @@ sub GetItemsInfo {
         $data->{'datedue'}        = $datedue;
 
         # get notforloan complete status if applicable
-        my $sthnflstatus = $dbh->prepare(
-            'SELECT authorised_value
-            FROM   marc_subfield_structure
-            WHERE  kohafield="items.notforloan"
-        '
-        );
-
-        $sthnflstatus->execute;
-        my ($authorised_valuecode) = $sthnflstatus->fetchrow;
-        if ($authorised_valuecode) {
-            $sthnflstatus = $dbh->prepare(
-                "SELECT lib FROM authorised_values
-                 WHERE  category=?
-                 AND authorised_value=?"
-            );
-            $sthnflstatus->execute( $authorised_valuecode,
-                $data->{itemnotforloan} );
-            my ($lib) = $sthnflstatus->fetchrow;
-            $data->{notforloanvalue} = $lib;
+        if ( my $code = C4::Koha::GetAuthValCode( 'items.notforloan', $data->{frameworkcode} ) ) {
+            $data->{notforloanvalue} = C4::Koha::GetAuthorisedValueByCode( $code, $data->{itemnotforloan} );
         }
 
         # get restricted status and description if applicable
-        my $restrictedstatus = $dbh->prepare(
-            'SELECT authorised_value
-            FROM   marc_subfield_structure
-            WHERE  kohafield="items.restricted"
-        '
-        );
-
-        $restrictedstatus->execute;
-        ($authorised_valuecode) = $restrictedstatus->fetchrow;
-        if ($authorised_valuecode) {
-            $restrictedstatus = $dbh->prepare(
-                "SELECT lib,lib_opac FROM authorised_values
-                 WHERE  category=?
-                 AND authorised_value=?"
-            );
-            $restrictedstatus->execute( $authorised_valuecode,
-                $data->{restricted} );
-
-            if ( my $rstdata = $restrictedstatus->fetchrow_hashref ) {
-                $data->{restricted} = $rstdata->{'lib'};
-                $data->{restrictedopac} = $rstdata->{'lib_opac'};
-            }
+        if ( my $code = C4::Koha::GetAuthValCode( 'items.restricted', $data->{frameworkcode} ) ) {
+            $data->{restricted}     = C4::Koha::GetKohaAuthorisedValueLib( $code, $data->{restricted} );
+            $data->{restrictedopac} = C4::Koha::GetKohaAuthorisedValueLib( $code, $data->{restricted}, 'opac' );
         }
 
         # my stack procedures
-        my $stackstatus = $dbh->prepare(
-            'SELECT authorised_value
-             FROM   marc_subfield_structure
-             WHERE  kohafield="items.stack"
-        '
-        );
-        $stackstatus->execute;
-
-        ($authorised_valuecode) = $stackstatus->fetchrow;
-        if ($authorised_valuecode) {
-            $stackstatus = $dbh->prepare(
-                "SELECT lib
-                 FROM   authorised_values
-                 WHERE  category=?
-                 AND    authorised_value=?
-            "
-            );
-            $stackstatus->execute( $authorised_valuecode, $data->{stack} );
-            my ($lib) = $stackstatus->fetchrow;
-            $data->{stack} = $lib;
+        if ( my $code = C4::Koha::GetAuthValCode( 'items.stack', $data->{frameworkcode} ) ) {
+            $data->{stack}          = C4::Koha::GetKohaAuthorisedValueLib( $code, $data->{stack} );
         }
         # Find the last 3 people who borrowed this item.
         my $sth2 = $dbh->prepare("SELECT * FROM old_issues,borrowers
@@ -1487,6 +1470,26 @@ sub  GetLastAcquisitions {
 	}
 	
 	return @results;
+}
+
+=head2 GetItemnumbersForBiblio
+
+  my $itemnumbers = GetItemnumbersForBiblio($biblionumber);
+
+Given a single biblionumber, return an arrayref of all the corresponding itemnumbers
+
+=cut
+
+sub GetItemnumbersForBiblio {
+    my $biblionumber = shift;
+    my @items;
+    my $dbh = C4::Context->dbh;
+    my $sth = $dbh->prepare("SELECT itemnumber FROM items WHERE biblionumber = ?");
+    $sth->execute($biblionumber);
+    while (my $result = $sth->fetchrow_hashref) {
+        push @items, $result->{'itemnumber'};
+    }
+    return \@items;
 }
 
 =head2 get_itemnumbers_of
@@ -2290,7 +2293,7 @@ sub _koha_delete_item {
     # delete from items table
     $sth = $dbh->prepare("DELETE FROM items WHERE itemnumber=?");
     $sth->execute($itemnum);
-    return undef;
+    return;
 }
 
 =head2 _marc_from_item_hash
@@ -2452,6 +2455,7 @@ counts Usage of itemnumber in Analytical bibliorecords.
 
 sub GetAnalyticsCount {
     my ($itemnumber) = @_;
+    require C4::Search;
     if (C4::Context->preference('NoZebra')) {
         # Read the index Koha-Auth-Number for this authid and count the lines
         my $result = C4::Search::NZanalyse("hi=$itemnumber");
@@ -2489,6 +2493,43 @@ sub GetItemHolds {
     $holds = $sth->fetchrow;
     return $holds;
 }
+
+# Return the list of the column names of items table
+sub _get_items_columns {
+    my $dbh = C4::Context->dbh;
+    my $sth = $dbh->column_info(undef, undef, 'items', '%');
+    $sth->execute;
+    my $results = $sth->fetchall_hashref('COLUMN_NAME');
+    return keys %$results;
+}
+
+=head2 SearchItems
+
+    my $items = SearchItems($field, $value);
+
+SearchItems will search for items on a specific given field.
+For instance you can search all items with a specific stocknumber like this:
+
+    my $items = SearchItems('stocknumber', $stocknumber);
+
+=cut
+
+sub SearchItems {
+    my ($field, $value) = @_;
+
+    my $dbh = C4::Context->dbh;
+    my @columns = _get_items_columns;
+    my $results = [];
+    if(0 < grep /^$field$/, @columns) {
+        my $query = "SELECT $field FROM items WHERE $field = ?";
+        my $sth = $dbh->prepare( $query );
+        $sth->execute( $value );
+        $results = $sth->fetchall_arrayref({});
+    }
+    return $results;
+}
+
+
 =head1  OTHER FUNCTIONS
 
 =head2 _find_value
@@ -2572,6 +2613,7 @@ sub PrepareItemrecordDisplay {
                 $subfield_data{subfield}      = $subfield;
                 $subfield_data{countsubfield} = $cntsubf++;
                 $subfield_data{kohafield}     = $tagslib->{$tag}->{$subfield}->{'kohafield'};
+                $subfield_data{id}            = "tag_".$tag."_subfield_".$subfield."_".int(rand(1000000));
 
                 #        $subfield_data{marc_lib}=$tagslib->{$tag}->{$subfield}->{lib};
                 $subfield_data{marc_lib}   = $tagslib->{$tag}->{$subfield}->{lib};
@@ -2626,7 +2668,10 @@ sub PrepareItemrecordDisplay {
                 if (   ( $tagslib->{$tag}->{$subfield}->{kohafield} eq 'items.location' )
                     && $defaultvalues
                     && $defaultvalues->{'location'} ) {
-                    my $temp = $itemrecord->field($subfield) if ($itemrecord);
+
+                    my $temp; # make perlcritic happy :)
+                    $temp = $itemrecord->field($subfield) if ($itemrecord);
+
                     unless ($temp) {
                         $defaultvalue = $defaultvalues->{location} if $defaultvalues;
                     }
@@ -2710,8 +2755,6 @@ sub PrepareItemrecordDisplay {
                             my $extended_param = plugin_parameters( $dbh, $temp, $tagslib, $subfield_data{id}, undef );
                             my ( $function_name, $javascript ) = plugin_javascript( $dbh, $temp, $tagslib, $subfield_data{id}, undef );
                             $subfield_data{random}     = int(rand(1000000));    # why do we need 2 different randoms?
-                            my $index_subfield = int(rand(1000000));
-                            $subfield_data{id} = "tag_".$tag."_subfield_".$subfield."_".$index_subfield;
                             $subfield_data{marc_value} = qq[<input tabindex="1" id="$subfield_data{id}" name="field_value" class="input_marceditor" size="67" maxlength="255"
                                 onfocus="Focus$function_name($subfield_data{random}, '$subfield_data{id}');"
                                  onblur=" Blur$function_name($subfield_data{random}, '$subfield_data{id}');" />

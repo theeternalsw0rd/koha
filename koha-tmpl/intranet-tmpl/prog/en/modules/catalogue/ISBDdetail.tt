@@ -3,12 +3,12 @@
   [% IF ( unknownbiblionumber ) %]
     Unknown record
   [% ELSE %]
-    ISBD Details for [% title %]
+    ISBD details for [% title %]
   [% END %]
 </title>
 [% INCLUDE 'doc-head-close.inc' %]
 </head>
-<body>
+<body id="catalog_ISBDdetail" class="catalog">
 
 [% INCLUDE 'header.inc' %]
 [% INCLUDE 'cat-search.inc' %]
@@ -17,7 +17,7 @@
   [% IF ( unknownbiblionumber ) %]
     Unknown record
   [% ELSE %]
-    ISBD Details for <i>[% biblionumber %]</i>
+    ISBD details for <i>[% biblionumber %]</i>
   [% END %]
 </div>
 

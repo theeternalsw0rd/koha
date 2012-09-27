@@ -1,7 +1,7 @@
 package C4::Patroncards;
 
 BEGIN {
-    use version; our $VERSION = qv('1.0.0_1');
+    use version; our $VERSION = qv('3.07.00.049');
     use vars qw(@EXPORT @ISA);
     @ISA = qw(Exporter);
     our @EXPORT = qw(unpack_UTF8
@@ -13,12 +13,12 @@ BEGIN {
                      get_image
                      rm_image
     );
-    use C4::Patroncards::Batch 1.000000;
-    use C4::Patroncards::Layout 1.000000;
-    use C4::Patroncards::Lib 1.000000;
-    use C4::Patroncards::Patroncard 1.000000;
-    use C4::Patroncards::Profile 1.000000;
-    use C4::Patroncards::Template 1.000000;
+    use C4::Patroncards::Batch;
+    use C4::Patroncards::Layout;
+    use C4::Patroncards::Lib;
+    use C4::Patroncards::Patroncard;
+    use C4::Patroncards::Profile;
+    use C4::Patroncards::Template;
 }
 
 1;

@@ -143,6 +143,10 @@ Default items.content lists only those items that fall in the
 range of the currently processing notice.
 Choose list-all to include all overdue items in the list (limited by B<-max> setting).
 
+=item B<-date>
+
+use it in order to send overdues on a specific date and not Now.
+
 =back
 
 =head1 DESCRIPTION
@@ -259,6 +263,7 @@ my $listall = 0;
 my $itemscontent = join( ',', qw( date_due title barcode author itemnumber ) );
 my @myborcat;
 my @myborcatout;
+my $date;
 
 GetOptions(
     'help|?'         => \$help,
@@ -268,12 +273,13 @@ GetOptions(
     'max=s'          => \$MAX,
     'library=s'      => \@branchcodes,
     'csv:s'          => \$csvfilename,    # this optional argument gets '' if not supplied.
-    'html:s'          => \$htmlfilename,    # this optional argument gets '' if not supplied.
+    'html:s'         => \$htmlfilename,    # this optional argument gets '' if not supplied.
     'itemscontent=s' => \$itemscontent,
-    'list-all'      => \$listall,
-    't|triggered'             => \$triggered,
-    'borcat=s'      => \@myborcat,
-    'borcatout=s'   => \@myborcatout,
+    'list-all'       => \$listall,
+    't|triggered'    => \$triggered,
+    'date'           => \$date,
+    'borcat=s'       => \@myborcat,
+    'borcatout=s'    => \@myborcatout,
 ) or pod2usage(2);
 pod2usage(1) if $help;
 pod2usage( -verbose => 2 ) if $man;
@@ -320,10 +326,17 @@ if (@branchcodes) {
     }
 }
 
+if ($date){
+    $date=$dbh->quote($date);
+}
+else {
+    $date="NOW()";
+}
+
 # these are the fields that will be substituted into <<item.content>>
 my @item_content_fields = split( /,/, $itemscontent );
 
-binmode STDOUT, ':encoding(UTF-8)';
+binmode( STDOUT, ':encoding(UTF-8)' );
 
 
 our $csv;       # the Text::CSV_XS object
@@ -350,8 +363,8 @@ if ( defined $htmlfilename ) {
   if ( $htmlfilename eq '' ) {
     $html_fh = *STDOUT;
   } else {
-    my $today = C4::Dates->new();
-    open $html_fh, ">",File::Spec->catdir ($htmlfilename,"notices-".$today->output('iso').".html");
+    my $today = DateTime->now(time_zone => C4::Context->tz );
+    open $html_fh, ">",File::Spec->catdir ($htmlfilename,"notices-".$today->ymd().".html");
   }
   
   print $html_fh "<html>\n";
@@ -375,14 +388,14 @@ foreach my $branchcode (@branches) {
 
     $verbose and warn sprintf "branchcode : '%s' using %s\n", $branchcode, $admin_email_address;
 
-    my $sth2 = $dbh->prepare( <<'END_SQL' );
-SELECT biblio.*, items.*, issues.*, biblioitems.itemtype, TO_DAYS(NOW())-TO_DAYS(date_due) AS days_overdue
+    my $sth2 = $dbh->prepare( <<"END_SQL" );
+SELECT biblio.*, items.*, issues.*, biblioitems.itemtype, TO_DAYS($date)-TO_DAYS(date_due) AS days_overdue
   FROM issues,items,biblio, biblioitems
   WHERE items.itemnumber=issues.itemnumber
     AND biblio.biblionumber   = items.biblionumber
     AND biblio.biblionumber   = biblioitems.biblionumber
     AND issues.borrowernumber = ?
-    AND TO_DAYS(NOW())-TO_DAYS(date_due) BETWEEN ? and ?
+    AND TO_DAYS($date)-TO_DAYS(date_due) BETWEEN ? and ?
 END_SQL
 
     my $query = "SELECT * FROM overduerules WHERE delay1 IS NOT NULL AND branchcode = ? ";
@@ -419,6 +432,12 @@ END_SQL
                 next PERIOD;
             }
 
+            my $letter_template = C4::Letters::GetLetter (
+                module => 'circulation',
+                letter_code => $overdue_rules->{"letter$i"},
+                branchcode => $branchcode
+            );
+
             # $letter->{'content'} is the text of the mail that is sent.
             # this text contains fields that are replaced by their value. Those fields must be written between brackets
             # The following fields are available :
@@ -442,10 +461,10 @@ END_SQL
             }
             $borrower_sql .= '  AND categories.overduenoticerequired=1 ';
             if($triggered) {
-                $borrower_sql .= ' AND TO_DAYS(NOW())-TO_DAYS(date_due) = ?';
+                $borrower_sql .= " AND TO_DAYS($date)-TO_DAYS(date_due) = ?";
                 push @borrower_parameters, $mindays;
             } else {
-                $borrower_sql .= ' AND TO_DAYS(NOW())-TO_DAYS(date_due) BETWEEN ? and ? ' ;
+                $borrower_sql .= " AND TO_DAYS($date)-TO_DAYS(date_due) BETWEEN ? and ? " ;
                 push @borrower_parameters, $mindays, $maxdays;
             }
 
@@ -460,16 +479,6 @@ END_SQL
             {
                 $verbose and warn "borrower $firstname, $lastname ($borrowernumber) has items triggering level $i.";
     
-                my $letter = C4::Letters::getletter( 'circulation', $overdue_rules->{"letter$i"} );
-
-                unless ($letter) {
-                    $verbose and warn "Message '$overdue_rules->{letter$i}' content not found";
-    
-                    # might as well skip while PERIOD, no other borrowers are going to work.
-                    # FIXME : Does this mean a letter must be defined in order to trigger a debar ?
-                    next PERIOD;
-                }
-    
                 if ( $overdue_rules->{"debarred$i"} ) {
     
                     #action taken is debarring
@@ -483,22 +492,24 @@ END_SQL
                 my $titles = "";
                 my @items = ();
                 
-                my $i = 0;
+                my $j = 0;
                 my $exceededPrintNoticesMaxLines = 0;
                 while ( my $item_info = $sth2->fetchrow_hashref() ) {
-                    if ( ( !$email || $nomail ) && $PrintNoticesMaxLines && $i >= $PrintNoticesMaxLines ) {
+                    if ( ( !$email || $nomail ) && $PrintNoticesMaxLines && $j >= $PrintNoticesMaxLines ) {
                       $exceededPrintNoticesMaxLines = 1;
                       last;
                     }
-                    $i++;
+                    $j++;
                     my @item_info = map { $_ =~ /^date|date$/ ? format_date( $item_info->{$_} ) : $item_info->{$_} || '' } @item_content_fields;
                     $titles .= join("\t", @item_info) . "\n";
                     $itemcount++;
-                    push @items, { itemnumber => $item_info->{'itemnumber'}, biblionumber => $item_info->{'biblionumber'} };
+                    push @items, $item_info;
                 }
                 $sth2->finish;
-                $letter = parse_letter(
-                    {   letter          => $letter,
+
+                my $letter = parse_letter(
+                    {   letter_code     => $overdue_rules->{"letter$i"},
+                        letter          => $letter_template,
                         borrowernumber  => $borrowernumber,
                         branchcode      => $branchcode,
                         items           => \@items,
@@ -509,6 +520,13 @@ END_SQL
                                            }
                     }
                 );
+                unless ($letter) {
+                    $verbose and warn "Message '$overdue_rules->{letter$i}' content not found";
+
+                    # might as well skip while PERIOD, no other borrowers are going to work.
+                    # FIXME : Does this mean a letter must be defined in order to trigger a debar ?
+                    next PERIOD;
+                }
                 
                 if ( $exceededPrintNoticesMaxLines ) {
                   $letter->{'content'} .= "List too long for form; please check your account online for a complete list of your overdue items.";
@@ -591,11 +609,12 @@ END_SQL
             
         my $attachment = {
             filename => defined $csvfilename ? 'attachment.csv' : 'attachment.txt',
-            type => 'text/plain',
+            type => 'text/plain; charset="utf-8"',
             content => $content, 
         };
 
         my $letter = {
+            'content-type' => 'text/plain; charset="utf-8"',
             title   => 'Overdue Notices',
             content => 'These messages were not sent directly to the patrons.',
         };
@@ -643,54 +662,57 @@ substituted keys and values.
 
 =cut
 
-sub parse_letter { # FIXME: this code should probably be moved to C4::Letters:parseletter
+sub parse_letter {
     my $params = shift;
-    foreach my $required (qw( letter borrowernumber )) {
-        return unless exists $params->{$required};
+    foreach my $required (qw( letter_code borrowernumber )) {
+        return unless ( exists $params->{$required} && $params->{$required} );
     }
 
-   my $todaysdate = C4::Dates->new()->output("syspref");
-   $params->{'letter'}->{title}   =~ s/<<today>>/$todaysdate/g;
-   $params->{'letter'}->{content} =~ s/<<today>>/$todaysdate/g;
+    my $substitute = $params->{'substitute'} || {};
+    $substitute->{today} ||= C4::Dates->new()->output("syspref");
 
-    if ( $params->{'substitute'} ) {
-        while ( my ( $key, $replacedby ) = each %{ $params->{'substitute'} } ) {
-            my $replacefield = "<<$key>>";
-            $params->{'letter'}->{title}   =~ s/$replacefield/$replacedby/g;
-            $params->{'letter'}->{content} =~ s/$replacefield/$replacedby/g;
-        }
+    my %tables = ( 'borrowers' => $params->{'borrowernumber'} );
+    if ( my $p = $params->{'branchcode'} ) {
+        $tables{'branches'} = $p;
     }
 
-    $params->{'letter'} = C4::Letters::parseletter( $params->{'letter'}, 'borrowers', $params->{'borrowernumber'} );
-
-    if ( $params->{'branchcode'} ) {
-        $params->{'letter'} = C4::Letters::parseletter( $params->{'letter'}, 'branches', $params->{'branchcode'} );
+    my $currency_format;
+    if ($params->{'letter'}->{'content'} =~ m/<fine>(.*)<\/fine>/o) { # process any fine tags...
+        $currency_format = $1;
+        $params->{'letter'}->{'content'} =~ s/<fine>.*<\/fine>/<<items.fine>>/o;
     }
 
-    if ( $params->{'items'} ) {
+    my @item_tables;
+    if ( my $i = $params->{'items'} ) {
         my $item_format = '';
-        PROCESS_ITEMS:
-        while (scalar(@{$params->{'items'}}) > 0) {
-            my $item = shift @{$params->{'items'}};
+        foreach my $item (@$i) {
             my $fine = GetFine($item->{'itemnumber'}, $params->{'borrowernumber'});
             if (!$item_format) {
                 $params->{'letter'}->{'content'} =~ m/(<item>.*<\/item>)/;
                 $item_format = $1;
             }
-            if ($params->{'letter'}->{'content'} =~ m/<fine>(.*)<\/fine>/) { # process any fine tags...
-                my $formatted_fine = currency_format("$1", "$fine", FMT_SYMBOL);
-                $params->{'letter'}->{'content'} =~ s/<fine>.*<\/fine>/$formatted_fine/;
-            }
-            $params->{'letter'} = C4::Letters::parseletter( $params->{'letter'}, 'biblio',      $item->{'biblionumber'} );
-            $params->{'letter'} = C4::Letters::parseletter( $params->{'letter'}, 'biblioitems', $item->{'biblionumber'} );
-            $params->{'letter'} = C4::Letters::parseletter( $params->{'letter'}, 'items', $item->{'itemnumber'} );
-            $params->{'letter'} = C4::Letters::parseletter( $params->{'letter'}, 'issues', $item->{'itemnumber'} );
-            $params->{'letter'}->{'content'} =~ s/(<item>.*<\/item>)/$1\n$item_format/ if scalar(@{$params->{'items'}} > 0);
 
+            $item->{'fine'} = currency_format($currency_format, "$fine", FMT_SYMBOL)
+              if $currency_format;
+
+            push @item_tables, {
+                'biblio' => $item->{'biblionumber'},
+                'biblioitems' => $item->{'biblionumber'},
+                'items' => $item,
+                'issues' => $item->{'itemnumber'},
+            };
         }
     }
-    $params->{'letter'}->{'content'} =~ s/<\/{0,1}?item>//g; # strip all remaining item tags...
-    return $params->{'letter'};
+
+    return C4::Letters::GetProcessedLetter (
+        module => 'circulation',
+        letter_code => $params->{'letter_code'},
+        letter => $params->{'letter'},
+        branchcode => $params->{'branchcode'},
+        tables => \%tables,
+        substitute => $substitute,
+        repeat => { item => \@item_tables }
+    );
 }
 
 =head2 prepare_letter_for_printing

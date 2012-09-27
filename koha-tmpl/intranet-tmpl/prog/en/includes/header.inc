@@ -3,20 +3,20 @@
     <div id="header" class="clearfix">
         <div id="toplevelnav">
             <ul id="toplevelmenu">
-                [% IF ( CAN_user_circulate ) %]<li><a href="/cgi-bin/koha/circ/circulation-home.pl">Circulation</a></li>[% END %]
-                [% IF ( CAN_user_borrowers ) %]<li><a href="/cgi-bin/koha/members/members-home.pl">Patrons</a></li>[% END %]
-                [% IF ( CAN_user_catalogue ) %]<li><a href="/cgi-bin/koha/catalogue/search.pl">Search</a></li>[% END %]
+                [% IF ( CAN_user_circulate ) %]<li><a class="toplinks" href="/cgi-bin/koha/circ/circulation-home.pl">Circulation</a></li>[% END %]
+                [% IF ( CAN_user_borrowers ) %]<li><a class="toplinks" href="/cgi-bin/koha/members/members-home.pl">Patrons</a></li>[% END %]
+                [% IF ( CAN_user_catalogue ) %]<li><a class="toplinks" href="/cgi-bin/koha/catalogue/search.pl">Search</a></li>[% END %]
                 [% IF ( intranetbookbag ) %]
-                    <li><a href="#" id="cartmenulink">Cart<span id="basketcount"></span></a></li>
+                    <li><a class="toplinks" href="#" id="cartmenulink">Cart<span id="basketcount"></span></a></li>
                 [% END %]
                 [% IntranetNav %]
                 <li class="more">
-                    <a id="showmore" href="/cgi-bin/koha/mainpage.pl">More</a>
+                    <a class="toplinks" id="showmore" href="/cgi-bin/koha/mainpage.pl">More</a>
                     <div id="moremenu">
                         <div class="bd">
                             <ul>
                             <li><a href="/cgi-bin/koha/virtualshelves/shelves.pl">Lists</a></li>
-                            [% IF ( CAN_user_editcatalogue_edit_catalogue ) %]
+                            [% IF ( CAN_user_editcatalogue_edit_catalogue || CAN_user_editcatalogue_edit_items ) %]
                             <li><a href="/cgi-bin/koha/cataloguing/addbooks.pl">Cataloging</a></li>
                             [% END %]
                             [% IF ( CAN_user_acquisition ) %]
@@ -44,19 +44,25 @@
                 </li>
             </ul>
         </div>
-    <div id="login">
+    <div id="login_controls">
         [% IF ( AutoLocation ) %]
             <strong>
             [% LoginBranchname %]
             </strong>
         [% ELSE %]
-            <strong>[% LoginBranchname %]</strong>
+            <strong>
+            [% IF ( LoginBranchname == 'NO_LIBRARY_SET' ) %]
+                NO LIBRARY SET
+            [% ELSE %]
+                [% LoginBranchname %]
+            [% END %]
+            </strong>
             [% IF ( IndependantBranches ) %]
                 [% IF ( CAN_user_management || CAN_user_editcatalogue_edit_catalogue ) %]
-                    (<a href="/cgi-bin/koha/circ/selectbranchprinter.pl">Set library</a>)
+                    ( <a class="toplinks" href="/cgi-bin/koha/circ/selectbranchprinter.pl">Set library</a> )
                 [% END %]
             [% ELSE %]
-                (<a href="/cgi-bin/koha/circ/selectbranchprinter.pl">Set library</a>)
+                ( <a class="toplinks" href="/cgi-bin/koha/circ/selectbranchprinter.pl">Set library</a> )
             [% END %]
         |
         [% END %]
@@ -65,13 +71,13 @@
                 [% loggedinusername %]
             </span>
             [% IF ( intranetbookbag ) %]
-            (<a href="/cgi-bin/koha/mainpage.pl?logout.x=1" onclick="clearHoldFor(); delBasket('main', true);">Log Out</a>) |
+            ( <a class="toplinks" href="/cgi-bin/koha/mainpage.pl?logout.x=1" onclick="clearHoldFor(); delBasket('main', true);">Log out</a> ) |
             [% ELSE %]
-            (<a href="/cgi-bin/koha/mainpage.pl?logout.x=1" onclick="clearHoldFor();">Log Out</a>) |
+            ( <a class="toplinks" href="/cgi-bin/koha/mainpage.pl?logout.x=1" onclick="clearHoldFor();">Log out</a> ) |
             [% END %]
         [% ELSE %]
             You are not logged in |
         [% END %]
-        <a href="/cgi-bin/koha/help.pl" id="helper" onclick="var link=window.open('','Koha_Help','width=600,height=600,toolbar=false,scrollbars=yes'); link.location='/cgi-bin/koha/help.pl'; return false;">[ ? ]</a>
+        <a class="toplinks" href="/cgi-bin/koha/help.pl" id="helper" onclick="var link=window.open('','Koha_Help','width=600,height=600,toolbar=false,scrollbars=yes'); link.location='/cgi-bin/koha/help.pl'; return false;">[ ? ]</a>
     </div>
 </div>	

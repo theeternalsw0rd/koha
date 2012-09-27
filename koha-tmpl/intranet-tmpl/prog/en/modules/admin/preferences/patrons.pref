@@ -20,6 +20,7 @@ Patrons:
                email: home
                emailpro: work
                B_email: alternate
+               cardnumber: cardnumber as
                "OFF": first valid
          - "patron email address for sending out emails."
      -
@@ -73,10 +74,11 @@ Patrons:
                no: "Don't allow"
          - "staff to access a patron's checkout history (it is stored regardless)."
      -
-         - The late fine for a specific checkout will only go up to
+         - The late fine for all checkouts will only go up to
          - pref: MaxFine
            class: currency
          - '[% local_currency %].'
+         - Empty value means no limit. Single item caps are specified in the circulation rules matrix.
      -
          - pref: memberofinstitution
            choices:
@@ -120,3 +122,20 @@ Patrons:
            choices:
                now: current date.
                dateexpiry: current membership expiry date.
+     -
+         - pref: TalkingTechItivaPhoneNotification
+           choices:
+               yes: Enable
+               no: Disable
+         - patron phone notifications using Talking Tech i-tiva (overdues, predues and holds notices currently supported).
+     -
+         - "Show the following fields from the items database table as columns on the statistics tab on the patron record: "
+         - pref: StatisticsFields
+           class: multi
+         - (separate fields with |)
+     -
+         - pref: EnableBorrowerFiles
+           choices:
+               yes: Do
+               no: "Don't"
+         - enable the ability to upload and attach arbitrary files to a borrower record.

@@ -22,7 +22,10 @@ use warnings;
 no warnings 'redefine'; # otherwise loading up multiple plugins fills the log with subroutine redefine warnings
 
 use C4::Context;
+require C4::Barcodes::ValueBuilder;
 require C4::Dates;
+
+use Algorithm::CheckDigits;
 
 my $DEBUG = 0;
 
@@ -55,14 +58,14 @@ the 3 scripts are inserted after the <input> in the html code
 sub plugin_javascript {
 	my ($dbh,$record,$tagslib,$field_number,$tabloop) = @_;
 	my $function_name= "barcode".(int(rand(100000))+1);
+    my %args;
 
 	# find today's date
-	my ($year, $mon, $day) = split('-', C4::Dates->today('iso'));
-	my ($tag,$subfield)       =  GetMarcFromKohaField("items.barcode", '');
-	my ($loctag,$locsubfield) =  GetMarcFromKohaField("items.homebranch", '');
+    ($args{year}, $args{mon}, $args{day}) = split('-', C4::Dates->today('iso'));
+    ($args{tag},$args{subfield})       =  GetMarcFromKohaField("items.barcode", '');
+    ($args{loctag},$args{locsubfield}) =  GetMarcFromKohaField("items.homebranch", '');
 
 	my $nextnum;
-	my $query;
     my $scr;
 	my $autoBarcodeType = C4::Context->preference("autoBarcode");
     warn "Barcode type = $autoBarcodeType" if $DEBUG;
@@ -77,51 +80,34 @@ sub plugin_javascript {
         </script>");
     }
 	if ($autoBarcodeType eq 'annual') {
-		$query = "select max(cast( substring_index(barcode, '-',-1) as signed)) from items where barcode like ?";
-		my $sth=$dbh->prepare($query);
-		$sth->execute("$year%");
-		while (my ($count)= $sth->fetchrow_array) {
-            warn "Examining Record: $count" if $DEBUG;
-    		$nextnum = $count if $count;
-		}
-		$nextnum++;
-		$nextnum = sprintf("%0*d", "4",$nextnum);
-		$nextnum = "$year-$nextnum";
+        ($nextnum, $scr) = C4::Barcodes::ValueBuilder::annual::get_barcode(\%args);
 	}
 	elsif ($autoBarcodeType eq 'incremental') {
-		# not the best, two catalogers could add the same barcode easily this way :/
-		$query = "select max(abs(barcode)) from items";
-        my $sth = $dbh->prepare($query);
-		$sth->execute();
-		while (my ($count)= $sth->fetchrow_array) {
-			$nextnum = $count;
-		}
-		$nextnum++;
+        ($nextnum, $scr) = C4::Barcodes::ValueBuilder::incremental::get_barcode(\%args);
     }
     elsif ($autoBarcodeType eq 'hbyymmincr') {      # Generates a barcode where hb = home branch Code, yymm = year/month catalogued, incr = incremental number, reset yearly -fbcit
-        $year = substr($year, -2);
-        $query = "SELECT MAX(CAST(SUBSTRING(barcode,-4) AS signed)) AS number FROM items WHERE barcode REGEXP ?";
+        ($nextnum, $scr) = C4::Barcodes::ValueBuilder::hbyymmincr::get_barcode(\%args);
+    }
+    elsif ($autoBarcodeType eq 'EAN13') {
+        # not the best, two catalogers could add the same barcode easily this way :/
+        my $query = "select max(abs(barcode)) from items";
         my $sth = $dbh->prepare($query);
-        $sth->execute("^[-a-zA-Z]{1,}$year");
-        while (my ($count)= $sth->fetchrow_array) {
-            $nextnum = $count if $count;
-            $nextnum = 0 if $nextnum == 9999; # this sequence only allows for cataloging 10000 books per month
-            warn "Existing incremental number = $nextnum" if $DEBUG;
+        $sth->execute();
+        while (my ($last)= $sth->fetchrow_array) {
+            $nextnum = $last;
         }
-        $nextnum++;
-        $nextnum = sprintf("%0*d", "4",$nextnum);
-        $nextnum = $year . $mon . $nextnum;
-        warn "New hbyymmincr Barcode = $nextnum" if $DEBUG;
-        $scr = " 
-        for (i=0 ; i<document.f.field_value.length ; i++) {
-            if (document.f.tag[i].value == '$loctag' && document.f.subfield[i].value == '$locsubfield') {
-                fnum = i;
-            }
+        my $ean = CheckDigits('ean');
+        if ( $ean->is_valid($nextnum) ) {
+            my $next = $ean->basenumber( $nextnum ) + 1;
+            $nextnum = $ean->complete( $next );
+            $nextnum = '0' x ( 13 - length($nextnum) ) . $nextnum; # pad zeros
+        } else {
+            warn "ERROR: invalid EAN-13 $nextnum, using increment";
+            $nextnum++;
         }
-        if (\$('#' + id).val() == '' || force) {
-            \$('#' + id).val(document.f.field_value[fnum].value + '$nextnum');
-        }
-        ";
+    }
+    else {
+        warn "ERROR: unknown autoBarcode: $autoBarcodeType";
     }
 
     # default js body (if not filled by hbyymmincr)

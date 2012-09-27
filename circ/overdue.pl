@@ -28,8 +28,9 @@ use C4::Auth;
 use C4::Branch;
 use C4::Debug;
 use C4::Dates qw/format_date format_date_in_iso/;
-use Date::Calc qw/Today/;
 use Text::CSV_XS;
+use Koha::DateUtils;
+use DateTime;
 
 my $input = new CGI;
 my $order           = $input->param('order') || '';
@@ -42,6 +43,14 @@ my $branchfilter    = $input->param('branch') || '';
 my $op              = $input->param('op') || '';
 my $dateduefrom = format_date_in_iso($input->param( 'dateduefrom' )) || '';
 my $datedueto   = format_date_in_iso($input->param( 'datedueto' )) || '';
+# FIXME This is a kludge to include times
+if ($datedueto) {
+    $datedueto .= ' 23:59';
+}
+if ($dateduefrom) {
+    $dateduefrom .= ' 00:00';
+}
+# kludge end
 my $isfiltered      = $op =~ /apply/i && $op =~ /filter/i;
 my $noreport        = C4::Context->preference('FilterBeforeOverdueReport') && ! $isfiltered && $op ne "csv";
 
@@ -229,7 +238,9 @@ if ($noreport) {
     #  FIX 2: ensure there are indexes for columns participating in the WHERE clauses, where feasible/reasonable
 
 
-    my $todaysdate = sprintf("%-04.4d-%-02.2d-%02.2d", Today());
+    my $today_dt = DateTime->now(time_zone => C4::Context->tz);
+    $today_dt->truncate(to => 'minute');
+    my $todaysdate = $today_dt->strftime('%Y-%m-%d %H:%M');
 
     $bornamefilter =~s/\*/\%/g;
     $bornamefilter =~s/\?/\_/g;
@@ -256,7 +267,8 @@ if ($noreport) {
         biblio.biblionumber,
         borrowers.branchcode,
         items.itemcallnumber,
-        items.replacementprice
+        items.replacementprice,
+        items.enumchron
       FROM issues
     LEFT JOIN borrowers   ON (issues.borrowernumber=borrowers.borrowernumber )
     LEFT JOIN items       ON (issues.itemnumber=items.itemnumber)
@@ -317,9 +329,10 @@ if ($noreport) {
             my @displayvalues = map { $_->[1] } @{ $pattrs->{$pattr_filter->{code}} };   # grab second value from each subarray
             push @patron_attr_value_loop, { value => join(', ', sort { lc $a cmp lc $b } @displayvalues) };
         }
+        my $dt = dt_from_string($data->{date_due}, 'sql');
 
         push @overduedata, {
-            duedate                => format_date($data->{date_due}),
+            duedate                => output_pref($dt),
             borrowernumber         => $data->{borrowernumber},
             barcode                => $data->{barcode},
             itemnum                => $data->{itemnumber},
@@ -342,6 +355,7 @@ if ($noreport) {
             branchcode             => $data->{branchcode},
             itemcallnumber         => $data->{itemcallnumber},
             replacementprice       => $data->{replacementprice},
+            enumchron              => $data->{enumchron},
             patron_attr_value_loop => \@patron_attr_value_loop,
         };
     }
@@ -387,7 +401,7 @@ if ($noreport) {
 
     $template->param(
         csv_param_string        => $csv_param_string,
-        todaysdate              => format_date($todaysdate),
+        todaysdate              => output_pref($today_dt),
         overdueloop             => \@overduedata,
         nnoverdue               => scalar(@overduedata),
         noverdue_is_plural      => scalar(@overduedata) != 1,
@@ -411,7 +425,7 @@ sub build_csv {
     my @lines = ();
 
     # build header ...
-    my @keys = qw /duedate title author borrowertitle name phone barcode email address address2 zipcode city country
+    my @keys = qw /duedate title author borrowertitle firstname surname phone barcode email address address2 zipcode city country
                 branchcode itemcallnumber biblionumber borrowernumber itemnum issuedate replacementprice streetnumber streettype/;
     my $csv = Text::CSV_XS->new();
     $csv->combine(@keys);

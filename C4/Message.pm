@@ -1,4 +1,24 @@
 package C4::Message;
+
+# Copyright Liblime 2009
+# Copyright Catalyst IT 2012
+#
+# This file is part of Koha.
+#
+# Koha is free software; you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or (at your option) any later
+# version.
+#
+# Koha is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with Koha; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+
 use strict;
 use warnings;
 use C4::Context;
@@ -18,9 +38,15 @@ How to add a new message to the queue:
   use C4::Items;
   my $borrower = { borrowernumber => 1 };
   my $item     = C4::Items::GetItem(1);
-  my $letter   = C4::Letters::getletter('circulation', 'CHECKOUT');
-  C4::Letters::parseletter($letter, 'biblio', $item->{biblionumber});
-  C4::Letters::parseletter($letter, 'biblioitems', $item->{biblionumber});
+  my $letter =  C4::Letters::GetPreparedLetter (
+      module => 'circulation',
+      letter_code => 'CHECKOUT',
+      branchcode => $branch,
+      tables => {
+          'biblio', $item->{biblionumber},
+          'biblioitems', $item->{biblionumber},
+      },
+  );
   C4::Message->enqueue($letter, $borrower->{borrowernumber}, 'email');
 
 How to update a borrower's last checkout message:
@@ -80,7 +106,7 @@ sub find {
     if (@$msgs) {
         return $class->new($msgs->[0]);
     } else {
-        return undef;
+        return;
     }
 }
 
@@ -116,7 +142,7 @@ sub find_last_message {
     if (@$msgs) {
         return $class->new($msgs->[0]);
     } else {
-        return undef;
+        return;
     }
 }
 
@@ -290,7 +316,7 @@ sub append {
     }
     if (not $self->metadata) {
         carp "Can't append to messages that don't have metadata.";
-        return undef;
+        return;
     }
     my $metadata = $self->metadata;
     push @{$metadata->{body}}, $item;
