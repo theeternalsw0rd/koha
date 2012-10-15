@@ -52,6 +52,11 @@ Circulation:
                   no: "Don't allow"
             - staff to specify a due date for a checkout.
         -
+            - Set the default start date for the Holds to pull list to
+            - pref: HoldsToPullStartDate
+              class: integer
+            - ago.
+        -
             - pref: AllowAllMessageDeletion
               choices:
                   yes: Allow
@@ -236,8 +241,9 @@ Circulation:
                   no: "Prevent"
             - patrons from checking out an item whose rental charge would take them over the limit.
         -
+            - "Restrict patrons with the following target audience values from checking out inappropriate materials:"
             - pref: AgeRestrictionMarker
-            - "E.g. FSK|PEGI|Age| (No white space near |). Entry in MARC field (e.g. 521a) as defined for agerestriction in Koha to MARC mapping. Entry in MARC field like FSK 12 or PEGI 12 would mean: Borrower must be 12 years old. (Empty: Do not apply age restriction.)"
+            - "E.g. enter target audience keyword(s) split by | (bar) FSK|PEGI|Age| (No white space near |). Be sure to map agerestriction in Koha to MARC mapping (e.g. 521$a). A MARC field value of FSK 12 or PEGI 12 would mean: Borrower must be 12 years old. Leave empty to not apply an age restriction."
         -
             - pref: AgeRestrictionOverride
               choices:
@@ -285,6 +291,13 @@ Circulation:
                   alert: "display a message"
                   nothing : "do nothing"
             - .
+    Checkin Policy:
+        -
+            - pref: BlockReturnOfWithdrawnItems
+              choices:
+                  yes: Block
+                  no: "Don't block"
+            - returning of items that have been withdrawn.
     Holds Policy:
         -
             - pref: AllowHoldPolicyOverride
@@ -412,17 +425,13 @@ Circulation:
               choices:
                   yes: Enable
                   no:  "Don't enable"
-            - the reduction of loan period for items with number of holds above the threshold specified in decreaseLoanHighHoldsValue
-        -
-            - A loan should be reduced by
+            - the reduction of loan period by
             - pref: decreaseLoanHighHoldsDuration
               class: integer
-            - days, when decreaseLoanHighHoldsValue threshold is reached (if decreaseLoanHighHolds is enabled)
-        -
-            - A loan should be reduced by decreaseLoanHighHoldsDuration when
+            - days for items with more than
             - pref: decreaseLoanHighHoldsValue
               class: integer
-            - holds have been places (if decreaseLoanHighHolds is enables)
+            - holds.
     Fines Policy:
         -
             - Calculate fines based on days overdue

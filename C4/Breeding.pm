@@ -94,6 +94,9 @@ sub ImportBreeding {
         ($marcrecord, $charset_result, $charset_errors) = 
             MarcToUTF8Record($marcarray[$i]."\x1D", C4::Context->preference("marcflavour"), $encoding);
         
+        # Normalize the record so it doesn't have separated diacritics
+        SetUTF8Flag($marcrecord);
+
 #         warn "$i : $marcarray[$i]";
         # FIXME - currently this does nothing 
         my @warnings = $marcrecord->warnings();
@@ -179,16 +182,16 @@ sub BreedingSearch {
         $query .= "z3950random = ?";
         @bind=($z3950random);
     } else {
-        $search =~ s/(\s+)/\%/g;
         @bind=();
-    if ($search) {
+        if (defined($search) && length($search)>0) {
+            $search =~ s/(\s+)/\%/g;
             $query .= "title like ? OR author like ?";
             push(@bind,"%$search%", "%$search%");
         }
-        if ($search && $isbn) {
+        if ($#bind!=-1 && defined($isbn) && length($isbn)>0) {
             $query .= " and ";
         }
-        if ($isbn) {
+        if (defined($isbn) && length($isbn)>0) {
             $query .= "isbn like ?";
             push(@bind,"$isbn%");
         }

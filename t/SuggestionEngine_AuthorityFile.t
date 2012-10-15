@@ -22,7 +22,7 @@ $module->mock('SearchAuthorities', sub {
                     'reported_tag' => undef,
                     'even' => 0,
                     'summary' => {
-                        'authorized' => [ 'Cooking' ],
+                        'authorized' => [ { 'heading' => 'Cooking' } ],
                         'otherscript' => [],
                         'seefrom' => [ 'Cookery' ],
                         'notes' => [ 'Your quintessential poor heading selection' ],
@@ -33,7 +33,7 @@ $module->mock('SearchAuthorities', sub {
                 } ], 1
 });
 
-my $suggestor = Koha::SuggestionEngine->new( { plugins => ( 'AuthorityFile' ) } );
+my $suggestor = Koha::SuggestionEngine->new( { plugins => [ 'AuthorityFile' ] } );
 is(ref($suggestor), 'Koha::SuggestionEngine', 'Created suggestion engine');
 
 my $result = $suggestor->get_suggestions({search => 'Cookery'});

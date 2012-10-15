@@ -602,6 +602,15 @@ sub _session_log {
     close $fh;
 }
 
+sub _timeout_syspref {
+    my $timeout = C4::Context->preference('timeout') || 600;
+    # value in days, convert in seconds
+    if ($timeout =~ /(\d+)[dD]/) {
+        $timeout = $1 * 86400;
+    };
+    return $timeout;
+}
+
 sub checkauth {
     my $query = shift;
 	$debug and warn "Checking Auth";
@@ -612,12 +621,7 @@ sub checkauth {
     $type = 'opac' unless $type;
 
     my $dbh     = C4::Context->dbh;
-    my $timeout = C4::Context->preference('timeout');
-    # days
-    if ($timeout =~ /(\d+)[dD]/) {
-        $timeout = $1 * 86400;
-    };
-    $timeout = 600 unless $timeout;
+    my $timeout = _timeout_syspref();
 
     _version_check($type,$query);
     # state variables
@@ -658,7 +662,7 @@ sub checkauth {
             $ip       = $session->param('ip');
             $lasttime = $session->param('lasttime');
             $userid   = $session->param('id');
-			$sessiontype = $session->param('sessiontype');
+            $sessiontype = $session->param('sessiontype') || '';
         }
         if ( ( ($query->param('koha_login_context')) && ($query->param('userid') ne $session->param('id')) )
           || ( $cas && $query->param('ticket') ) ) {
@@ -974,6 +978,7 @@ sub checkauth {
         intranetstylesheet => C4::Context->preference("intranetstylesheet"),
         intranetbookbag    => C4::Context->preference("intranetbookbag"),
         IntranetNav        => C4::Context->preference("IntranetNav"),
+        IntranetFavicon    => C4::Context->preference("IntranetFavicon"),
         intranetuserjs     => C4::Context->preference("intranetuserjs"),
         IndependantBranches=> C4::Context->preference("IndependantBranches"),
         AutoLocation       => C4::Context->preference("AutoLocation"),
@@ -1063,8 +1068,7 @@ sub check_api_auth {
     my $flagsrequired = shift;
 
     my $dbh     = C4::Context->dbh;
-    my $timeout = C4::Context->preference('timeout');
-    $timeout = 600 unless $timeout;
+    my $timeout = _timeout_syspref();
 
     unless (C4::Context->preference('Version')) {
         # database has not been installed yet
@@ -1296,8 +1300,7 @@ sub check_cookie_auth {
     my $flagsrequired = shift;
 
     my $dbh     = C4::Context->dbh;
-    my $timeout = C4::Context->preference('timeout');
-    $timeout = 600 unless $timeout;
+    my $timeout = _timeout_syspref();
 
     unless (C4::Context->preference('Version')) {
         # database has not been installed yet
@@ -1503,7 +1506,13 @@ sub getuserflags {
     my $userid  = shift;
     my $dbh     = @_ ? shift : C4::Context->dbh;
     my $userflags;
-    $flags = 0 unless $flags;
+    {
+        # I don't want to do this, but if someone logs in as the database
+        # user, it would be preferable not to spam them to death with
+        # numeric warnings. So, we make $flags numeric.
+        no warnings 'numeric';
+        $flags += 0;
+    }
     my $sth = $dbh->prepare("SELECT bit, flag, defaulton FROM userflags");
     $sth->execute;
 

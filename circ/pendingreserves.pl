@@ -36,7 +36,7 @@ use Date::Calc qw/Today Add_Delta_YMD/;
 my $input = new CGI;
 my $startdate=$input->param('from');
 my $enddate=$input->param('to');
-my $run_report=$input->param('run_report');
+my $run_report = ( not defined $input->param('run_report') ) ? 1 : $input->param('run_report');
 
 my $theme = $input->param('theme');    # only used if allowthemeoverride is set
 
@@ -68,8 +68,9 @@ my ( $year, $month, $day ) = Today();
 my $todaysdate     = sprintf("%-04.4d-%-02.2d-%02.2d", $year, $month, $day);
 my $yesterdaysdate = sprintf("%-04.4d-%-02.2d-%02.2d", Add_Delta_YMD($year, $month, $day,   0, 0, -1));
 # changed from delivered range of 10 years-yesterday to 2 days ago-today
-# Find two days ago for the default shelf pull start and end dates
-my $pastdate       = sprintf("%-04.4d-%-02.2d-%02.2d", Add_Delta_YMD($year, $month, $day, 0, 0, -2));
+# Find two days ago for the default shelf pull start and end dates, unless HoldsToPullStartDate sys pref is set.
+my $defaultstartdate = ( C4::Context->preference('HoldsToPullStartDate') ) ? "-".C4::Context->preference('HoldsToPullStartDate') : -2;
+my $pastdate       = sprintf("%-04.4d-%-02.2d-%02.2d", Add_Delta_YMD($year, $month, $day, 0, 0, $defaultstartdate));
 
 # Predefine the start and end dates if they are not already defined
 $startdate =~ s/^\s+//;
@@ -162,31 +163,31 @@ if ( $run_report ) {
         push(
             @reservedata,
             {
-                reservedate      	=> format_date( $data->{l_reservedate} ),
-                priority         	=> $data->{priority},
-                name             	=> $data->{l_patron},
-                title            	=> $data->{title},
-                author           	=> $data->{author},
-                borrowernumber   	=> $data->{borrowernumber},
-                itemnum          	=> $data->{itemnumber},
-                phone            	=> $data->{phone},
-                email            	=> $data->{email},
-                biblionumber     	=> $data->{biblionumber},
-                statusw          	=> ( $data->{found} eq "W" ),
-                statusf          	=> ( $data->{found} eq "F" ),
-                holdingbranch    	=> $data->{l_holdingbranch},
-                branch           	=> $data->{l_branch},
-                itemcallnumber   	=> $data->{l_itemcallnumber},
-                enumchron        	=> $data->{l_enumchron},
-		copyno           	=> $data->{l_copynumber},
-                notes            	=> $data->{notes},
-                notificationdate 	=> $data->{notificationdate},
-                reminderdate     	=> $data->{reminderdate},
-                count			=> $data->{icount},
-                rcount			=> $data->{rcount},
-                pullcount		=> $data->{icount} <= $data->{rcount} ? $data->{icount} : $data->{rcount},
-                itype			=> $data->{l_itype},
-                location		=> $data->{l_location}
+                reservedate     => format_date( $data->{l_reservedate} ),
+                priority        => $data->{priority},
+                name            => $data->{l_patron},
+                title           => $data->{title},
+                author          => $data->{author},
+                borrowernumber  => $data->{borrowernumber},
+                itemnum         => $data->{itemnumber},
+                phone           => $data->{phone},
+                email           => $data->{email},
+                biblionumber    => $data->{biblionumber},
+                statusw         => ( $data->{found} eq "W" ),
+                statusf         => ( $data->{found} eq "F" ),
+                holdingbranch   => $data->{l_holdingbranch},
+                branch          => $data->{l_branch},
+                itemcallnumber  => $data->{l_itemcallnumber},
+                enumchron       => $data->{l_enumchron},
+                copyno          => $data->{l_copynumber},
+                notes           => $data->{notes},
+                notificationdate=> $data->{notificationdate},
+                reminderdate    => $data->{reminderdate},
+                count           => $data->{icount},
+                rcount          => $data->{rcount},
+                pullcount       => $data->{icount} <= $data->{rcount} ? $data->{icount} : $data->{rcount},
+                itype           => $data->{l_itype},
+                location        => $data->{l_location},
             }
         );
     }
@@ -194,14 +195,15 @@ if ( $run_report ) {
 }
 
 $template->param(
-    todaysdate      	=> format_date($todaysdate),
+    todaysdate          => format_date($todaysdate),
     from                => $startdate,
-    to              	=> $enddate,
+    to                  => $enddate,
     run_report          => $run_report,
-    reserveloop     	=> \@reservedata,
+    reserveloop         => \@reservedata,
     "BiblioDefaultView".C4::Context->preference("BiblioDefaultView") => 1,
-    DHTMLcalendar_dateformat =>  C4::Dates->DHTMLcalendar(),
-    dateformat    => C4::Context->preference("dateformat"),
+    DHTMLcalendar_dateformat    =>  C4::Dates->DHTMLcalendar(),
+    dateformat                  => C4::Context->preference("dateformat"),
+    HoldsToPullStartDate        => (C4::Context->preference('HoldsToPullStartDate')?C4::Context->preference('HoldsToPullStartDate'):2),
 );
 
 output_html_with_http_headers $input, $cookie, $template->output;

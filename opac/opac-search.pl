@@ -696,7 +696,7 @@ for (my $i=0;$i<@servers;$i++) {
             $hide = ($hide =~ m/\S/) if $hide; # Just in case it has some spaces/new lines
             $template->param(
                 SEARCH_RESULTS => \@newresults,
-                OPACItemsResultsDisplay => (C4::Context->preference("OPACItemsResultsDisplay") eq "itemdetails"?1:0),
+                OPACItemsResultsDisplay => (C4::Context->preference("OPACItemsResultsDisplay")),
                 suppress_result_number => $hide,
                             );
 	    if (C4::Context->preference("OPACLocalCoverImages")){
@@ -823,7 +823,7 @@ if (C4::Context->preference('GoogleIndicTransliteration')) {
         $template->param('GoogleIndicTransliteration' => 1);
 }
 
-$template->{VARS}->{DidYouMeanFromAuthorities} = C4::Context->preference('DidYouMeanFromAuthorities');
+$template->{VARS}->{DidYouMean} = C4::Context->preference('OPACdidyoumean') =~ m/enable/;
 
     $template->param( borrowernumber    => $borrowernumber);
 output_with_http_headers $cgi, $cookie, $template->output, $content_type;

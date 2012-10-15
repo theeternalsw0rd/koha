@@ -34,9 +34,9 @@ B<get_suggestions (\%param)> - get suggestions for the search described
 in $param->{'search'}, and return them in a hashref with the suggestions
 as keys and relevance as values.
 
-The following variables must be defined in each filter:
-  our $NAME ='Filter';
-  our $VERSION = '1.0';
+B<NAME> - return a string with the name of the plugin.
+
+B<VERSION> - return a string with the version of the plugin.
 
 These methods may be overriden:
 
@@ -60,8 +60,6 @@ use base qw(Class::Accessor);
 
 __PACKAGE__->mk_ro_accessors(qw( name version ));
 __PACKAGE__->mk_accessors(qw( params ));
-our $NAME    = 'Base';
-our $VERSION = '1.0';
 
 =head2 new
 

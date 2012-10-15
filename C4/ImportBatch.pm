@@ -382,6 +382,10 @@ sub  BatchStageMarcRecords {
         if (scalar($marc_record->fields()) == 0) {
             push @invalid_records, $marc_blob;
         } else {
+
+            # Normalize the record so it doesn't have separated diacritics
+            SetUTF8Flag($marc_record);
+
             $num_valid++;
             if ($record_type eq 'biblio') {
                 $import_record_id = AddBiblioToBatch($batch_id, $rec_num, $marc_record, $encoding, int(rand(99999)), 0);
@@ -1306,7 +1310,7 @@ sub GetImportRecordMatches {
     $sth->execute();
     while (my $row = $sth->fetchrow_hashref) {
         if ($row->{'record_type'} eq 'auth') {
-            $row->{'authorized_heading'} = GetAuthorizedHeading( { authid => $row->{'candidate_match_id'} } );
+            $row->{'authorized_heading'} = C4::AuthoritiesMarc::GetAuthorizedHeading( { authid => $row->{'candidate_match_id'} } );
         }
         next if ($row->{'record_type'} eq 'biblio' && not $row->{'biblionumber'});
         push @$results, $row;
@@ -1375,7 +1379,7 @@ sub _add_auth_fields {
     if ($marc_record->field('001')) {
         $controlnumber = $marc_record->field('001')->data();
     }
-    my $authorized_heading = GetAuthorizedHeading({ record => $marc_record });
+    my $authorized_heading = C4::AuthoritiesMarc::GetAuthorizedHeading({ record => $marc_record });
     my $dbh = C4::Context->dbh;
     my $sth = $dbh->prepare("INSERT INTO import_auths (import_record_id, control_number, authorized_heading) VALUES (?, ?, ?)");
     $sth->execute($import_record_id, $controlnumber, $authorized_heading);

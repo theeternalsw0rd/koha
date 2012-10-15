@@ -150,6 +150,8 @@ foreach my $subscription (@subscriptions) {
 	my $serials_to_display;
     $cell{subscriptionid}    = $subscription->{subscriptionid};
     $cell{subscriptionnotes} = $subscription->{internalnotes};
+    $cell{missinglist}       = $subscription->{missinglist};
+    $cell{librariannote}     = $subscription->{librariannote};
     $cell{branchcode}        = $subscription->{branchcode};
     $cell{branchname}        = GetBranchName($subscription->{branchcode});
     $cell{hasalert}          = $subscription->{hasalert};
@@ -261,7 +263,7 @@ foreach my $item (@items) {
 		$analytics_flag=1;
 		$item->{countanalytics} = $countanalytics;
 	}
-    if ($item->{'materials'} ne ''){
+    if (defined($item->{'materials'}) && $item->{'materials'} =~ /\S/){
 	$materials_flag = 1;
     }
     push @itemloop, $item;

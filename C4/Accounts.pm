@@ -243,13 +243,13 @@ borrower number.
 
 #'
 # FIXME - Okay, so what does the above actually _mean_?
-sub getnextacctno ($) {
-    my ($borrowernumber) = shift or return undef;
+sub getnextacctno {
+    my ($borrowernumber) = shift or return;
     my $sth = C4::Context->dbh->prepare(
         "SELECT accountno+1 FROM accountlines
-         WHERE    (borrowernumber = ?)
-         ORDER BY accountno DESC
-		 LIMIT 1"
+            WHERE    (borrowernumber = ?)
+            ORDER BY accountno DESC
+            LIMIT 1"
     );
     $sth->execute($borrowernumber);
     return ($sth->fetchrow || 1);
@@ -760,7 +760,7 @@ sub makepartialpayment {
     .  'description, accounttype, amountoutstanding, itemnumber, manager_id) '
     . ' VALUES (?, ?, now(), ?, ?, ?, 0, ?, ?)';
 
-    $dbh->do(  $insert, undef, $borrowernumber, $nextaccntno, $amount,
+    $dbh->do(  $insert, undef, $borrowernumber, $nextaccntno, 0 - $amount,
         "Payment, thanks - $user", 'Pay', $data->{'itemnumber'}, $manager_id);
 
     UpdateStats( $user, 'payment', $amount, '', '', '', $borrowernumber, $accountno );
