@@ -1289,7 +1289,11 @@ sub buildQuery {
                 }
 
                 if(not $index){
-                    $index = 'kw';
+                    if($operand =~ m/[0-9]{7}/){
+                        $index = 'bc';
+                    }else{
+                        $index = 'kw';
+                    }
                 }
 
                 # Set default structure attribute (word list)
