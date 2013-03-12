@@ -90,6 +90,7 @@ BEGIN {
       &GetAuthorisedValueDesc
       &GetMarcStructure
       &GetMarcFromKohaField
+      &GetMarcSubfieldStructureFromKohaField
       &GetFrameworkCode
       &TransformKohaToMarc
       &PrepHostMarcField
@@ -567,21 +568,27 @@ sub LinkBibHeadingsToAuthorities {
                 $results{'fuzzy'}->{ $heading->display_form() }++;
             }
             elsif ( C4::Context->preference('AutoCreateAuthorities') ) {
-                my $authtypedata =
-                  C4::AuthoritiesMarc::GetAuthType( $heading->auth_type() );
-                my $marcrecordauth = MARC::Record->new();
-                if ( C4::Context->preference('marcflavour') eq 'MARC21' ) {
-                    $marcrecordauth->leader('     nz  a22     o  4500');
-                    SetMarcUnicodeFlag( $marcrecordauth, 'MARC21' );
+                if ( _check_valid_auth_link( $current_link, $field ) ) {
+                    $results{'linked'}->{ $heading->display_form() }++;
                 }
-                my $authfield =
-                  MARC::Field->new( $authtypedata->{auth_tag_to_report},
-                    '', '', "a" => "" . $field->subfield('a') );
-                map {
-                    $authfield->add_subfields( $_->[0] => $_->[1] )
-                      if ( $_->[0] =~ /[A-z]/ && $_->[0] ne "a" )
-                } $field->subfields();
-                $marcrecordauth->insert_fields_ordered($authfield);
+                else {
+                    my $authtypedata =
+                      C4::AuthoritiesMarc::GetAuthType( $heading->auth_type() );
+                    my $marcrecordauth = MARC::Record->new();
+                    if ( C4::Context->preference('marcflavour') eq 'MARC21' ) {
+                        $marcrecordauth->leader('     nz  a22     o  4500');
+                        SetMarcUnicodeFlag( $marcrecordauth, 'MARC21' );
+                    }
+                    $field->delete_subfield( code => '9' )
+                      if defined $current_link;
+                    my $authfield =
+                      MARC::Field->new( $authtypedata->{auth_tag_to_report},
+                        '', '', "a" => "" . $field->subfield('a') );
+                    map {
+                        $authfield->add_subfields( $_->[0] => $_->[1] )
+                          if ( $_->[0] =~ /[A-z]/ && $_->[0] ne "a" )
+                    } $field->subfields();
+                    $marcrecordauth->insert_fields_ordered($authfield);
 
 # bug 2317: ensure new authority knows it's using UTF-8; currently
 # only need to do this for MARC21, as MARC::Record->as_xml_record() handles
@@ -590,41 +597,47 @@ sub LinkBibHeadingsToAuthorities {
 # use UTF-8, but as of 2008-08-05, did not want to introduce that kind
 # of change to a core API just before the 3.0 release.
 
-                if ( C4::Context->preference('marcflavour') eq 'MARC21' ) {
-                    $marcrecordauth->insert_fields_ordered(
-                        MARC::Field->new(
-                            '667', '', '',
-                            'a' => "Machine generated authority record."
-                        )
-                    );
-                    my $cite =
-                        $bib->author() . ", "
-                      . $bib->title_proper() . ", "
-                      . $bib->publication_date() . " ";
-                    $cite =~ s/^[\s\,]*//;
-                    $cite =~ s/[\s\,]*$//;
-                    $cite =
-                        "Work cat.: ("
-                      . C4::Context->preference('MARCOrgCode') . ")"
-                      . $bib->subfield( '999', 'c' ) . ": "
-                      . $cite;
-                    $marcrecordauth->insert_fields_ordered(
-                        MARC::Field->new( '670', '', '', 'a' => $cite ) );
-                }
+                    if ( C4::Context->preference('marcflavour') eq 'MARC21' ) {
+                        $marcrecordauth->insert_fields_ordered(
+                            MARC::Field->new(
+                                '667', '', '',
+                                'a' => "Machine generated authority record."
+                            )
+                        );
+                        my $cite =
+                            $bib->author() . ", "
+                          . $bib->title_proper() . ", "
+                          . $bib->publication_date() . " ";
+                        $cite =~ s/^[\s\,]*//;
+                        $cite =~ s/[\s\,]*$//;
+                        $cite =
+                            "Work cat.: ("
+                          . C4::Context->preference('MARCOrgCode') . ")"
+                          . $bib->subfield( '999', 'c' ) . ": "
+                          . $cite;
+                        $marcrecordauth->insert_fields_ordered(
+                            MARC::Field->new( '670', '', '', 'a' => $cite ) );
+                    }
 
            #          warn "AUTH RECORD ADDED : ".$marcrecordauth->as_formatted;
 
-                $authid =
-                  C4::AuthoritiesMarc::AddAuthority( $marcrecordauth, '',
-                    $heading->auth_type() );
-                $field->add_subfields( '9', $authid );
-                $num_headings_changed++;
-                $results{'added'}->{ $heading->display_form() }++;
+                    $authid =
+                      C4::AuthoritiesMarc::AddAuthority( $marcrecordauth, '',
+                        $heading->auth_type() );
+                    $field->add_subfields( '9', $authid );
+                    $num_headings_changed++;
+                    $results{'added'}->{ $heading->display_form() }++;
+                }
             }
             elsif ( defined $current_link ) {
-                $field->delete_subfield( code => '9' );
-                $num_headings_changed++;
-                $results{'unlinked'}->{ $heading->display_form() }++;
+                if ( _check_valid_auth_link( $current_link, $field ) ) {
+                    $results{'linked'}->{ $heading->display_form() }++;
+                }
+                else {
+                    $field->delete_subfield( code => '9' );
+                    $num_headings_changed++;
+                    $results{'unlinked'}->{ $heading->display_form() }++;
+                }
             }
             else {
                 $results{'unlinked'}->{ $heading->display_form() }++;
@@ -633,6 +646,30 @@ sub LinkBibHeadingsToAuthorities {
 
     }
     return $num_headings_changed, \%results;
+}
+
+=head2 _check_valid_auth_link
+
+    if ( _check_valid_auth_link($authid, $field) ) {
+        ...
+    }
+
+Check whether the specified heading-auth link is valid without reference
+to Zebra/Solr. Ideally this code would be in C4::Heading, but that won't be
+possible until we have de-cycled C4::AuthoritiesMarc, so this is the
+safest place.
+
+=cut
+
+sub _check_valid_auth_link {
+    my ( $authid, $field ) = @_;
+
+    require C4::AuthoritiesMarc;
+
+    my $authorized_heading =
+      C4::AuthoritiesMarc::GetAuthorizedHeading( { 'authid' => $authid } );
+
+   return ($field->as_string('abcdefghijklmnopqrstuvwxyz') eq $authorized_heading);
 }
 
 =head2 GetRecordValue
@@ -919,6 +956,10 @@ sub GetISBDView {
             #         warn "ERROR IN ISBD DEFINITION at : $isbdfield" unless $fieldvalue;
             #             warn "FV : $fieldvalue";
             if ( $subfvalue ne "" ) {
+                # OPAC hidden subfield
+                next
+                  if ( ( $template eq 'opac' )
+                    && ( $tagslib->{$fieldvalue}->{$subfvalue}->{'hidden'} || 0 ) > 0 );
                 foreach my $field (@fieldslist) {
                     foreach my $subfield ( $field->subfield($subfvalue) ) {
                         my $calculated = $analysestring;
@@ -954,6 +995,10 @@ sub GetISBDView {
                         for my $i ( 0 .. $#subf ) {
                             my $valuecode     = $subf[$i][1];
                             my $subfieldcode  = $subf[$i][0];
+                            # OPAC hidden subfield
+                            next
+                              if ( ( $template eq 'opac' )
+                                && ( $tagslib->{$fieldvalue}->{$subfieldcode}->{'hidden'} || 0 ) > 0 );
                             my $subfieldvalue = GetAuthorisedValueDesc( $tag, $subf[$i][0], $subf[$i][1], '', $tagslib );
                             my $tagsubf       = $tag . $subfieldcode;
 
@@ -1163,18 +1208,51 @@ sub GetUsedMarcStructure {
   ($MARCfield,$MARCsubfield)=GetMarcFromKohaField($kohafield,$frameworkcode);
 
 Returns the MARC fields & subfields mapped to the koha field 
-for the given frameworkcode
+for the given frameworkcode or default framework if $frameworkcode is missing
 
 =cut
 
 sub GetMarcFromKohaField {
-    my ( $kohafield, $frameworkcode ) = @_;
-    return (0, undef) unless $kohafield and defined $frameworkcode;
+    my $kohafield = shift;
+    my $frameworkcode = shift || '';
+    return (0, undef) unless $kohafield;
     my $relations = C4::Context->marcfromkohafield;
     if ( my $mf = $relations->{$frameworkcode}->{$kohafield} ) {
         return @$mf;
     }
     return (0, undef);
+}
+
+=head2 GetMarcSubfieldStructureFromKohaField
+
+    my $subfield_structure = &GetMarcSubfieldStructureFromKohaField($kohafield, $frameworkcode);
+
+Returns a hashref where keys are marc_subfield_structure column names for the
+row where kohafield=$kohafield for the given framework code.
+
+$frameworkcode is optional. If not given, then the default framework is used.
+
+=cut
+
+sub GetMarcSubfieldStructureFromKohaField {
+    my ($kohafield, $frameworkcode) = @_;
+
+    return undef unless $kohafield;
+    $frameworkcode //= '';
+
+    my $dbh = C4::Context->dbh;
+    my $query = qq{
+        SELECT *
+        FROM marc_subfield_structure
+        WHERE kohafield = ?
+          AND frameworkcode = ?
+    };
+    my $sth = $dbh->prepare($query);
+    $sth->execute($kohafield, $frameworkcode);
+    my $result = $sth->fetchrow_hashref;
+    $sth->finish;
+
+    return $result;
 }
 
 =head2 GetMarcBiblio
@@ -1218,7 +1296,7 @@ sub GetMarcBiblio {
   my $marcxml = GetXmlBiblio($biblionumber);
 
 Returns biblioitems.marcxml of the biblionumber passed in parameter.
-The XML contains both biblio & item datas
+The XML should only contain biblio information (item information is no longer stored in marcxml field)
 
 =cut
 
@@ -1649,15 +1727,19 @@ sub GetMarcNotes {
     my $note = "";
     my $tag  = "";
     my $marcnote;
+    my %blacklist = map { $_ => 1 } split(/,/,C4::Context->preference('NotesBlacklist'));
     foreach my $field ( $record->field($scope) ) {
-        my $value = $field->as_string();
-        if ( $note ne "" ) {
-            $marcnote = { marcnote => $note, };
-            push @marcnotes, $marcnote;
-            $note = $value;
-        }
-        if ( $note ne $value ) {
-            $note = $note . " " . $value;
+        my $tag = $field->tag();
+        if (!$blacklist{$tag}) {
+            my $value = $field->as_string();
+            if ( $note ne "" ) {
+                $marcnote = { marcnote => $note, };
+                push @marcnotes, $marcnote;
+                $note = $value;
+            }
+            if ( $note ne $value ) {
+                $note = $note . " " . $value;
+            }
         }
     }
 
@@ -2804,6 +2886,8 @@ sub EmbedItemsInMarcBiblio {
     my ($marc, $biblionumber, $itemnumbers) = @_;
     croak "No MARC record" unless $marc;
 
+    $itemnumbers = [] unless defined $itemnumbers;
+
     my $frameworkcode = GetFrameworkCode($biblionumber);
     _strip_item_fields($marc, $frameworkcode);
 
@@ -2814,7 +2898,7 @@ sub EmbedItemsInMarcBiblio {
     my @item_fields;
     my ( $itemtag, $itemsubfield ) = GetMarcFromKohaField( "items.itemnumber", $frameworkcode );
     while (my ($itemnumber) = $sth->fetchrow_array) {
-        next if $itemnumbers and not grep { $_ == $itemnumber } @$itemnumbers;
+        next if @$itemnumbers and not grep { $_ == $itemnumber } @$itemnumbers;
         require C4::Items;
         my $item_marc = C4::Items::GetMarcItem($biblionumber, $itemnumber);
         push @item_fields, $item_marc->field($itemtag);
@@ -3540,6 +3624,8 @@ sub ModBiblioMarc {
 
     # deal with UNIMARC field 100 (encoding) : create it if needed & set encoding to unicode
     if ( $encoding eq "UNIMARC" ) {
+	my $defaultlanguage = C4::Context->preference("UNIMARCField100Language");
+        $defaultlanguage = "fre" if (!$defaultlanguage || length($defaultlanguage) != 3);
         my $string = $record->subfield( 100, "a" );
         if ( ($string) && ( length( $record->subfield( 100, "a" ) ) == 36 ) ) {
             my $f100 = $record->field(100);
@@ -3548,8 +3634,9 @@ sub ModBiblioMarc {
             $string = POSIX::strftime( "%Y%m%d", localtime );
             $string =~ s/\-//g;
             $string = sprintf( "%-*s", 35, $string );
+	    substr ( $string, 22, 3, $defaultlanguage);
         }
-        substr( $string, 22, 6, "frey50" );
+        substr( $string, 25, 3, "y50" );
         unless ( $record->subfield( 100, "a" ) ) {
             $record->insert_fields_ordered( MARC::Field->new( 100, "", "", "a" => $string ) );
         }

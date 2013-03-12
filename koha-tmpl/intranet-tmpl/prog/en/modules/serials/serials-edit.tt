@@ -1,7 +1,26 @@
 [% INCLUDE 'doc-head-open.inc' %]
 <title>Koha &rsaquo; Serials &rsaquo; Serial edition [% bibliotitle %]</title>
 [% INCLUDE 'doc-head-close.inc' %]
+<script type="text/javascript" src="[% themelang %]/js/cataloging.js"></script>
 <script language="JavaScript" type="text/javascript">
+var nav = window.Event ? true : false;
+if (nav) {
+	window.captureEvents(Event.KEYDOWN);
+	window.onkeydown = NetscapeEventHandler_KeyDown;
+} else {
+	document.onkeydown = IEEventHandler_KeyDown;
+}
+
+function NetscapeEventHandler_KeyDown(e) {
+	if (e.which == 13 && e.target.type != 'textarea' && e.target.type != 'submit') { return false; }
+	return true;
+}
+
+function IEEventHandler_KeyDown() {
+	if (event.keyCode == 13 && event.srcElement.type != 'textarea' && event.srcElement.type != 'submit')
+		return false;
+	return true;
+}
 //<![CDATA[
 function generateReceive() {
     var subscriptionid =  document.getElementsByName("subscriptionid")[0].value;
@@ -74,70 +93,7 @@ function changeDate2(adate) {
    var elem = document.getElementById("supexpecteddate");
     elem.value = adate;
 }
-function CloneSubfield(index){
-    var original = document.getElementById(index); //original <div>
-    var clone = original.cloneNode(true);
-    var new_key = CreateKey();
-    var old_id =  original.getAttribute('id');
-    old_id=old_id.substr(12);
-    var new_id  = old_id+new_key;
-    
-    // set the attribute for the new 'div' subfields
-    var inputs     = clone.getElementsByTagName('input');
-    var selects    = clone.getElementsByTagName('select');
-    var textareas  = clone.getElementsByTagName('textarea');
-        
-    // input
-    var id_input = "";
-    for(var i=0,len=inputs.length; i<len ; i++ ){
-        id_input = inputs[i].getAttribute('id')+new_key;
-        inputs[i].setAttribute('id',id_input);
-        inputs[i].setAttribute('name',inputs[i].getAttribute('name'));
-    }
-    
-    // select 
-    for(var i=0,len=selects.length; i<len ; i++ ){
-        id_input = selects[i].getAttribute('id')+new_key;
-        selects[i].setAttribute('id',selects[i].getAttribute('id')+new_key);
-        selects[i].setAttribute('name',selects[i].getAttribute('name'));
-    }
-    
-    // textarea
-    for(var i=0,len=textareas.length; i<len ; i++ ){
-        id_input = textareas[i].getAttribute('id')+new_key;
-        textareas[i].setAttribute('id',textareas[i].getAttribute('id')+new_key);
-        textareas[i].setAttribute('name',textareas[i].getAttribute('name'));
-    }
-    
-    [% UNLESS ( advancedMARCEditor ) %]
-    // when cloning a subfield, reset its label too.
-    var label = clone.getElementsByTagName('label')[0];
-    label.setAttribute('for',id_input);
-    [% END %]
-    
-    // setting a new if for the parent div
-    clone.setAttribute('id',new_id);
-    
-    var CloneButtonPlus;
-    try {
-      var spans = clone.getElementsByTagName('span');
-      if(spans.length){
-          for(var i = 0 ,lenspans = spans.length ; i < lenspans ; i++){
-            if(spans[i].getAttribute('class') == 'buttonPlus'){
-                    CloneButtonPlus = spans[i];
-                    CloneButtonPlus.setAttribute('onclick',"CloneSubfield('" + new_id + "')");
-                    var buttonUp = clone.getElementsByTagName('img')[0];
-                    buttonUp.setAttribute('onclick',"upSubfield('" + new_id + "')");
-                }
-            }
-        }
-    }
-    catch(e){
-        // do nothig if ButtonPlus & CloneButtonPlus don't exist.
-    }
-    // insert this line on the page
-    original.parentNode.insertBefore(clone,original.nextSibling);
-}
+
 $(document).ready(function() {
 	$("form#serials_edit").submit(function() {
 	    var total_errors = 0;
@@ -230,7 +186,7 @@ $(document).ready(function() {
         </td>
         <td>
             [% IF ( serialslis.editdisable ) %]
-              <input type="hidden" name="status" id="status[% serialslis.serialid %]" value="1">
+              <input type="hidden" name="status" id="status[% serialslis.serialid %]" value="[% serialslis.serstatus %]">
               <select name="status" size="1"  disabled="disabled">
             [% ELSE %]
               [% IF ( serialslis.serialsadditems ) %]
@@ -239,39 +195,42 @@ $(document).ready(function() {
               <select name="status" size="1" id="status[% serialslis.serialid %]" onchange="if (this.value==2 || this.value==7){changeDate(this, '[% serialslis.arriveddate %]')} else {changeDate(this, '[% serialslis.planneddate %]')}" >
                [% END %] 
             [% END %]
-  [% IF ( serialslis.status1 ) %]
-                    <option value="1" selected="selected">Expected</option>
-  [% END %]
-  [% IF ( serialslis.status2 ) %]
-                    <option value="2" selected="selected">Arrived</option>
-  [% ELSE %]
-                    <option value="2">Arrived</option>
-  [% END %]
-  [% IF ( serialslis.status3 ) %]
-                    <option value="3" selected="selected">Late</option>
-  [% ELSE %]
-                    <option value="3">Late</option>
-  [% END %]
-  [% IF ( serialslis.status4 ) %]
-                    <option value="4" selected="selected">Missing</option>
-  [% ELSE %]
-                    <option value="4">Missing</option>
-  [% END %]
-  [% IF ( serialslis.status7 ) %]
-                    <option value="7" selected="selected">Claimed</option>
-  [% ELSE %]
-                    <option value="7">Claimed</option>
-  [% END %]
-  [% IF ( serialslis.status5 ) %]
-                    <option value="5" selected="selected">Not available</option>
-  [% ELSE %]
-                    <option value="5">Not available</option>
-  [% END %]
-  [% IF ( serialslis.status6 ) %]
-                    <option value="6" selected="selected">Delete</option>
-  [% ELSE %]
-                    <option value="6">Delete</option>
-  [% END %]
+            [% IF ( serialslis.status1 ) %]
+              <option value="1" selected="selected">Expected</option>
+            [% END %]
+            [% IF ( serialslis.status2 ) %]
+              <option value="2" selected="selected">Arrived</option>
+            [% ELSE %]
+              <option value="2">Arrived</option>
+            [% END %]
+            [% IF ( serialslis.status3 ) %]
+              <option value="3" selected="selected">Late</option>
+            [% ELSE %]
+              <option value="3">Late</option>
+            [% END %]
+            [% IF ( serialslis.status4 ) %]
+              <option value="4" selected="selected">Missing</option>
+            [% ELSE %]
+              <option value="4">Missing</option>
+            [% END %]
+            [% IF ( serialslis.status7 ) %]
+              <option value="7" selected="selected">Claimed</option>
+            [% ELSE %]
+              <option value="7">Claimed</option>
+            [% END %]
+            [% IF ( serialslis.status5 ) %]
+              <option value="5" selected="selected">Not available</option>
+            [% ELSE %]
+              <option value="5">Not available</option>
+            [% END %]
+            [% IF ( serialslis.status6 ) %]
+              <option value="6" selected="selected">Delete</option>
+            [% ELSE %]
+              <option value="6">Delete</option>
+            [% END %]
+            [% IF serialslis.status8 %]
+              <option value="8" selected="selected">Stopped</option>
+            [% END %]
             </select>
 
         </td>
@@ -293,7 +252,7 @@ $(document).ready(function() {
         [% FOREACH item IN serialslis.items %]
         <div id="item[% item.serialid %][% item.countitems %]" class="items">
         <ol>[% FOREACH iteminformatio IN item.iteminformation %]<li>
-               <div class="subfield_line" style="[% iteminformatio.hidden %];" id="subfield[% item.serialid %][% item.countitems %][% iteminformatio.subfield %][% iteminformatio.random %]">
+               <div class="subfield_line" style="[% iteminformatio.hidden %]" id="subfield[% item.serialid %][% item.countitems %][% iteminformatio.subfield %][% iteminformatio.random %]">
                               
                 <label>[% iteminformatio.subfield %] - [% IF ( iteminformatio.mandatory ) %]<b>[% END %][% iteminformatio.marc_lib %][% IF ( iteminformatio.mandatory ) %] *</b>[% END %]</label>
                 [% iteminformatio.marc_value %]
@@ -302,8 +261,10 @@ $(document).ready(function() {
                 <input type="hidden" name="tag" value="[% iteminformatio.tag %]" />
                 <input type="hidden" name="subfield" value="[% iteminformatio.subfield %]" />
                 <input type="hidden" name="mandatory" value="[% iteminformatio.mandatory %]" />
-                [% IF ( iteminformatio.ITEM_SUBFIELDS_ARE_NOT_REPEATABLE ) %]
-                    <span class="buttonPlus" onclick="CloneSubfield('subfield[% item.serialid %][% item.countitems %][% iteminformatio.subfield %][% iteminformatio.random %]')">+</span>
+                [% IF ( iteminformatio.repeatable ) %]
+                    <a href="#" class="buttonPlus" onclick="CloneItemSubfield(this.parentNode); return false;">
+                        <img src="/intranet-tmpl/prog/img/clone-subfield.png" alt="Clone" title="Clone this subfield" />
+                    </a>
                 [% END %]
         
             </div></li>
@@ -344,39 +305,42 @@ $(document).ready(function() {
             <select name="status" size="1" id="addstatus[% newserialloo.serialid %]" onchange="if (this.value==2){unHideItems('items'+'[% newserialloo.subscriptionid %][% newserialloo.serialid %]','label[% newserialloo.subscriptionid %][% newserialloo.serialid %]','[% newserialloo.serialid %]'); changeDate2('[% newserialloo.arriveddate %]')} else if (this.value==7){changeDate('[% newserialloo.arriveddate %]')} else { HideItems('items'+'[% newserialloo.subscriptionid %]'+[% newserialloo.serialid %],'label[% serialslis.subscriptionid %][% serialslis.serialid %]'); changeDate2('[% serialslis.planneddate %]')}" >
 
                     <option value="">----</option>
-  [% IF ( newserialloo.status1 ) %]
+                  [% IF ( newserialloo.status1 ) %]
                     <option value="1" selected="selected">Expected</option>
-  [% END %]
-  [% IF ( newserialloo.status2 ) %]
+                  [% END %]
+                  [% IF ( newserialloo.status2 ) %]
                     <option value="2" selected="selected">Arrived</option>
-  [% ELSE %]
+                  [% ELSE %]
                     <option value="2">Arrived</option>
-  [% END %]
-  [% IF ( newserialloo.status3 ) %]
+                  [% END %]
+                  [% IF ( newserialloo.status3 ) %]
                     <option value="3" selected="selected">Late</option>
-  [% ELSE %]
+                  [% ELSE %]
                     <option value="3">Late</option>
-  [% END %]
-  [% IF ( newserialloo.status4 ) %]
+                  [% END %]
+                  [% IF ( newserialloo.status4 ) %]
                     <option value="4" selected="selected">Missing</option>
-  [% ELSE %]
+                  [% ELSE %]
                     <option value="4">Missing</option>
-  [% END %]
-  [% IF ( newserialloo.status7 ) %]
+                  [% END %]
+                  [% IF ( newserialloo.status7 ) %]
                     <option value="7" selected="selected">Claimed</option>
-  [% ELSE %]
+                  [% ELSE %]
                     <option value="7">Claimed</option>
-  [% END %]
-  [% IF ( newserialloo.status5 ) %]
+                  [% END %]
+                  [% IF ( newserialloo.status5 ) %]
                     <option value="5" selected="selected">Not available</option>
-  [% ELSE %]
+                  [% ELSE %]
                     <option value="5">Not available</option>
-  [% END %]
-  [% IF ( newserialloo.status6 ) %]
+                  [% END %]
+                  [% IF ( newserialloo.status6 ) %]
                     <option value="6" selected="selected">Delete</option>
-  [% ELSE %]
+                  [% ELSE %]
                     <option value="6">Delete</option>
-  [% END %]
+                  [% END %]
+                  [% IF newserialloo.status8 %]
+                    <option value="8" selected="selected">Stopped</option>
+                  [% END %]
             </select>
 
         </td>
@@ -396,7 +360,7 @@ $(document).ready(function() {
           <div class="cataloguing_additem_itemlist">
         <div id="item[% newserialloo.serialid %][% newserialloo.countitems %]" class="items">
         <ol>[% FOREACH iteminformatio IN newserialloo.iteminformation %]<li>
-               <div class="subfield_line" style="[% iteminformatio.hidden %];" id="subfield[% newserialloo.serialid %][% newserialloo.countitems %][% iteminformatio.subfield %][% iteminformatio.random %]">
+               <div class="subfield_line" style="[% iteminformatio.hidden %]" id="subfield[% newserialloo.serialid %][% newserialloo.countitems %][% iteminformatio.subfield %][% iteminformatio.random %]">
    
                 <label>[% iteminformatio.subfield %] - [% IF ( iteminformatio.mandatory ) %]<b>[% END %][% iteminformatio.marc_lib %][% IF ( iteminformatio.mandatory ) %] *</b>[% END %]</label>
                 [% iteminformatio.marc_value %]
@@ -405,8 +369,10 @@ $(document).ready(function() {
                 <input type="hidden" name="tag" value="[% iteminformatio.tag %]" />
                 <input type="hidden" name="subfield" value="[% iteminformatio.subfield %]" />
                 <input type="hidden" name="mandatory" value="[% iteminformatio.mandatory %]" />
-                [% IF ( iteminformatio.ITEM_SUBFIELDS_ARE_NOT_REPEATABLE ) %]
-                    <span class="buttonPlus" onclick="CloneSubfield('subfield[% newserialloo.serialid %][% newserialloo.countitems %][% iteminformatio.subfield %][% iteminformatio.random %]')">+</span>
+                [% IF ( iteminformatio.repeatable ) %]
+                    <a href="#" class="buttonPlus" onclick="CloneItemSubfield(this.parentNode); return false;">
+                        <img src="/intranet-tmpl/prog/img/clone-subfield.png" alt="Clone" title="Clone this subfield" />
+                    </a>
                 [% END %]
         </div>
        </li>[% END %]</ol>
@@ -428,8 +394,10 @@ $(document).ready(function() {
 [% END %]
 
 </table>
-    <fieldset class="action"><input type="submit" value="Save"  class="button" accesskey="w" />
-    [% UNLESS ( serialsadditems ) %]&nbsp;&nbsp;<input type="button" onclick="javascript:generateReceive()" value="Multi receiving">[% END %]
+    <fieldset class="action">
+       <input type="submit" value="Save"  class="button" accesskey="w" />
+       [% UNLESS ( serialsadditems ) %]&nbsp;&nbsp;<input type="button" onclick="javascript:generateReceive()" value="Multi receiving">[% END %]
+    </fieldset>
 </form>
 
 </div>
@@ -442,7 +410,9 @@ $(document).ready(function() {
         <li><a href="serials-collection.pl?subscriptionid=[% subscription.subscriptionid %]" title="serial collection for [% subscription.bibliotitle %]">Serial collection #[% subscription.subscriptionid %]</a></li>
         <li><a href="subscription-detail.pl?subscriptionid=[% subscription.subscriptionid %]" title="detail of the subscription">Subscription #[% subscription.subscriptionid %]</a></li>
         [% IF ( subscription.abouttoexpire ) %]
+          [% UNLESS subscription.closed %]
             <li><a href="#" onclick="javascript:popup([% subscription.subscriptionid %])">Renew #[% subscription.subscriptionid %]</a></li>
+          [% END %]
         [% END %]
     [% END %]
     <li><a href="/cgi-bin/koha/catalogue/[% default_bib_view %].pl?biblionumber=[% biblionumber %]" title="go to [% bibliotitle %]">Show biblio</a></li></ul>

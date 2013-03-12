@@ -47,10 +47,11 @@ if (f.company.value == "") {
 
 <div id="breadcrumbs"><a href="/cgi-bin/koha/mainpage.pl">Home</a> &rsaquo; <a href="/cgi-bin/koha/acqui/acqui-home.pl">Acquisitions</a> &rsaquo; [% IF ( enter ) %][% IF ( booksellerid ) %] <a href="/cgi-bin/koha/acqui/supplier.pl?booksellerid=[% booksellerid %]">[% name %]</a> &rsaquo; Update: [% name %][% ELSE %]Add vendor[% END %] [% ELSE %][% name %][% END %]</div>
 
-<div id="doc" class="yui-t7">
+<div id="doc3" class="yui-t2">
 
 <div id="bd">
     <div id="yui-main">
+    <div class="yui-b">
     [% IF ( enter ) %]
         [% IF ( booksellerid ) %]
         <h1>Update: [% name %]</h1>
@@ -156,8 +157,9 @@ if (f.company.value == "") {
                     <label for="invoice_gstno">Don't include tax</label> <input type="radio" id="invoice_gstno" name="invoice_gst" value="0" checked="checked" />
                 [% END %]</li>
             </ol>
-             <ol>
-                <li>
+            [% IF gst_values %]
+                <ol>
+                  <li>
                     <label for="gst">Tax rate</label>
                     <select name="gstrate" id="gstrate">
                     [% FOREACH gst IN gst_values %]
@@ -168,11 +170,14 @@ if (f.company.value == "") {
                       [% END %]
                     [% END %]
                     </select>
-                </li>
-            </ol>
+                  </li>
+                </ol>
+            [% ELSE %]
+                <input type="hidden" name="gstrate" value="0" />
+            [% END %]
             <ol>
             <li><label for="discount">Discount</label>
-                <input type="text" size="6" id="discount" name="discount" value="[% discount %]" />%</li>
+                <input type="text" size="6" id="discount" name="discount" value="[% discount | format ("%.1f") %]" />%</li>
             <li>
                 <label for="deliverytime">Delivery time</label>
                 <input type="text" size="2" id="deliverytime" name="deliverytime" value="[% deliverytime %]" /> days
@@ -234,9 +239,9 @@ if (f.company.value == "") {
             <p><strong>Invoice item price includes tax: </strong>
                     [% IF ( invoiceincgst ) %]Yes[% ELSE %]No[% END %]</p>[% END %]
             <p><strong>Discount: </strong>
-                [% discount %] %</p>
+                [% discount | format("%.1f") %] %</p>
             <p><strong>Tax rate: </strong>
-                [% 0 + gstrate * 100 | format("%.1f") %]%</p>
+                [% 0 + gstrate * 100 | format("%.1f") %] %</p>
             [% IF deliverytime.defined %]
                 <p><strong>Delivery time: </strong>
                     [% deliverytime %] days</p>
@@ -278,6 +283,10 @@ if (f.company.value == "") {
 
 [% END %]
 
+</div>
+</div>
+<div class="yui-b">
+[% INCLUDE 'vendor-menu.inc' %]
 </div>
 </div>
 [% INCLUDE 'intranet-bottom.inc' %]

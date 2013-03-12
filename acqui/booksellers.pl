@@ -87,7 +87,8 @@ my $supplier_count = @suppliers;
 if ( $supplier_count == 1 ) {
     $template->param(
         supplier_name => $suppliers[0]->{'name'},
-        booksellerid  => $suppliers[0]->{'booksellerid'}
+        booksellerid  => $suppliers[0]->{'id'},
+        basketcount   => $suppliers[0]->{'basketcount'}
     );
 }
 
@@ -148,7 +149,6 @@ $template->param(
     loop_suppliers => $loop_suppliers,
     supplier       => ( $booksellerid || $supplier ),
     count          => $supplier_count,
-    dateformat     => C4::Context->preference('dateformat'),
 );
 
 output_html_with_http_headers $query, $cookie, $template->output;

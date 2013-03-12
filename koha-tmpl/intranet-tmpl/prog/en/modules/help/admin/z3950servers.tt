@@ -22,13 +22,11 @@
 <p>The following targets have been used successfully by other Koha libraries (in the Americas):</p>
 
 <ul>
-	<li>BIBLIOS z3950.biblios.net:210 bibliographic</li>
-	<li>BIG COUNTRY KOHA bcls.kohalibrary.com:210 bcls_koha</li>
 	<li>CUYAHOGA COUNTY PUBLIC webcat.cuyahoga.lib.oh.us:210 INNOPAC</li>
 	<li>GREATER SUDBURY PUBLIC 216.223.90.51:210 INNOPAC</li>
 	<li>HALIFAX PUBLIC catalogue.halifaxpubliclibraries.ca:210 horizon</li>
 	<li>HALTON HILLS PUBLIC cat.hhpl.on.ca:210 halton_hills</li>
-	<li>LIBRARY OF CONGRESS z3950.loc.gov:7090 Voyager</li>
+	<li>LIBRARY OF CONGRESS lx2.loc.gov:210 LCDB</li>
 	<li>LONDON PUBLIC LIBRARY catalogue.londonpubliclibrary.ca:210 INNOPAC</li>
 	<li>MANITOBA PUBLIC library.gov.mb.ca:210 horizon</li>
 	<li>MILTON PL cat.mpl.on.ca:210 horizon</li>
@@ -38,6 +36,6 @@
 	<li>VANCOUVER PUBLIC LIBRARY z3950.vpl.ca:210 Horizon</li>
 </ul>
 
-<p><strong>See the full documentation for Z39.50 Servers in the <a href="http://manual.koha-community.org/3.8/en/additionaladmin.html#z3950admin">manual</a> (online).</strong></p>
+<p><strong>See the full documentation for Z39.50 Servers in the <a href="http://manual.koha-community.org/3.10/en/additionaladmin.html#z3950admin">manual</a> (online).</strong></p>
 
 [% INCLUDE 'help-bottom.inc' %]

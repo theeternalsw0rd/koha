@@ -79,6 +79,7 @@ if ($date) {
 
         $subscription->{expirationdate} = $expirationdate;
         next if $expirationdate !~ /\d{4}-\d{2}-\d{2}/; # next if not in ISO format.
+        next if $subscription->{closed};
         if ( Date_to_Days(split "-",$expirationdate) < Date_to_Days(split "-",$date) &&
 			 Date_to_Days(split "-",$expirationdate) > Date_to_Days(&Today) ) {
             $subscription->{expirationdate}=format_date($subscription->{expirationdate});
@@ -96,7 +97,6 @@ if ($date) {
     );
 }
 $template->param (
-    DHTMLcalendar_dateformat => C4::Dates->DHTMLcalendar(),
     (uc(C4::Context->preference("marcflavour"))) => 1
 );
 output_html_with_http_headers $query, $cookie, $template->output;

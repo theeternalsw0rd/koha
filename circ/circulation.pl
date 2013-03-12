@@ -94,14 +94,14 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user (
 my $branches = GetBranches();
 
 my @failedrenews = $query->param('failedrenew');    # expected to be itemnumbers 
-our %renew_failed = {};
+our %renew_failed = ();
 for (@failedrenews) { $renew_failed{$_} = 1; }
 
 my @failedreturns = $query->param('failedreturn');
-our %return_failed = {};
+our %return_failed = ();
 for (@failedreturns) { $return_failed{$_} = 1; }
 
-my $findborrower = $query->param('findborrower');
+my $findborrower = $query->param('findborrower') || q{};
 $findborrower =~ s|,| |g;
 my $borrowernumber = $query->param('borrowernumber');
 
@@ -122,7 +122,7 @@ if (C4::Context->preference("UseTablesortForCirc")) {
     $template->param(UseTablesortForCirc => 1);
 }
 
-my $barcode        = $query->param('barcode') || '';
+my $barcode        = $query->param('barcode') || q{};
 $barcode =~  s/^\s*|\s*$//g; # remove leading/trailing whitespace
 
 $barcode = barcodedecode($barcode) if( $barcode && C4::Context->preference('itemBarcodeInputFilter'));
@@ -131,7 +131,7 @@ my $duedatespec    = $query->param('duedatespec')   || $session->param('stickydu
 my $issueconfirmed = $query->param('issueconfirmed');
 my $cancelreserve  = $query->param('cancelreserve');
 my $organisation   = $query->param('organisations');
-my $print          = $query->param('print');
+my $print          = $query->param('print') || q{};
 my $newexpiry      = $query->param('dateexpiry');
 my $debt_confirmed = $query->param('debt_confirmed') || 0; # Don't show the debt error dialog twice
 
@@ -190,8 +190,7 @@ if ( $print eq 'yes' && $borrowernumber ne '' ) {
 my $borrowerslist;
 my $message;
 if ($findborrower) {
-    my $borrowers = Search($findborrower, 'cardnumber');
-    my @borrowers = @$borrowers;
+    my $borrowers = Search($findborrower, 'cardnumber') || [];
     if (C4::Context->preference("AddPatronLists")) {
         $template->param(
             "AddPatronLists_".C4::Context->preference("AddPatronLists")=> "1",
@@ -202,17 +201,17 @@ if ($findborrower) {
             $template->param(categories=>$categories);
         }
     }
-    if ( $#borrowers == -1 ) {
+    if ( @$borrowers == 0 ) {
         $query->param( 'findborrower', '' );
         $message = "'$findborrower'";
     }
-    elsif ( $#borrowers == 0 ) {
-        $query->param( 'borrowernumber', $borrowers[0]->{'borrowernumber'} );
+    elsif ( @$borrowers == 1 ) {
+        $borrowernumber = $borrowers->[0]->{'borrowernumber'};
+        $query->param( 'borrowernumber', $borrowernumber );
         $query->param( 'barcode',           '' );
-        $borrowernumber = $borrowers[0]->{'borrowernumber'};
     }
     else {
-        $borrowerslist = \@borrowers;
+        $borrowerslist = $borrowers;
     }
 }
 
@@ -373,6 +372,7 @@ if ($borrowernumber) {
         $getWaitingReserveInfo{biblionumber} = $getiteminfo->{'biblionumber'};
         $getWaitingReserveInfo{itemtype}     = $itemtypeinfo->{'description'};
         $getWaitingReserveInfo{author}       = $getiteminfo->{'author'};
+        $getWaitingReserveInfo{itemcallnumber} = $getiteminfo->{'itemcallnumber'};
         $getWaitingReserveInfo{reservedate}  = format_date( $num_res->{'reservedate'} );
         $getWaitingReserveInfo{waitingat}    = GetBranchName( $num_res->{'branchcode'} );
         $getWaitingReserveInfo{waitinghere}  = 1 if $num_res->{'branchcode'} eq $branch;
@@ -541,7 +541,6 @@ foreach my $flag ( sort keys %$flags ) {
     $flags->{$flag}->{'message'} =~ s#\n#<br />#g;
     if ( $flags->{$flag}->{'noissues'} ) {
         $template->param(
-            flagged  => 1,
             noissues => 'true',
         );
         if ( $flag eq 'GNA' ) {
@@ -573,7 +572,6 @@ foreach my $flag ( sort keys %$flags ) {
         if ( $flag eq 'CHARGES' ) {
             $template->param(
                 charges    => 'true',
-                flagged    => 1,
                 chargesmsg => $flags->{'CHARGES'}->{'message'},
                 chargesamount => $flags->{'CHARGES'}->{'amount'},
             );
@@ -588,7 +586,6 @@ foreach my $flag ( sort keys %$flags ) {
         elsif ( $flag eq 'ODUES' ) {
             $template->param(
                 odues    => 'true',
-                flagged  => 1,
                 oduesmsg => $flags->{'ODUES'}->{'message'}
             );
 
@@ -600,7 +597,6 @@ foreach my $flag ( sort keys %$flags ) {
         elsif ( $flag eq 'NOTES' ) {
             $template->param(
                 notes    => 'true',
-                flagged  => 1,
                 notesmsg => $flags->{'NOTES'}->{'message'}
             );
         }
@@ -735,8 +731,6 @@ $template->param(
     SpecifyDueDate            => $duedatespec_allow,
     CircAutocompl             => C4::Context->preference("CircAutocompl"),
 	AllowRenewalLimitOverride => C4::Context->preference("AllowRenewalLimitOverride"),
-    dateformat                => C4::Context->preference("dateformat"),
-    DHTMLcalendar_dateformat  => C4::Dates->DHTMLcalendar(),
     export_remove_fields      => C4::Context->preference("ExportRemoveFields"),
     export_with_csv_profile   => C4::Context->preference("ExportWithCsvProfile"),
     canned_bor_notes_loop     => $canned_notes,

@@ -152,9 +152,15 @@ sub create_input {
         $value =~ s/DD/$day/g;
     }
     my $dbh = C4::Context->dbh;
+
+    # map '@' as "subfield" label for fixed fields
+    # to something that's allowed in a div id.
+    my $id_subfield = $subfield;
+    $id_subfield = "00" if $id_subfield eq "@";
+
     my %subfield_data = (
         tag        => $tag,
-        subfield   => $subfield,
+        subfield   => $id_subfield,
         marc_lib   => substr( $tagslib->{$tag}->{$subfield}->{lib}, 0, 22 ),
         marc_lib_plain => $tagslib->{$tag}->{$subfield}->{lib}, 
         tag_mandatory  => $tagslib->{$tag}->{mandatory},
@@ -162,14 +168,10 @@ sub create_input {
         repeatable     => $tagslib->{$tag}->{$subfield}->{repeatable},
         kohafield      => $tagslib->{$tag}->{$subfield}->{kohafield},
         index          => $index_tag,
-        id             => "tag_".$tag."_subfield_".$subfield."_".$index_tag."_".$index_subfield,
+        id             => "tag_".$tag."_subfield_".$id_subfield."_".$index_tag."_".$index_subfield,
         value          => $value,
+        random         => CreateKey(),
     );
-    if($subfield eq '@'){
-        $subfield_data{id} = "tag_".$tag."_subfield_00_".$index_tag."_".$index_subfield;
-    } else {
-        $subfield_data{id} = "tag_".$tag."_subfield_".$subfield."_".$index_tag."_".$index_subfield;
-    }
 
     if(exists $mandatory_z3950->{$tag.$subfield}){
         $subfield_data{z3950_mandatory} = $mandatory_z3950->{$tag.$subfield};
@@ -197,7 +199,7 @@ sub create_input {
             class=\"input_marceditor\"
             tabindex=\"1\" \/>
         <a href=\"#\" class=\"buttonDot\"
-        onclick=\"openAuth(this.parentNode.getElementsByTagName('input')[1].id,'".$tagslib->{$tag}->{$subfield}->{authtypecode}."'); return false;\" tabindex=\"1\" title=\"Tag Editor\">...</a>
+        onclick=\"openAuth(this.parentNode.getElementsByTagName('input')[1].id,'".$tagslib->{$tag}->{$subfield}->{authtypecode}."','auth'); return false;\" tabindex=\"1\" title=\"Tag Editor\">...</a>
     ";
     # it's a plugin field
     }
@@ -581,17 +583,6 @@ if ($op eq "add") {
     my @ind_tag = $input->param('ind_tag');
     my @indicator = $input->param('indicator');
     my $record = TransformHtmlToMarc($input);
-    if  (C4::Context->preference("marcflavour") eq "UNIMARC"){
-        unless ($record->field('100')){
-        use POSIX qw(strftime);
-        my $string = strftime( "%Y%m%d", localtime(time) );
-        # set 50 to position 26 is biblios, 13 if authorities
-        my $pos=13;
-        $string = sprintf( "%-*s", 35, $string );
-        substr( $string, $pos , 2, "50" );
-        $record->append_fields(MARC::Field->new('100','','',"a"=>$string));
-        }    
-    }
 
     my ($duplicateauthid,$duplicateauthvalue);
      ($duplicateauthid,$duplicateauthvalue) = FindDuplicateAuthority($record,$authtypecode) if ($op eq "add") && (!$is_a_modif);

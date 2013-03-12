@@ -440,6 +440,7 @@ my %default_values_for_mod_from_marc = (
     booksellerid         => undef, 
     ccode                => undef, 
     'items.cn_source'    => undef, 
+    coded_location_qualifier => undef,
     copynumber           => undef, 
     damaged              => 0,
 #    dateaccessioned      => undef,
@@ -1277,13 +1278,14 @@ sub GetItemsInfo {
 
         # get notforloan complete status if applicable
         if ( my $code = C4::Koha::GetAuthValCode( 'items.notforloan', $data->{frameworkcode} ) ) {
-            $data->{notforloanvalue} = C4::Koha::GetAuthorisedValueByCode( $code, $data->{itemnotforloan} );
+            $data->{notforloanvalue}     = C4::Koha::GetKohaAuthorisedValueLib( $code, $data->{itemnotforloan} );
+            $data->{notforloanvalueopac} = C4::Koha::GetKohaAuthorisedValueLib( $code, $data->{itemnotforloan}, 1 );
         }
 
         # get restricted status and description if applicable
         if ( my $code = C4::Koha::GetAuthValCode( 'items.restricted', $data->{frameworkcode} ) ) {
             $data->{restricted}     = C4::Koha::GetKohaAuthorisedValueLib( $code, $data->{restricted} );
-            $data->{restrictedopac} = C4::Koha::GetKohaAuthorisedValueLib( $code, $data->{restricted}, 'opac' );
+            $data->{restrictedopac} = C4::Koha::GetKohaAuthorisedValueLib( $code, $data->{restricted}, 1 );
         }
 
         # my stack procedures
@@ -2076,6 +2078,7 @@ sub _koha_new_item {
             itemlost            = ?,
             wthdrawn            = ?,
             itemcallnumber      = ?,
+            coded_location_qualifier = ?,
             restricted          = ?,
             itemnotes           = ?,
             holdingbranch       = ?,
@@ -2117,6 +2120,7 @@ sub _koha_new_item {
             $item->{'itemlost'},
             $item->{'wthdrawn'},
             $item->{'itemcallnumber'},
+            $item->{'coded_location_qualifier'},
             $item->{'restricted'},
             $item->{'itemnotes'},
             $item->{'holdingbranch'},
@@ -2598,7 +2602,20 @@ sub PrepareItemrecordDisplay {
         $itemrecord = C4::Items::GetMarcItem( $bibnum, $itemnum );
     }
     my @loop_data;
-    my $authorised_values_sth = $dbh->prepare( "SELECT authorised_value,lib FROM authorised_values WHERE category=? ORDER BY lib" );
+
+    my $branch_limit = C4::Context->userenv ? C4::Context->userenv->{"branch"} : "";
+    my $query = qq{
+        SELECT authorised_value,lib FROM authorised_values
+    };
+    $query .= qq{
+        LEFT JOIN authorised_values_branches ON ( id = av_id )
+    } if $branch_limit;
+    $query .= qq{
+        WHERE category = ?
+    };
+    $query .= qq{ AND ( branchcode = ? OR branchcode IS NULL )} if $branch_limit;
+    $query .= qq{ ORDER BY lib};
+    my $authorised_values_sth = $dbh->prepare( $query );
     foreach my $tag ( sort keys %{$tagslib} ) {
         my $previous_tag = '';
         if ( $tag ne '' ) {
@@ -2628,52 +2645,39 @@ sub PrepareItemrecordDisplay {
                 $defaultvalue = $tagslib->{$tag}->{$subfield}->{defaultvalue} unless $defaultvalue;
                 if ( !defined $defaultvalue ) {
                     $defaultvalue = q||;
+                } else {
+                    $defaultvalue =~ s/"/&quot;/g;
                 }
-                $defaultvalue =~ s/"/&quot;/g;
 
                 # search for itemcallnumber if applicable
                 if ( $tagslib->{$tag}->{$subfield}->{kohafield} eq 'items.itemcallnumber'
                     && C4::Context->preference('itemcallnumber') ) {
                     my $CNtag      = substr( C4::Context->preference('itemcallnumber'), 0, 3 );
                     my $CNsubfield = substr( C4::Context->preference('itemcallnumber'), 3, 1 );
-                    if ($itemrecord) {
-                        my $temp = $itemrecord->field($CNtag);
-                        if ($temp) {
-                            $defaultvalue = $temp->subfield($CNsubfield);
-                        }
+                    if ( $itemrecord and my $field = $itemrecord->field($CNtag) ) {
+                        $defaultvalue = $field->subfield($CNsubfield);
                     }
                 }
                 if (   $tagslib->{$tag}->{$subfield}->{kohafield} eq 'items.itemcallnumber'
                     && $defaultvalues
                     && $defaultvalues->{'callnumber'} ) {
-                    my $temp;
-                    if ($itemrecord) {
-                        $temp = $itemrecord->field($subfield);
-                    }
-                    unless ($temp) {
-                        $defaultvalue = $defaultvalues->{'callnumber'} if $defaultvalues;
+                    if( $itemrecord and $defaultvalues and not $itemrecord->field($subfield) ){
+                        $defaultvalue = $defaultvalues->{callnumber};
                     }
                 }
                 if (   ( $tagslib->{$tag}->{$subfield}->{kohafield} eq 'items.holdingbranch' || $tagslib->{$tag}->{$subfield}->{kohafield} eq 'items.homebranch' )
                     && $defaultvalues
                     && $defaultvalues->{'branchcode'} ) {
-                    my $temp;
-                    if ($itemrecord) {
-                        $temp = $itemrecord->field($subfield);
-                    }
-                    unless ($temp) {
-                        $defaultvalue = $defaultvalues->{branchcode} if $defaultvalues;
+                    if ( $itemrecord and $defaultvalues and not $itemrecord->field($subfield) ) {
+                        $defaultvalue = $defaultvalues->{branchcode};
                     }
                 }
                 if (   ( $tagslib->{$tag}->{$subfield}->{kohafield} eq 'items.location' )
                     && $defaultvalues
                     && $defaultvalues->{'location'} ) {
 
-                    my $temp; # make perlcritic happy :)
-                    $temp = $itemrecord->field($subfield) if ($itemrecord);
-
-                    unless ($temp) {
-                        $defaultvalue = $defaultvalues->{location} if $defaultvalues;
+                    if ( $itemrecord and $defaultvalues and not $itemrecord->field($subfield) ) {
+                        $defaultvalue = $defaultvalues->{location};
                     }
                 }
                 if ( $tagslib->{$tag}->{$subfield}->{authorised_value} ) {
@@ -2703,6 +2707,7 @@ sub PrepareItemrecordDisplay {
                                 $authorised_lib{$branchcode} = $branchname;
                             }
                         }
+                        $defaultvalue = C4::Context->userenv->{branch};
 
                         #----- itemtypes
                     } elsif ( $tagslib->{$tag}->{$subfield}->{authorised_value} eq "itemtypes" ) {
@@ -2730,7 +2735,10 @@ sub PrepareItemrecordDisplay {
 
                         #---- "true" authorised value
                     } else {
-                        $authorised_values_sth->execute( $tagslib->{$tag}->{$subfield}->{authorised_value} );
+                        $authorised_values_sth->execute(
+                            $tagslib->{$tag}->{$subfield}->{authorised_value},
+                            $branch_limit ? $branch_limit : ()
+                        );
                         push @authorised_values, ""
                           unless ( $tagslib->{$tag}->{$subfield}->{mandatory} );
                         while ( my ( $value, $lib ) = $authorised_values_sth->fetchrow_array ) {
@@ -2751,9 +2759,8 @@ sub PrepareItemrecordDisplay {
                         # opening plugin
                         my $plugin = C4::Context->intranetdir . "/cataloguing/value_builder/" . $tagslib->{$tag}->{$subfield}->{'value_builder'};
                         if (do $plugin) {
-                            my $temp;
-                            my $extended_param = plugin_parameters( $dbh, $temp, $tagslib, $subfield_data{id}, undef );
-                            my ( $function_name, $javascript ) = plugin_javascript( $dbh, $temp, $tagslib, $subfield_data{id}, undef );
+                            my $extended_param = plugin_parameters( $dbh, undef, $tagslib, $subfield_data{id}, undef );
+                            my ( $function_name, $javascript ) = plugin_javascript( $dbh, undef, $tagslib, $subfield_data{id}, undef );
                             $subfield_data{random}     = int(rand(1000000));    # why do we need 2 different randoms?
                             $subfield_data{marc_value} = qq[<input tabindex="1" id="$subfield_data{id}" name="field_value" class="input_marceditor" size="67" maxlength="255"
                                 onfocus="Focus$function_name($subfield_data{random}, '$subfield_data{id}');"

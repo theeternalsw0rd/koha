@@ -41,7 +41,7 @@ sub ajax_auth_cgi ($) {		# returns CGI object
 	my $needed_flags = shift;
 	my %cookies = fetch CGI::Cookie;
 	my $input = CGI->new;
-	my $sessid = $cookies{'CGISESSID'}->value || $input->param('CGISESSID');
+    my $sessid = $cookies{'CGISESSID'}->value;
 	my ($auth_status, $auth_sessid) = check_cookie_auth($sessid, $needed_flags);
 	$debug and
 	print STDERR "($auth_status, $auth_sessid) = check_cookie_auth($sessid," . Dumper($needed_flags) . ")\n";
@@ -207,7 +207,6 @@ $qstring = "limit=$pagesize" . ($qstring ? '&amp;' . $qstring : '');
 $debug and print STDERR "number of approval_rows: " . scalar(@$tagloop) . "rows\n";
 (scalar @errors) and $template->param(message_loop=>\@errors);
 $template->param(
-	DHTMLcalendar_dateformat => C4::Dates->DHTMLcalendar(),
 	offset => $offset,	# req'd for EXPR
 	op => $op,
 	op_count => scalar(@tags),

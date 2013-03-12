@@ -56,16 +56,16 @@ unless (C4::Context->preference('WebBasedSelfCheck')) {
 
 if (C4::Context->preference('AutoSelfCheckAllowed')) 
 {
-	my $AutoSelfCheckID = C4::Context->preference('AutoSelfCheckID');
-	my $AutoSelfCheckPass = C4::Context->preference('AutoSelfCheckPass');
-	$query->param(-name=>'userid',-values=>[$AutoSelfCheckID]);
-	$query->param(-name=>'password',-values=>[$AutoSelfCheckPass]);
+    my $AutoSelfCheckID = C4::Context->preference('AutoSelfCheckID');
+    my $AutoSelfCheckPass = C4::Context->preference('AutoSelfCheckPass');
+    $query->param(-name=>'userid',-values=>[$AutoSelfCheckID]);
+    $query->param(-name=>'password',-values=>[$AutoSelfCheckPass]);
     $query->param(-name=>'koha_login_context',-values=>['sco']);
 }
 my ($template, $loggedinuser, $cookie) = get_template_and_user({
     template_name   => "sco/sco-main.tmpl",
     authnotrequired => 0,
-      flagsrequired => { circulate => "circulate_remaining_permissions" },
+    flagsrequired => { circulate => "circulate_remaining_permissions" },
     query => $query,
     type  => "opac",
     debug => 1,
@@ -91,14 +91,13 @@ $template->param(AllowSelfCheckReturns => $allowselfcheckreturns);
 
 
 my $issuerid = $loggedinuser;
-my ($op, $patronid, $patronlogin, $patronpw, $barcode, $confirmed, $timedout) = (
+my ($op, $patronid, $patronlogin, $patronpw, $barcode, $confirmed) = (
     $query->param("op")         || '',
     $query->param("patronid")   || '',
     $query->param("patronlogin")|| '',
     $query->param("patronpw")   || '',
     $query->param("barcode")    || '',
     $query->param("confirmed")  || '',
-    $query->param("timedout")   || '', #not actually using this...
 );
 
 my $issuenoconfirm = 1; #don't need to confirm on issue.
@@ -239,13 +238,14 @@ if ($borrower->{cardnumber}) {
         patronlogin => $patronlogin,
         patronpw => $patronpw,
         noitemlinks => 1 ,
+        borrowernumber => $borrower->{'borrowernumber'},
     );
     my $inputfocus = ($return_only      == 1) ? 'returnbook' :
                      ($confirm_required == 1) ? 'confirm'    : 'barcode' ;
     $template->param(
         inputfocus => $inputfocus,
-		nofines => 1,
-        "dateformat_" . C4::Context->preference('dateformat') => 1,
+        nofines => 1,
+
     );
     if (C4::Context->preference('ShowPatronImageInWebBasedSelfCheck')) {
         my ($image, $dberror) = GetPatronImage($borrower->{cardnumber});
@@ -262,5 +262,10 @@ if ($borrower->{cardnumber}) {
         nouser     => $patronid,
     );
 }
+
+$template->param(
+    SCOUserJS  => C4::Context->preference('SCOUserJS'),
+    SCOUserCSS => C4::Context->preference('SCOUserCSS'),
+);
 
 output_html_with_http_headers $query, $cookie, $template->output;

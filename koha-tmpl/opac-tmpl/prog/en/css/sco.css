@@ -141,6 +141,7 @@ div.message {
  
 .dialog input.back {
     background : #FFF url(/opac-tmpl/lib/famfamfam/silk/arrow_left.png) no-repeat 4px center;
+    border: 1px solid #BCBCBC;
 	padding : .4em .4em .4em 25px;	
  }
  
@@ -359,4 +360,8 @@ div.ft {
 .due:before{ content: "Due: "; }
 * { font-size: 0.2in !important; }
 #masthead, .sco_head, #newcheckout, #loanTable caption, #loanTable thead, #loanTable .norenewal, #loanTable .callnumber { display:none !important}
+
+}
+.inline {
+    display: inline;
 }

@@ -49,9 +49,11 @@ definition file (probably something like {biblio,authority}-koha-indexdefs.xml) 
             </xslo:template>
 
             <xslo:template match="marc:record">
-                <xslo:variable name="controlField001" select="normalize-space(marc:controlfield[@tag='001'])"/>
+                <xslo:variable name="idfield">
+                    <xsl:attribute name="select">normalize-space(<xsl:value-of select="//id"/>)</xsl:attribute>
+                </xslo:variable>
                 <z:record type="update">
-                    <xslo:attribute name="z:id"><xslo:value-of select="$controlField001"/></xslo:attribute>
+                    <xslo:attribute name="z:id"><xslo:value-of select="$idfield"/></xslo:attribute>
                     <xslo:apply-templates/>
                     <xslo:apply-templates mode="index_subfields"/>
                     <xslo:apply-templates mode="index_data_field"/>
@@ -59,6 +61,7 @@ definition file (probably something like {biblio,authority}-koha-indexdefs.xml) 
                     <xslo:apply-templates mode="index_heading_conditional"/>
                     <xslo:apply-templates mode="index_match_heading"/>
                     <xslo:apply-templates mode="index_subject_thesaurus"/>
+                    <xslo:apply-templates mode="index_all"/>
                 </z:record>
             </xslo:template>
 
@@ -70,7 +73,7 @@ definition file (probably something like {biblio,authority}-koha-indexdefs.xml) 
             <xsl:call-template name="handle-index-heading-conditional"/>
             <xsl:call-template name="handle-index-match-heading"/>
             <xsl:apply-templates/>
-            <xslo:template match="*">
+            <xslo:template mode="index_all" match="text()">
                 <z:index name="Any:w Any:p">
                     <xslo:value-of select="."/>
                 </z:index>
@@ -286,6 +289,7 @@ definition file (probably something like {biblio,authority}-koha-indexdefs.xml) 
     <xsl:template name="handle-index-heading-conditional">
         <xsl:for-each select="//kohaidx:index_heading_conditional[generate-id() = generate-id(key('index_heading_conditional_tag', @tag)[1])]">
             <xslo:template mode="index_heading_conditional">
+                <xsl:attribute name="match">marc:datafield[@tag='<xsl:value-of select="@tag"/>']</xsl:attribute>
                 <xslo:if>
                     <xsl:attribute name="test"><xsl:value-of select="@test"/></xsl:attribute>
                     <xsl:for-each select="key('index_heading_conditional_tag', @tag)">

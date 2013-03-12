@@ -36,26 +36,26 @@
 <script type="text/javascript">
 //<![CDATA[
             function confirm_close() {
-                var is_confirmed = confirm(_('Are you sure you want to close this basket?'));
+                var is_confirmed = confirm(_("Are you sure you want to close this basket?"));
                 if (is_confirmed) {
                     window.location = "[% script_name %]?op=close&basketno=[% basketno %]";
                 }
             }
             function confirm_deletion() {
-                var is_confirmed = confirm(_('Are you sure you want to delete this basket?'));
+                var is_confirmed = confirm(_("Are you sure you want to delete this basket?"));
                 if (is_confirmed) {
                     window.location = "[% script_name %]?op=delete_confirm&basketno=[% basketno %]&booksellerid=[% booksellerid %]";
                 }
             }
             function confirm_delete_item(ordernumber, biblionumber) {
-                var is_confirmed = confirm(_('Are you sure you want to delete this order ?'));
+                var is_confirmed = confirm(_("Are you sure you want to delete this order ?"));
                 if (is_confirmed) {
                     window.location = "addorder.pl?ordernumber="+ordernumber+"&basketno=[% basketno %]&quantity=0&biblionumber="+biblionumber;
                 }
             }
             
             function confirm_delete_biblio(ordernumber, biblionumber) {
-                var is_confirmed = confirm(_('Are you sure you want to delete this catalog record and order ?'));
+                var is_confirmed = confirm(_("Are you sure you want to delete this catalog record and order ?"));
                 if (is_confirmed) {
                     window.location = "addorder.pl?ordernumber="+ordernumber+"&basketno=[% basketno %]&quantity=0&biblionumber="+biblionumber+"&delbiblio=1";
                     }
@@ -79,7 +79,7 @@
 <script type="text/javascript">
 //<![CDATA[
             function confirm_reopen(skip) {
-                var is_confirmed = skip || confirm(_('Are you sure you want to reopen this basket?'));
+                var is_confirmed = skip || confirm(_("Are you sure you want to reopen this basket?"));
                 if (is_confirmed) {
                     window.location = "[% script_name %]?op=reopen&basketno=[% basketno %]";
                 }
@@ -232,24 +232,38 @@
                 [% IF ( closedate ) %]
                 <div class="yui-u">
                     <form action="/cgi-bin/koha/acqui/basketgroup.pl" method="post">
+                        <p>
+                          <label for="basketgroupid"><strong>Basket group:</strong></label>
+                          [% IF basketgroup.closed %]
+                            [% basketgroup.name %] (closed)
+                          [% ELSE %]
+                            </p>
+                            <p>
+                            <select id="basketgroupid" name="basketgroupid">
+                              <option value="new">Add new group</option>
+                              [% FOREACH bg IN basketgroups %]
+                                [% IF ( bg.default ) %]
+                                    <option value="[% bg.id %]" selected="selected">[% bg.name %]</option>
+                                [% ELSE %]
+                                  [% UNLESS bg.closed %]
+                                    <option value="[% bg.id %]">[% bg.name %]</option>
+                                  [% ELSE %]
+                                    <option value="[% bg.id %]" disabled="disabled">[% bg.name %] (closed)</option>
+                                  [% END %]
+                                [% END %]
+                              [% END %]
+                            </select>
+                          [% END %]
+                        </p>
 
-                        <p><label for="basketgroupid"><strong>Basket group:</strong></label></p>
-                        <p><select id="basketgroupid" name="basketgroupid">
-                            <option value="new">Add new group</option>
-                                                    [% FOREACH basketgroup IN basketgroups %]
-                                                        [% IF ( basketgroup.default ) %]
-                            <option value="[% basketgroup.id %]" selected="selected">[% basketgroup.name %]</option>
-                                                        [% ELSE %]
-                            <option value="[% basketgroup.id %]">[% basketgroup.name %]</option>
-                                                        [% END %]
-                                                    [% END %]
-                        </select></p>
-
-                        <p><input type="hidden" id="basketno" value="[% basketno %]" name="basketno" />
-                        <input type="hidden" value="mod_basket" name="op" />
-                        <input type="hidden" name="booksellerid" value="[% booksellerid %]" />
-                        <input type="submit" value="Change basket group" /></p>
-
+                        [% UNLESS basketgroup.closed %]
+                          <p>
+                            <input type="hidden" id="basketno" value="[% basketno %]" name="basketno" />
+                            <input type="hidden" value="mod_basket" name="op" />
+                            <input type="hidden" name="booksellerid" value="[% booksellerid %]" />
+                            <input type="submit" value="Change basket group" />
+                          </p>
+                        [% END %]
                     </form>
                     [% IF ( basketgroupdeliveryplace ) %]<p>Basket group delivery place: [% basketgroupdeliveryplace %]</p>[% END %]
                     [% IF ( basketgroupbillingplace ) %]<p>Basket group billing place: [% basketgroupbillingplace %]</p>[% END %]

@@ -576,12 +576,12 @@ our $PERL_DEPS = {
     },
     'DBD::Mock' => {
         'usage'    => 'Core',
-        'required' => '0',
+        'required' => '1',
         'min_ver'  => '1.39'
     },
     'Test::MockModule' => {
         'usage'    => 'Core',
-        'required' => '0',
+        'required' => '1',
         'min_ver'  => '0.05',
     },
     'Test::Warn' => {
@@ -623,6 +623,16 @@ our $PERL_DEPS = {
         'usage'    => 'Command line scripts',
         'required' => '0',
         'min_ver'  => '2.13',
+    },
+    'Moose' => {
+        'usage'    => 'Core',
+        'required' => '0',
+        'min_ver'  => '1.09',
+      },
+    'String::Random' => {
+        'usage'    => 'OpacSelfRegistration',
+        'required' => '1',
+        'min_ver'  => '0.22',
     },
 };
 

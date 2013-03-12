@@ -4,7 +4,7 @@
 [% INCLUDE 'doc-head-close.inc' %]
 <script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.checkboxes.min.js"></script>
 <script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.tablesorter.min.js"></script>
-<script type="text/JavaScript" language="JavaScript">
+<script type="text/javascript">
 //<![CDATA[
 $.tablesorter.addParser({
     id: 'articles', 
@@ -44,8 +44,8 @@ $.tablesorter.addParser({
 				[% END %]
 				}
             });
-            [% IF ( loggedinusername ) %]$("span.clearall").html("<a id=\"CheckNone\" href=\"#\">"+_('Clear all')+"<\/a>");
-            $("span.checkall").html("<a id=\"CheckAll\" href=\"#\">"+_('Select all')+"<\/a>");
+            [% IF ( loggedinusername ) %]$("span.clearall").html("<a id=\"CheckNone\" href=\"#\">"+_("Clear all")+"<\/a>");
+            $("span.checkall").html("<a id=\"CheckAll\" href=\"#\">"+_("Select all")+"<\/a>");
             $("#CheckAll").click(function(){
                 $(".checkboxed").checkCheckboxes();
                 enableCheckboxActions();
@@ -63,7 +63,9 @@ $.tablesorter.addParser({
             .click(function(){
               $("#myform").submit();
               return false;
-            });[% END %]
+            });
+            enableCheckboxActions();
+            [% END %]
        });
 
       function Check(f) {
@@ -152,7 +154,7 @@ $.tablesorter.addParser({
                     Search for:
                 </th>
                 <td>
-                    <input type="text" name="title" value="[% title %]" />
+                    <input type="text" name="title" value="[% title |html %]" />
                 </td>
                 <th>
                 Suggested by:

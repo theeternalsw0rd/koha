@@ -1,5 +1,6 @@
 [% INCLUDE 'doc-head-open.inc' %][% LibraryNameTitle or "Koha online" %] catalog &rsaquo;  Placing a hold
 [% INCLUDE 'doc-head-close.inc' %]
+[% INCLUDE 'calendar.inc' %]
 <script type="text/javascript">
 // <![CDATA[
  var MSG_NO_COPY_SELECTED = _("Expecting a specific copy selection.");
@@ -292,7 +293,11 @@
                           [% UNLESS ( bibitemloo.bib_available ) %]
                             <div class="bibmessage">No available items.</div>
                           [% ELSE %]
-                            <div class="bibmessage">This title cannot be requested.</div>
+                            [% IF ( bibitemloo.already_patron_possession ) %]
+                                <div class="bibmessage">This title cannot be requested because it's already in your possession.</div>
+                            [% ELSE %]
+                                <div class="bibmessage">This title cannot be requested.</div>
+                            [% END %]
                           [% END %]
                         [% END %]
 
@@ -318,7 +323,7 @@
                 [% IF ( reserve_in_future ) %]
                         <td class="reserve_date">
               <input name="reserve_date_[% bibitemloo.biblionumber %]" id="from" size="10" class="datepickerfrom"/>
-              <script language="JavaScript" type="text/javascript">
+              <script type="text/javascript">
               //<![CDATA[
               $("#reserve_date_[% bibitemloo.biblionumber %]").attr( 'readonly', 'readonly' );
               //]]>

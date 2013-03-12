@@ -34,6 +34,7 @@ use C4::ClassSource;
 use C4::Dates;
 use C4::Debug;
 use MARC::File::XML;
+use List::MoreUtils qw/uniq/;
 
 my $input = new CGI;
 my $dbh = C4::Context->dbh;
@@ -53,6 +54,7 @@ my $template_flag;
 if (!defined $op) {
     $template_name = "tools/batchMod.tmpl";
     $template_flag = { tools => '*' };
+    $op = q{};
 } else {
     $template_name = ($del) ? "tools/batchMod-del.tmpl" : "tools/batchMod-edit.tmpl";
     $template_flag = ($del) ? { tools => 'items_batchdel' }   : { tools => 'items_batchmod' };
@@ -236,7 +238,7 @@ if ($op eq "show"){
             }
         }
         if ( my $list=$input->param('barcodelist')){
-            push my @barcodelist, split(/\s\n/, $list);
+            push my @barcodelist, uniq( split(/\s\n/, $list) );
 
             foreach my $barcode (@barcodelist) {
 
@@ -265,7 +267,13 @@ if ($op eq "show"){
 # now, build the item form for entering a new item
 my @loop_data =();
 my $i=0;
-my $authorised_values_sth = $dbh->prepare("SELECT authorised_value,lib FROM authorised_values WHERE category=? ORDER BY lib");
+my $branch_limit = C4::Context->userenv ? C4::Context->userenv->{"branch"} : "";
+my $query = qq{SELECT authorised_value, lib FROM authorised_values};
+$query  .= qq{ LEFT JOIN authorised_values_branches ON ( id = av_id ) } if $branch_limit;
+$query  .= qq{ WHERE category = ?};
+$query  .= qq{ AND ( branchcode = ? OR branchcode IS NULL ) } if $branch_limit;
+$query  .= qq{ GROUP BY lib ORDER BY lib, lib_opac};
+my $authorised_values_sth = $dbh->prepare( $query );
 
 my $branches = GetBranchesLoop();  # build once ahead of time, instead of multiple times later.
 
@@ -358,7 +366,7 @@ foreach my $tag (sort keys %{$tagslib}) {
       }
       else {
           push @authorised_values, ""; # unless ( $tagslib->{$tag}->{$subfield}->{mandatory} );
-          $authorised_values_sth->execute( $tagslib->{$tag}->{$subfield}->{authorised_value} );
+          $authorised_values_sth->execute( $tagslib->{$tag}->{$subfield}->{authorised_value}, $branch_limit ? $branch_limit : () );
           while ( my ( $value, $lib ) = $authorised_values_sth->fetchrow_array ) {
               push @authorised_values, $value;
               $authorised_lib{$value} = $lib;
@@ -393,14 +401,14 @@ foreach my $tag (sort keys %{$tagslib}) {
 			my $temp;
             my $extended_param = plugin_parameters( $dbh, $temp, $tagslib, $subfield_data{id}, \@loop_data );
             my ( $function_name, $javascript ) = plugin_javascript( $dbh, $temp, $tagslib, $subfield_data{id}, \@loop_data );
-            $subfield_data{marc_value} = qq[<input $attributes
+            $subfield_data{marc_value} = qq[<input type="text" $attributes
                 onfocus="Focus$function_name($subfield_data{random}, '$subfield_data{id}');"
                  onblur=" Blur$function_name($subfield_data{random}, '$subfield_data{id}');" />
                 <a href="#" class="buttonDot" onclick="Clic$function_name('$subfield_data{id}'); return false;" title="Tag Editor">...</a>
                 $javascript];
         } else {
             warn "Plugin Failed: $plugin";
-            $subfield_data{marc_value} = "<input $attributes />"; # supply default input form
+            $subfield_data{marc_value} = "<input type=\"text\" $attributes />"; # supply default input form
         }
     }
     elsif ( $tag eq '' ) {       # it's an hidden field
@@ -419,13 +427,15 @@ foreach my $tag (sort keys %{$tagslib}) {
         $subfield_data{marc_value} = "<textarea $attributes_no_value>$value</textarea>\n";
     } else {
         # it's a standard field
-         $subfield_data{marc_value} = "<input $attributes />";
+         $subfield_data{marc_value} = "<input type=\"text\" $attributes />";
     }
 #   $subfield_data{marc_value}="<input type=\"text\" name=\"field_value\">";
     push (@loop_data, \%subfield_data);
     $i++
   }
 } # -- End foreach tag
+$authorised_values_sth->finish;
+
 
 
     # what's the next op ? it's what we are not in : an add if we're editing, otherwise, and edit.
@@ -440,8 +450,8 @@ foreach my $tag (sort keys %{$tagslib}) {
 $template->param(%$items_display_hashref) if $items_display_hashref;
 $template->param(
     op      => $nextop,
-    $op => 1,
 );
+$template->param( $op => 1 ) if $op;
 
 if ($op eq "action") {
 
@@ -457,7 +467,7 @@ if ($op eq "action") {
 }
 
 foreach my $error (@errors) {
-    $template->param($error => 1);
+    $template->param($error => 1) if $error;
 }
 $template->param(src => $src);
 $template->param(biblionumber => $biblionumber);

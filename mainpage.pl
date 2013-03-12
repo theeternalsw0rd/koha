@@ -28,17 +28,17 @@ use C4::NewsChannels;
 use C4::Review qw/numberofreviews/;
 use C4::Suggestions qw/CountSuggestion/;
 use C4::Tags qw/get_count_by_tag_status/;
-my $query     = new CGI;
+use Koha::Borrower::Modifications;
 
-my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
+my $query = new CGI;
+
+my ( $template, $loggedinuser, $cookie, $flags ) = get_template_and_user(
     {
         template_name   => "intranet-main.tmpl",
         query           => $query,
         type            => "intranet",
         authnotrequired => 0,
-        flagsrequired   => {
-            catalogue => 1,
-        },
+        flagsrequired   => { catalogue => 1, },
     }
 );
 
@@ -50,14 +50,30 @@ $template->param(
     koha_news_count => $koha_news_count
 );
 
-my $pendingcomments = numberofreviews(0);
-my $pendingtags = get_count_by_tag_status(0);
-my $pendingsuggestions       = CountSuggestion("ASKED");
+my $branch =
+  C4::Context->preference("IndependantBranches")
+  && !$flags->{'superlibrarian'}
+  ? C4::Context->userenv()->{'branch'}
+  : undef;
+
+my $pendingcomments    = numberofreviews(0);
+my $pendingtags        = get_count_by_tag_status(0);
+my $pendingsuggestions = CountSuggestion("ASKED");
+my $pending_borrower_modifications =
+  Koha::Borrower::Modifications->GetPendingModificationsCount( $branch );
 
 $template->param(
-    pendingcomments    => $pendingcomments,
-    pendingtags        => $pendingtags,
-    pendingsuggestions => $pendingsuggestions
+    pendingcomments                => $pendingcomments,
+    pendingtags                    => $pendingtags,
+    pendingsuggestions             => $pendingsuggestions,
+    pending_borrower_modifications => $pending_borrower_modifications,
 );
+
+#
+# warn user if he is using mysql/admin login
+#
+unless ($loggedinuser) {
+    $template->param(adminWarning => 1);
+}
 
 output_html_with_http_headers $query, $cookie, $template->output;

@@ -96,12 +96,6 @@ foreach my $num (@getreserves) {
     my $holdingbranch = $gettitle->{'holdingbranch'};
     my $homebranch = $gettitle->{'homebranch'};
 
-    if ($cancelall) {
-        my $res = cancel( $itemnumber, $borrowernum, $holdingbranch, $homebranch, !$transfer_when_cancel_all );
-        push @cancel_result, $res if $res;
-        next;
-    }
-
     my %getreserv = (
         itemnumber => $itemnumber,
         borrowernum => $borrowernum,
@@ -139,8 +133,14 @@ foreach my $num (@getreserves) {
     }
  
     if ($today > $calcDate) {
-        push @overloop,   \%getreserv;
-        $overcount++;
+        if ($cancelall) {
+            my $res = cancel( $itemnumber, $borrowernum, $holdingbranch, $homebranch, !$transfer_when_cancel_all );
+            push @cancel_result, $res if $res;
+            next;
+        } else {
+            push @overloop,   \%getreserv;
+            $overcount++;
+        }
     }else{
         push @reservloop, \%getreserv;
         $reservcount++;
@@ -155,7 +155,6 @@ $template->param(
     overloop    => \@overloop,
     overcount   => $overcount,
     show_date   => format_date(C4::Dates->today('iso')),
-    dateformat  => C4::Context->preference("dateformat"),
     ReservesMaxPickUpDelay => C4::Context->preference('ReservesMaxPickUpDelay')
 );
 

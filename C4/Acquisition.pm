@@ -190,18 +190,21 @@ The other parameters are optional, see ModBasketHeader for more info on them.
 =cut
 
 sub NewBasket {
-    my ( $booksellerid, $authorisedby, $basketname, $basketnote, $basketbooksellernote, $basketcontractnumber, $deliveryplace, $billingplace ) = @_;
+    my ( $booksellerid, $authorisedby, $basketname, $basketnote,
+        $basketbooksellernote, $basketcontractnumber, $deliveryplace,
+        $billingplace ) = @_;
     my $dbh = C4::Context->dbh;
-    my $query = "
-        INSERT INTO aqbasket
-                (creationdate,booksellerid,authorisedby)
-        VALUES  (now(),'$booksellerid','$authorisedby')
-    ";
-    my $sth =
-    $dbh->do($query);
-#find & return basketno MYSQL dependant, but $dbh->last_insert_id always returns null :-(
-    my $basket = $dbh->{'mysql_insertid'};
-    ModBasketHeader($basket, $basketname || '', $basketnote || '', $basketbooksellernote || '', $basketcontractnumber || undef, $booksellerid, $deliveryplace || undef, $billingplace || undef );
+    my $query =
+        'INSERT INTO aqbasket (creationdate,booksellerid,authorisedby) '
+      . 'VALUES  (now(),?,?)';
+    $dbh->do( $query, {}, $booksellerid, $authorisedby );
+
+    my $basket = $dbh->{mysql_insertid};
+    $basketname           ||= q{}; # default to empty strings
+    $basketnote           ||= q{};
+    $basketbooksellernote ||= q{};
+    ModBasketHeader( $basket, $basketname, $basketnote, $basketbooksellernote,
+        $basketcontractnumber, $booksellerid, $deliveryplace, $billingplace );
     return $basket;
 }
 
@@ -798,14 +801,12 @@ Returns a reference to the array of all the basketgroups of bookseller $booksell
 
 sub GetBasketgroups {
     my $booksellerid = shift;
-    die "bookseller id is required to edit a basketgroup" unless $booksellerid;
-    my $query = "SELECT * FROM aqbasketgroups WHERE booksellerid=? ORDER BY `id` DESC";
+    die 'bookseller id is required to edit a basketgroup' unless $booksellerid;
+    my $query = 'SELECT * FROM aqbasketgroups WHERE booksellerid=? ORDER BY id DESC';
     my $dbh = C4::Context->dbh;
     my $sth = $dbh->prepare($query);
     $sth->execute($booksellerid);
-    my $results = $sth->fetchall_arrayref({});
-    $sth->finish;
-    return $results
+    return $sth->fetchall_arrayref({});
 }
 
 #------------------------------------------------------------#
@@ -1032,7 +1033,7 @@ Else, the upcoming July 1st is used.
 
 =item defaults entrydate to Now
 
-The following keys are used: "biblionumber", "title", "basketno", "quantity", "notes", "biblioitemnumber", "rrp", "ecost", "gstrate", "unitprice", "subscription", "sort1", "sort2", "booksellerinvoicenumber", "listprice", "budgetdate", "purchaseordernumber", "branchcode", "booksellerinvoicenumber", "bookfundid".
+The following keys are used: "biblionumber", "title", "basketno", "quantity", "notes", "biblioitemnumber", "rrp", "ecost", "gstrate", "unitprice", "subscription", "sort1", "sort2", "booksellerinvoicenumber", "listprice", "budgetdate", "purchaseordernumber", "branchcode", "booksellerinvoicenumber", "budget_id".
 
 =back
 
@@ -1491,7 +1492,7 @@ C<@results> is an array of references-to-hash with the following keys:
 
 =item C<branchcode>
 
-=item C<bookfundid>
+=item C<budget_id>
 
 =back
 
@@ -1795,8 +1796,8 @@ sub GetLateOrders {
     my $having = "";
     if ($dbdriver eq "mysql") {
         $select .= "
-        aqorders.quantity - IFNULL(aqorders.quantityreceived,0)                 AS quantity,
-        (aqorders.quantity - IFNULL(aqorders.quantityreceived,0)) * aqorders.rrp AS subtotal,
+        aqorders.quantity - COALESCE(aqorders.quantityreceived,0)                 AS quantity,
+        (aqorders.quantity - COALESCE(aqorders.quantityreceived,0)) * aqorders.rrp AS subtotal,
         DATEDIFF(CAST(now() AS date),closedate) AS latesince
         ";
         if ( defined $delay ) {
@@ -2319,9 +2320,11 @@ Orders informations are in $invoice->{orders} (array ref)
 
 sub GetInvoiceDetails {
     my ($invoiceid) = @_;
-    my $invoice;
 
-    return unless $invoiceid;
+    if ( !defined $invoiceid ) {
+        carp 'GetInvoiceDetails called without an invoiceid';
+        return;
+    }
 
     my $dbh = C4::Context->dbh;
     my $query = qq{
@@ -2333,7 +2336,7 @@ sub GetInvoiceDetails {
     my $sth = $dbh->prepare($query);
     $sth->execute($invoiceid);
 
-    $invoice = $sth->fetchrow_hashref;
+    my $invoice = $sth->fetchrow_hashref;
 
     $query = qq{
         SELECT aqorders.*, biblio.*

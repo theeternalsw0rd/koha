@@ -244,9 +244,16 @@ foreach my $biblionumber (@biblionumbers) {
     my $dat          = GetBiblioData($biblionumber);
 
     unless ( CanBookBeReserved($borrowerinfo->{borrowernumber}, $biblionumber) ) {
- 		$warnings = 1;
+		$warnings = 1;
         $maxreserves = 1;
     }
+
+    my $alreadypossession;
+    if (not C4::Context->preference('AllowHoldsOnPatronsPossessions') and CheckIfIssuedToPatron($borrowerinfo->{borrowernumber},$biblionumber)) {
+        $warnings = 1;
+        $alreadypossession = 1;
+    }
+
     # get existing reserves .....
     my ( $count, $reserves ) = GetReservesFromBiblionumber($biblionumber,1);
     my $totalcount = $count;
@@ -268,7 +275,8 @@ foreach my $biblionumber (@biblionumbers) {
     $template->param( alreadyreserved => $alreadyreserved,
                       messages => $messages,
                       warnings => $warnings,
-					  maxreserves=>$maxreserves
+                 maxreserves=>$maxreserves,
+                     alreadypossession => $alreadypossession,
 					  );
 
 
@@ -623,7 +631,6 @@ foreach my $biblionumber (@biblionumbers) {
 
 $template->param( biblioloop => \@biblioloop );
 $template->param( biblionumbers => $biblionumbers );
-$template->param( DHTMLcalendar_dateformat  => C4::Dates->DHTMLcalendar() );
 
 if ($multihold) {
     $template->param( multi_hold => 1 );

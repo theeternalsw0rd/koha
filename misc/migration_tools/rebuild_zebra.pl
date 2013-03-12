@@ -93,6 +93,10 @@ if ($process_zebraqueue and $do_not_clear_zebraqueue) {
     die $msg;
 }
 
+if ($reset) {
+    $noshadow = 1;
+}
+
 if ($noshadow) {
     $noshadow = ' -n ';
 }
@@ -251,7 +255,7 @@ sub index_records {
         }
         my $record_fmt = ($as_xml) ? 'marcxml' : 'iso2709' ;
         if ($process_zebraqueue) {
-            do_indexing($record_type, 'delete', "$directory/del_$record_type", $reset, $noshadow, $record_fmt, $zebraidx_log_opt)
+            do_indexing($record_type, 'adelete', "$directory/del_$record_type", $reset, $noshadow, $record_fmt, $zebraidx_log_opt)
                 if %$records_deleted;
             do_indexing($record_type, 'update', "$directory/upd_$record_type", $reset, $noshadow, $record_fmt, $zebraidx_log_opt)
                 if $num_records_exported;
@@ -667,7 +671,7 @@ Parameters:
                             or -s.
 
     -r                      clear Zebra index before
-                            adding records to index
+                            adding records to index. Implies -w.
 
     -d                      Temporary directory for indexing.
                             If not specified, one is automatically

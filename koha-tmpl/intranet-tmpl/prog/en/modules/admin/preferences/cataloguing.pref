@@ -104,7 +104,11 @@ Cataloging:
         -
             - Define a list of subfields to use when prefilling items (separated by space)
             - pref: SubfieldsToUseWhenPrefill
-
+        -
+            - Use the languague (ISO 690-2)
+            - pref: UNIMARCField100Language
+              class: short
+            - as default language in the UNIMARC field 100 when creating a new record or in the field plugin.
     Display:
         -
             - 'Separate multiple displayed authors, series or subjects with '
@@ -156,4 +160,19 @@ Cataloging:
             - pref: OpacSuppressionByIPRange
               class: short
             - (Leave blank if not used. Define a range like <code>192.168.</code>.)
-
+        -
+            - pref: SeparateHoldings
+              choices:
+                  yes: Separate
+                  no: Don't separate
+            - "items display into two tabs, where the first tab contains items whose"
+            - pref: SeparateHoldingsBranch
+              choices:
+                homebranch: 'home library'
+                holdingbranch: 'holding library'
+            - "is the logged in user's library. The second tab will contain all other items."
+        -
+            - Don't show these
+            - pref: NotesBlacklist
+              class: multi
+            - note fields in title notes separator (OPAC record details) and in the description separator (Staff client record details). The fields should appear separated with commas and according with the Koha MARC format (eg 3.. for UNIMARC, 5.. for MARC21)

@@ -141,6 +141,7 @@ if ( $run_report ) {
     $sqldatewhere
     AND (reserves.itemnumber IS NULL OR reserves.itemnumber = items.itemnumber)
     AND items.itemnumber NOT IN (SELECT itemnumber FROM branchtransfers where datearrived IS NULL)
+    AND items.itemnumber NOT IN (select itemnumber FROM reserves where found='W')
     AND issues.itemnumber IS NULL
     AND reserves.priority <> 0 
     AND reserves.suspend = 0
@@ -201,8 +202,6 @@ $template->param(
     run_report          => $run_report,
     reserveloop         => \@reservedata,
     "BiblioDefaultView".C4::Context->preference("BiblioDefaultView") => 1,
-    DHTMLcalendar_dateformat    =>  C4::Dates->DHTMLcalendar(),
-    dateformat                  => C4::Context->preference("dateformat"),
     HoldsToPullStartDate        => (C4::Context->preference('HoldsToPullStartDate')?C4::Context->preference('HoldsToPullStartDate'):2),
 );
 

@@ -490,7 +490,7 @@ foreach my $biblioNum (@biblionumbers) {
         # If there is no loan, return and transfer, we show a checkbox.
         $itemLoopIter->{notforloan} = $itemLoopIter->{notforloan} || 0;
 
-        my $branch = C4::Circulation::_GetCircControlBranch($itemLoopIter, $borr);
+        my $branch = ( C4::Context->preference('ReservesControlBranch') eq 'ItemHomeLibrary' ) ? $itemInfo->{'homebranch'} : $borr->{'branchcode'};
 
         my $branchitemrule = GetBranchItemRule( $branch, $itemInfo->{'itype'} );
         my $policy_holdallowed = 1;
@@ -537,6 +537,11 @@ foreach my $biblioNum (@biblionumbers) {
         $biblioLoopIter{holdable} = undef;
         $anyholdable = undef;
     }
+    if(not C4::Context->preference('AllowHoldsOnPatronsPossessions') and CheckIfIssuedToPatron($borrowernumber,$biblioNum)) {
+        $biblioLoopIter{holdable} = undef;
+        $biblioLoopIter{already_patron_possession} = 1;
+        $anyholdable = undef;
+    }
 
     push @$biblioLoop, \%biblioLoopIter;
 }
@@ -567,8 +572,6 @@ if (
 	    reserve_in_future         => 1,
     );
 }
-
-$template->param( DHTMLcalendar_dateformat  => C4::Dates->DHTMLcalendar() );
 
 output_html_with_http_headers $query, $cookie, $template->output;
 

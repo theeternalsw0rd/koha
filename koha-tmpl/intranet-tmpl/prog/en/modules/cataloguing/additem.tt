@@ -1,6 +1,7 @@
 [% INCLUDE 'doc-head-open.inc' %]
 <title>Koha &rsaquo; Cataloging &rsaquo; [% title |html %] [% IF ( author ) %] by [% author %][% END %] (Record #[% biblionumber %]) &rsaquo; Items</title>
 [% INCLUDE 'doc-head-close.inc' %]
+<script type="text/javascript" src="[% themelang %]/js/cataloging.js"></script>
 <script type="text/javascript">
 //<![CDATA[
 $(document).ready(function(){
@@ -93,82 +94,10 @@ function confirm_deletion(biblionumber,itemnumber) {
     }
 }
 
-function CloneSubfield(index){
-    var original = document.getElementById(index); //original <div>
-    var clone = original.cloneNode(true);
-    var new_key = CreateKey();
-    var old_id =  original.getAttribute('id');
-    old_id=old_id.substr(12);
-    var new_id  = old_id+new_key;
-
-    // set the attribute for the new 'div' subfields
-    var inputs     = clone.getElementsByTagName('input');
-    var selects    = clone.getElementsByTagName('select');
-    var textareas  = clone.getElementsByTagName('textarea');
-
-    // input
-    var id_input = "";
-    for(var i=0,len=inputs.length; i<len ; i++ ){
-        id_input = inputs[i].getAttribute('id')+new_key;
-        inputs[i].setAttribute('id',id_input);
-        inputs[i].setAttribute('name',inputs[i].getAttribute('name'));
-    }
-
-    // select
-    for(var i=0,len=selects.length; i<len ; i++ ){
-        id_input = selects[i].getAttribute('id')+new_key;
-        selects[i].setAttribute('id',selects[i].getAttribute('id')+new_key);
-        selects[i].setAttribute('name',selects[i].getAttribute('name'));
-    }
-
-    // textarea
-    for(var i=0,len=textareas.length; i<len ; i++ ){
-        id_input = textareas[i].getAttribute('id')+new_key;
-        textareas[i].setAttribute('id',textareas[i].getAttribute('id')+new_key);
-        textareas[i].setAttribute('name',textareas[i].getAttribute('name'));
-    }
-
-    [% UNLESS ( advancedMARCEditor ) %]
-    // when cloning a subfield, reset its label too.
-    var label = clone.getElementsByTagName('label')[0];
-    label.setAttribute('for',id_input);
-    [% END %]
-
-    // setting a new if for the parent div
-    clone.setAttribute('id',new_id);
-
-    var CloneButtonPlus;
-    try {
-      var spans = clone.getElementsByTagName('span');
-      if(spans.length){
-          for(var i = 0 ,lenspans = spans.length ; i < lenspans ; i++){
-            if(spans[i].getAttribute('class') == 'buttonPlus'){
-                    CloneButtonPlus = spans[i];
-                    CloneButtonPlus.setAttribute('onclick',"CloneSubfield('" + new_id + "')");
-                    var buttonUp = clone.getElementsByTagName('img')[0];
-                    buttonUp.setAttribute('onclick',"upSubfield('" + new_id + "')");
-                }
-            }
-        }
-    }
-    catch(e){
-        // do nothing if ButtonPlus & CloneButtonPlus don't exist.
-    }
-    // insert this line on the page
-    original.parentNode.insertBefore(clone,original.nextSibling);
-}
-
-/**
- * This function creates a random number
- */
-function CreateKey(){
-    return parseInt(Math.random() * 100000);
-}
-
 $(document).ready(function() {
     $("#cataloguing_additem_itemlist  tr").hover(
-        function () {$(this).attr("class","highlight");},
-        function () {$(this).attr("class",""         );}
+        function () {$(this).addClass("highlight");},
+        function () {$(this).removeClass("highlight");}
     );
 });
 //]]>
@@ -211,7 +140,11 @@ $(document).ready(function() {
                 [% END %]
             </tr>
                 [% FOREACH item_loo IN item_loop %]
+                [% IF ( item_loo.itemnumber == itemnumber) %]
+                <tr id="row[% item_loo.itemnumber %]" class="active">
+                [% ELSE %]
                 <tr id="row[% item_loo.itemnumber %]">
+                [% END %]
                     [% IF ( item_loo.nomod ) %] <td colspan="2">&nbsp;</td>[% ELSE %][% IF ( item_loo.hostitemflag ) %]<td><a href="additem.pl?op=edititem&amp;biblionumber=[% item_loo.hostbiblionumber %]&amp;itemnumber=[% item_loo.itemnumber %]#edititem">Edit in host</a></td>
 <td><a class="delete" href="/cgi-bin/koha/cataloguing/additem.pl?op=delinkitem&amp;biblionumber=[% biblionumber %]&amp;hostitemnumber=[% item_loo.itemnumber %]">Delink</a></td>
 [% ELSE %]<td><a href="additem.pl?op=edititem&amp;biblionumber=[% biblionumber %]&amp;itemnumber=[% item_loo.itemnumber %]#edititem">Edit</a></td>
@@ -238,7 +171,7 @@ $(document).ready(function() {
     [% END %]
     <input type="hidden" name="biblionumber" value="[% biblionumber %]" />
     [% IF ( opisadd ) %]
-        <h2 id="additema">Add item</h2>
+        <h2 id="additema">Add item [% IF (circborrowernumber) %]<em>(fast cataloging)</em>[% END %]</h2>
     [% ELSE %]
         <h2 id="edititem">Edit Item #[% itemnumber %][% IF ( barcode ) %] / Barcode [% barcode %][% END %]</h2>
     [% END %]
@@ -256,7 +189,9 @@ $(document).ready(function() {
                 <input type="hidden" name="subfield"  value="[% ite.subfield %]" />
                 <input type="hidden" name="mandatory" value="[% ite.mandatory %]" />
                 [% IF ( ite.repeatable ) %]
-                    <span class="buttonPlus" onclick="CloneSubfield('subfield[% ite.tag %][% ite.subfield %][% ite.random %]')">+</span>
+                    <a href="#" class="buttonPlus" onclick="CloneItemSubfield(this.parentNode); return false;">
+                        <img src="/intranet-tmpl/prog/img/clone-subfield.png" alt="Clone" title="Clone this subfield" />
+                    </a>
                 [% END %]
                 [% IF ( ite.mandatory ) %] <span class="required">Required</span>[% END %]
             </div></li>
@@ -275,8 +210,8 @@ $(document).ready(function() {
     -->
 
     <input type="submit" name="add_submit" value="Add item" onclick="return Check(this.form)" />
-    <input type="submit" name="add_duplicate_submit" value="Add &amp; Duplicate" onclick="return Check(this.form)" />
-    <input type="submit" name="add_multiple_copies" value="Add Multiple Copies" onclick="javascript:this.nextSibling.style.visibility='visible';document.f.number_of_copies.focus(); return false;" /><span id="add_multiple_copies_span" style="visibility:hidden">
+    <input type="submit" name="add_duplicate_submit" value="Add &amp; duplicate" onclick="return Check(this.form)" />
+    <input type="submit" name="add_multiple_copies" value="Add multiple copies" onclick="javascript:this.nextSibling.style.visibility='visible';document.f.number_of_copies.focus(); return false;" /><span id="add_multiple_copies_span" style="visibility:hidden">
 	<label for="number_of_copies">Number of copies to add : </label>
 	<input type="text" id="number_of_copies" name="number_of_copies" value="" size="2" />
 	<input type="submit" id="add_multiple_copies_submit" name="add_multiple_copies_submit" value="Add" onclick="javascript:return Check(this.form) &amp;&amp; CheckMultipleAdd(this.form.number_of_copies.value);" />
@@ -286,13 +221,15 @@ $(document).ready(function() {
     <input type="hidden" name="tag" value="[% itemtagfield %]" />
     <input type="hidden" name="subfield" value="[% itemtagsubfield %]" />
     <input type="hidden" name="field_value" value="[% itemnumber %]" />
-    <input type="submit" value="Save Changes" onclick="return Check(this.form)" />
+    <input type="submit" value="Save changes" onclick="return Check(this.form)" />
     [% END %]</fieldset>
     
-    <input type="hidden" name="borrowernumber" value="[% borrowernumber %]" />
+    [%# Fields for fast cataloging %]
+    <input type="hidden" name="circborrowernumber" value="[% circborrowernumber %]" />
     <input type="hidden" name="stickyduedate" value="[% stickyduedate %]" />
     <input type="hidden" name="barcode" value="[% barcode %]" />
     <input type="hidden" name="duedatespec" value="[% duedatespec %]" />
+    [%# End fields for fast cataloging %]
 
 
     </form>

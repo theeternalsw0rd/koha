@@ -9,7 +9,7 @@
   exclude-result-prefixes="marc items">
 
 <xsl:import href="UNIMARCslimUtils.xsl"/>
-<xsl:output method = "html" indent="yes" omit-xml-declaration = "yes" />
+<xsl:output method = "html" indent="yes" omit-xml-declaration = "yes" encoding="UTF-8"/>
 <xsl:key name="item-by-status" match="items:item" use="items:status"/>
 <xsl:key name="item-by-status-and-branch" match="items:item" use="concat(items:status, ' ', items:homebranch)"/>
 
@@ -216,7 +216,7 @@
         <xsl:text>). </xsl:text>
       </span>
     </xsl:if>
-    <xsl:if test="count(key('item-by-status', 'On Orangemanr'))>0">
+    <xsl:if test="count(key('item-by-status', 'On order'))>0">
       <span class="unavailable">
         <xsl:text>On order (</xsl:text>
         <xsl:value-of select="count(key('item-by-status', 'On order'))"/>

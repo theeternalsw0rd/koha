@@ -1,5 +1,6 @@
 [% USE KohaDates %]
 [% INCLUDE 'doc-head-open.inc' %]
+[% SET destination = "circ" %]
 <title>Koha &rsaquo; Circulation
 [% IF borrowernumber %]
   &rsaquo; Checking out to [% INCLUDE 'patron-title.inc' invert_name = 1 %]
@@ -130,7 +131,7 @@ var allcheckboxes = $(".checkboxed");
                     $(this).removeAttr("checked");
                 } else {
                     $(this).attr("checked","checked");
-                  //  radioCheckBox($(this));
+                    radioCheckBox($(this));
                 }
            });
         }
@@ -157,34 +158,25 @@ var allcheckboxes = $(".checkboxed");
     $("input.radio").click(function(){
         radioCheckBox($(this));
     });
-    $("#exportmenuc").empty();
-    initExportButton();
 
-    $("#newduedate").datepicker({ minDate: 1 }); // require that renewal date is after today
-    $("#duedatespec").datetimepicker({
-        onSelect: function(dateText, inst) { $("#barcode").focus(); },
+    $("#newduedate").datetimepicker({
+        minDate: 1, // require that renewal date is after today
         hour: 23,
-        minute: 59,
+        minute: 59
     });
-
+    $("#duedatespec").datetimepicker({
+        onClose: function(dateText, inst) { $("#barcode").focus(); },
+        hour: 23,
+        minute: 59
+    });
+    $("#export_submit").click(function(){
+        var export_format = $("#export_formats").val();
+        export_checkouts(export_format);
+        return false;
+    })
  });
 
-function initExportButton() {
-    var exportmenu = [
-        { text: _("ISO2709 with items"), onclick: {fn: function(){export_submit("iso2709_995")}} },
-        { text: _("ISO2709 without items"), onclick: {fn: function(){export_submit("iso2709")}} },
-        { text: _("CSV"), onclick: {fn: function(){export_submit("csv")}} },
-    ];
-    new YAHOO.widget.Button({
-        type: "menu",
-        label: _("Export checkouts"),
-        name: "exportmenubutton",
-        menu: exportmenu,
-        container: "exportmenuc"
-    });
-}
-
-function export_submit(format) {
+function export_checkouts(format) {
     if ($("input:checkbox[name='biblionumbers'][checked]").length < 1){
         alert(_("You must select a checkout to export"));
         return;
@@ -257,7 +249,7 @@ function validate1(date) {
 [% END %]
 
 [% IF ( borrowernumber ) %]
-[% INCLUDE 'circ-toolbar.inc' %]
+[% INCLUDE 'members-toolbar.inc' %]
 [% END %]
 
 <!--  INITIAL BLOC : PARAMETERS & BORROWER INFO -->
@@ -308,6 +300,10 @@ function validate1(date) {
 
 [% IF ( alert.ITEM_LOST ) %]
     <div class="dialog message">This item has been lost with a status of "[% alert.ITEM_LOST %]".</div>
+[% END %]
+
+[% IF ( alert.OTHER_CHARGES ) %]
+    <div class="dialog message">The patron has unpaid charges for reserves, rentals etc of [% alert.OTHER_CHARGES %]</div>
 [% END %]
 
 [% IF ( NEEDSCONFIRMATION ) %]
@@ -381,25 +377,27 @@ function validate1(date) {
 
 [% IF ( RESERVED ) %]
     <p>
-    <input type="checkbox" id="cancelreserve" name="cancelreserve" value="1" />
+    <input type="checkbox" id="cancelreserve" name="cancelreserve" value="cancel" />
     <label for="cancelreserve">Cancel hold</label>
     </p>
 [% END %]
 
 [% IF ( RESERVE_WAITING ) %]
-    <p>
-    <input type="checkbox" id="cancelreserve" name="cancelreserve" value="1" />
+<p>
     <label for="cancelreserve">Cancel hold</label>
-    </p>
+    <input type="radio" value="cancel" name="cancelreserve" id="cancelreserve" /><br />
+    <label for="revertreserve">Revert waiting status</label>
+    <input type="radio" value="revert" name="cancelreserve" id="revertreserve" checked="checked"/>
+</p>
 [% END %]
 
-    <input type="hidden" name="barcode" value="[% barcode %]" />
+    <input type="hidden" name="barcode" value="[% barcode |html %]" />
     <input type="hidden" name="borrowernumber" value="[% borrowernumber %]" />
     <input type="hidden" name="issueconfirmed" value="1" />
     [% IF ( DEBT ) %]<input type="hidden" name="debt_confirmed" value="1" />[% END %]
     [% IF ( INVALID_DATE ) %]
     <p>
-    <input type="text" size="13" id="duedatespec" name="duedatespec" value="[% duedatespec %]" />
+    <input type="text" size="13" id="duedatespec" name="duedatespec" readonly="readonly" value="[% duedatespec %]" />
     <label for="duedatespec">Due date</label>
     </p>
     [% ELSE %]
@@ -447,10 +445,10 @@ function validate1(date) {
         [% END %]
 
         [% IF ( UNKNOWN_BARCODE ) %]
-            <li>The barcode was not found [% barcode %]</li>
+            <li>The barcode was not found [% barcode |html %]</li>
 	    [% IF ( fast_cataloging ) %]
 	        [% IF ( CAN_user_editcatalogue_fast_cataloging ) %]
-                    <a href="/cgi-bin/koha/cataloguing/addbiblio.pl?frameworkcode=FA&amp;barcode=[% barcode %]&amp;borrowernumber=[% borrowernumber %]&amp;branch=[% branch %]&amp;duedatespec=[% duedatespec %]&amp;stickyduedate=[% stickyduedate %]">Fast cataloging</a>
+            <a href="/cgi-bin/koha/cataloguing/addbiblio.pl?frameworkcode=FA&amp;barcode=[% barcode |uri %]&amp;circborrowernumber=[% borrowernumber %]&amp;branch=[% branch %]&amp;duedatespec=[% duedatespec %]&amp;stickyduedate=[% stickyduedate %]">Fast cataloging</a>
 		[% END %]
 	    [% END %]
         [% END %]
@@ -577,7 +575,7 @@ No patron matched <span class="ex">[% message %]</span>
 
     [% IF ( SpecifyDueDate ) %]<div class="date-select">
         <div class="hint">Specify due date [% INCLUDE 'date-format.inc' %]: </div>
-        [% IF ( duedatespec ) %]<input type="text" size="13" id="duedatespec" name="duedatespec" value="[% duedatespec %]" />[% ELSE %]<input type="text" size="13" id="duedatespec" name="duedatespec" value="" />
+        [% IF ( duedatespec ) %]<input type="text" size="13" id="duedatespec" name="duedatespec" value="[% duedatespec %]" readonly="readonly" />[% ELSE %]<input type="text" size="13" id="duedatespec" name="duedatespec" value="" readonly="readonly" />
 [% END %]
           <label for="stickyduedate"> Remember for session:</label>
 [% IF ( stickyduedate ) %]
@@ -681,7 +679,7 @@ No patron matched <span class="ex">[% message %]</span>
 		    <h4>Holds waiting:</h4>
 			        [% FOREACH WaitingReserveLoo IN WaitingReserveLoop %]
 			            <ul>
-			                <li> <a href="/cgi-bin/koha/reserve/request.pl?biblionumber=[% WaitingReserveLoo.biblionumber %]">[% WaitingReserveLoo.title |html %]</a> ([% WaitingReserveLoo.itemtype %]), [% IF ( WaitingReserveLoo.author ) %]by [% WaitingReserveLoo.author %][% END %] Hold placed on [% WaitingReserveLoo.reservedate %].
+			                <li> <a href="/cgi-bin/koha/reserve/request.pl?biblionumber=[% WaitingReserveLoo.biblionumber %]">[% WaitingReserveLoo.title |html %]</a> ([% WaitingReserveLoo.itemtype %]), [% IF ( WaitingReserveLoo.author ) %]by [% WaitingReserveLoo.author %][% END %] [% IF ( WaitingReserveLoo.itemcallnumber ) %][[% WaitingReserveLoo.itemcallnumber %]] [% END %]Hold placed on [% WaitingReserveLoo.reservedate %].
 			            [% IF ( WaitingReserveLoo.waitingat ) %]
 			                <br />[% IF ( WaitingReserveLoo.waitinghere ) %]<strong class="waitinghere">[% ELSE %]<strong>[% END %]Waiting at [% WaitingReserveLoo.waitingat %]</strong>
 			            [% END %]
@@ -948,16 +946,23 @@ No patron matched <span class="ex">[% message %]</span>
         [% END %]
         <input type="submit" name="renew_checked" value="Renew or Return checked items" />
         <input type="submit" id="renew_all" name="renew_all" value="Renew all" />
+    </fieldset>
         [% IF export_remove_fields OR export_with_csv_profile %]
-            <br/><br/>
-            Don't export fields : <input type="text" id="export_remove_fields" name="export_remove_fields" value="[% export_remove_fields %]" title="Use for iso2709 exports" />
-            <span id="exportmenuc">Export</span>
+            <fieldset>
+            <label for="export_formats"><b>Export checkouts using format:</b></label>
+            <select name="export_formats" id="export_formats">
+                <option value="iso2709_995">ISO2709 with items</option>
+                <option value="iso2709">ISO2709 without items</option>
+                <option value="csv">CSV</option>
+            </select>
+           <label for="export_remove_fields">Don't export fields:</label> <input type="text" id="export_remove_fields" name="export_remove_fields" value="[% export_remove_fields %]" title="Use for iso2709 exports" />
             <input type="hidden" name="op" value="export" />
             <input type="hidden" id="export_format" name="format" value="iso2709" />
             <input type="hidden" id="dont_export_item" name="dont_export_item" value="0" />
             <input type="hidden" id="record_type" name="record_type" value="bibs" />
+            <input type="button" id="export_submit" value="Export" />
+            </fieldset>
         [% END %]
-    </fieldset>
     [% END %]
     </form>
 [% ELSE %]

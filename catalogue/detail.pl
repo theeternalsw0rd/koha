@@ -40,6 +40,7 @@ use C4::VirtualShelves;
 use C4::XSLT;
 use C4::Images;
 use Koha::DateUtils;
+use C4::HTML5Media;
 
 # use Smart::Comments;
 
@@ -137,9 +138,6 @@ if (@hostitems){
 
 my $dat = &GetBiblioData($biblionumber);
 
-# get count of holds
-my ( $holdcount, $holds ) = GetReservesFromBiblionumber($biblionumber,1);
-
 #coping with subscriptions
 my $subscriptionsnumber = CountSubscriptionFromBiblionumber($biblionumber);
 my @subscriptions       = GetSubscriptions( $dat->{title}, $dat->{issn}, undef, $biblionumber );
@@ -155,6 +153,8 @@ foreach my $subscription (@subscriptions) {
     $cell{branchcode}        = $subscription->{branchcode};
     $cell{branchname}        = GetBranchName($subscription->{branchcode});
     $cell{hasalert}          = $subscription->{hasalert};
+    $cell{callnumber}        = $subscription->{callnumber};
+    $cell{closed}            = $subscription->{closed};
     #get the three latest serials.
 	$serials_to_display = $subscription->{staffdisplaycount};
 	$serials_to_display = C4::Context->preference('StaffSerialIssueDisplayCount') unless $serials_to_display;
@@ -175,24 +175,25 @@ $dat->{'hiddencount'} = scalar @all_items + @hostitems - scalar @items;
 my $shelflocations = GetKohaAuthorisedValues('items.location', $fw);
 my $collections    = GetKohaAuthorisedValues('items.ccode'   , $fw);
 my $copynumbers    = GetKohaAuthorisedValues('items.copynumber', $fw);
-my (@itemloop, %itemfields);
+my (@itemloop, @otheritemloop, %itemfields);
 my $norequests = 1;
 my $authvalcode_items_itemlost = GetAuthValCode('items.itemlost',$fw);
 my $authvalcode_items_damaged  = GetAuthValCode('items.damaged', $fw);
 
 my $analytics_flag;
 my $materials_flag; # set this if the items have anything in the materials field
+my $currentbranch = C4::Context->userenv ? C4::Context->userenv->{branch} : undef;
+if ($currentbranch and C4::Context->preference('SeparateHoldings')) {
+    $template->param(SeparateHoldings => 1);
+}
+my $separatebranch = C4::Context->preference('SeparateHoldingsBranch') || 'homebranch';
 foreach my $item (@items) {
-
+    my $itembranchcode = $item->{$separatebranch};
     $item->{homebranch}        = GetBranchName($item->{homebranch});
 
     # can place holds defaults to yes
     $norequests = 0 unless ( ( $item->{'notforloan'} > 0 ) || ( $item->{'itemnotforloan'} > 0 ) );
 
-    # format some item fields for display
-    if ( defined $item->{'publictype'} ) {
-        $item->{ $item->{'publictype'} } = 1;
-    }
     $item->{imageurl} = defined $item->{itype} ? getitemtypeimagelocation('intranet', $itemtypes->{ $item->{itype} }{imageurl})
                                                : '';
 
@@ -257,16 +258,27 @@ foreach my $item (@items) {
 	$item->{hosttitle} = GetBiblioData($item->{biblionumber})->{title};
     }
 	
-	#count if item is used in analytical bibliorecords
-	my $countanalytics= GetAnalyticsCount($item->{itemnumber});
-	if ($countanalytics > 0){
-		$analytics_flag=1;
-		$item->{countanalytics} = $countanalytics;
-	}
+    #count if item is used in analytical bibliorecords
+    my $countanalytics= GetAnalyticsCount($item->{itemnumber});
+    if ($countanalytics > 0){
+        $analytics_flag=1;
+        $item->{countanalytics} = $countanalytics;
+    }
+
     if (defined($item->{'materials'}) && $item->{'materials'} =~ /\S/){
 	$materials_flag = 1;
     }
-    push @itemloop, $item;
+
+    if ($currentbranch and $currentbranch ne "NO_LIBRARY_SET"
+    and C4::Context->preference('SeparateHoldings')) {
+        if ($itembranchcode and $itembranchcode eq $currentbranch) {
+            push @itemloop, $item;
+        } else {
+            push @otheritemloop, $item;
+        }
+    } else {
+        push @itemloop, $item;
+    }
 }
 
 $template->param( norequests => $norequests );
@@ -286,7 +298,6 @@ $template->param(
 	volinfo				=> $itemfields{enumchron},
     itemdata_itemnotes  => $itemfields{itemnotes},
 	z3950_search_params	=> C4::Search::z3950_search_args($dat),
-    holdcount           => $holdcount,
         hostrecords         => $hostrecords,
 	analytics_flag	=> $analytics_flag,
 	C4::Search::enabled_staff_search_views,
@@ -330,6 +341,7 @@ foreach ( keys %{$dat} ) {
 $template->param( AmazonTld => get_amazon_tld() ) if ( C4::Context->preference("AmazonCoverImages"));
 $template->param(
     itemloop        => \@itemloop,
+    otheritemloop   => \@otheritemloop,
     biblionumber        => $biblionumber,
     ($analyze? 'analyze':'detailview') =>1,
     subscriptions       => \@subs,
@@ -360,6 +372,12 @@ if ( C4::Context->preference("LocalCoverImages") == 1 ) {
     $template->{VARS}->{localimages} = \@images;
 }
 
+# HTML5 Media
+if ( (C4::Context->preference("HTML5MediaEnabled") eq 'both') or (C4::Context->preference("HTML5MediaEnabled") eq 'staff') ) {
+    $template->param( C4::HTML5Media->gethtml5media($record));
+}
+
+
 # Get OPAC URL
 if (C4::Context->preference('OPACBaseURL')){
      $template->param( OpacUrl => C4::Context->preference('OPACBaseURL') );
@@ -376,5 +394,8 @@ if (C4::Context->preference('TagsEnabled') and $tag_quantity = C4::Context->pref
     $template->param(TagLoop => get_tags({biblionumber=>$biblionumber, approved=>1,
                                 'sort'=>'-weight', limit=>$tag_quantity}));
 }
+
+my ( $holdcount, $holds ) = C4::Reserves::GetReservesFromBiblionumber($biblionumber,1);
+$template->param( holdcount => $holdcount, holds => $holds );
 
 output_html_with_http_headers $query, $cookie, $template->output;

@@ -29,6 +29,7 @@ use Mail::Sendmail;
 use Text::CSV_XS;
 use CGI;
 use Carp;
+use Encode;
 
 use vars qw($VERSION);
 
@@ -192,9 +193,9 @@ foreach my $report_id (@ARGV) {
         warn "ERROR: No saved report $report_id found";
         next;
     }
-    my $sql         => $report->{savedsql};
-    my $report_name => $report->{report_name};
-    my $type        => $report->{type};
+    my $sql         = $report->{savedsql};
+    my $report_name = $report->{report_name};
+    my $type        = $report->{type};
 
     $verbose and print "SQL: $sql\n\n";
     if (defined($report_name) and $report_name ne "")
@@ -245,8 +246,8 @@ foreach my $report_id (@ARGV) {
         my %mail = (
             To      => $to,
             From    => $from,
-            Subject => $subject,
-            Message => $message 
+            Subject => encode('utf8', $subject ),
+            Message => encode('utf8', $message )
         );
         sendmail(%mail) or carp 'mail not sent:' . $Mail::Sendmail::error;
     } else {

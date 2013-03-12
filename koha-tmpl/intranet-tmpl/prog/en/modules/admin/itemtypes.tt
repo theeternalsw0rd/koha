@@ -18,16 +18,10 @@ Data deleted
 [% END %]
 </title>
 [% INCLUDE 'doc-head-close.inc' %]
-<script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.tablesorter.min.js"></script>
-<script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.tablesorter.pager.js"></script>
-<script type="text/javascript" id="js">$(document).ready(function() {
-	// call the tablesorter plugin
-	$("#table_item_type").tablesorter({
-		sortList: [[1,0]],
-		headers: { 0: { sorter: false},5: { sorter: false}}
-		   		}).tablesorterPager({container: $("#pagertable_item_type"),positionFixed: false,size: 10});
-	
-}); </script>
+<link rel="stylesheet" type="text/css" href="[% themelang %]/css/datatables.css" />
+<script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.dataTables.min.js"></script>
+[% INCLUDE 'datatables-strings.inc' %]
+<script type="text/javascript" src="[% themelang %]/js/datatables.js"></script>
 <script type="text/javascript">
 //<![CDATA[
 
@@ -86,6 +80,14 @@ function Check(f) {
 }
      $(document).ready(function() {
         $('#icons').tabs();
+        $("#table_item_type").dataTable($.extend(true, {}, dataTablesDefaults, {
+            "aoColumnDefs": [
+                { "aTargets": [ -1 ], "bSortable": false, "bSearchable": false },
+            ],
+            "aLengthMenu": [[10, 20, 50, 100, -1], [10, 20, 50, 100, "All"]],
+            "aaSorting": [[ 2, "asc" ]],
+            "iDisplayLength": 10
+        }));
      });
 //]]>
 </script>
@@ -127,27 +129,9 @@ Item types administration
 	<div id="yui-main">
 	<div class="yui-b">
 	
-[% IF ( else ) %]<div id="toolbar">
-	<script type="text/javascript">
-	//<![CDATA[
-
-	// prepare DOM for YUI Toolbar
-
-	 $(document).ready(function() {
-	    yuiToolbar();
-	 });
-
-	// YUI Toolbar Functions
-
-	function yuiToolbar() {
-	    new YAHOO.widget.Button("newitemtype");
-	}
-
-	//]]>
-	</script>
-	<ul class="toolbar">
-    <li><a id="newitemtype" href="/cgi-bin/koha/admin/itemtypes.pl?op=add_form">New item type</a></li>
-</ul></div>[% ELSE %]&nbsp;[% END %]
+[% IF ( else ) %]<div id="toolbar" class="btn-toolbar">
+    <a class="btn btn-small" id="newitemtype" href="/cgi-bin/koha/admin/itemtypes.pl?op=add_form"><i class="icon-plus"></i> New item type</a>
+</div>[% END %]
 
 [% IF ( add_form ) %]
   [% IF ( itemtype ) %]
@@ -168,11 +152,15 @@ Item types administration
      </li>
   [% ELSE %]
       <li>
-          <label for="itemtype">Item type</label> <input type="text" id="itemtype" name="itemtype" size="10" maxlength="10" onblur="toUC(this)" />
+          <label for="itemtype">Item type</label> <input type="text" id="itemtype" name="itemtype" size="10" maxlength="10" onblur="toUC(this)" class="focus" />
       </li>
   [% END %]
       <li>
-          <label for="description">Description</label><input type="text" id="description" name="description" size="48" value="[% description |html %]" />      </li>
+      [% IF ( itemtype ) %]
+          <label for="description">Description</label><input type="text" id="description" name="description" size="48" value="[% description |html %]" class="focus" /></li>
+      [% ELSE %]
+          <label for="description">Description</label><input type="text" id="description" name="description" size="48" value="[% description |html %]" /></li>
+      [% END %]
      [% IF ( noItemTypeImages ) %]
 	 <li><span class="label">Image: </span>Item type images are disabled. To enable them, turn off the <a href="/cgi-bin/koha/admin/preferences.pl?op=search&amp;searchfield=noItemTypeImages">noItemTypeImages system preference</a></li></ol>
 	 [% ELSE %]</ol>
@@ -250,7 +238,7 @@ Item types administration
     </fieldset>
 
     <fieldset class="action">
-      <input type="button" value="Save Changes" onclick="Check(this.form)" />
+      <input type="button" value="Save changes" onclick="Check(this.form)" />
 	  <a href="/cgi-bin/koha/admin/itemtypes.pl" class="cancel">Cancel</a>
     </fieldset>
 </form>
@@ -286,9 +274,7 @@ Item types administration
 
 [% IF ( else ) %]
 <h2>Item types administration</h2>
-[% IF ( loop ) %]<div id="pagertable_item_type">
-[% INCLUDE 'table-pager.inc' perpage='10' %]
-</div>
+[% IF ( loop ) %]
 <table id="table_item_type">
   <thead>
     [% UNLESS ( noItemTypeImages ) %]<th>Image</th>[% END %]

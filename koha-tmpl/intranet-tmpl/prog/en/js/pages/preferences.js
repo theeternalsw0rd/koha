@@ -1,10 +1,3 @@
-$(document).ready(function() {
-    $("table.preferences").tablesorter({
-        sortList: [[0,0]],
-        headers: { 1: { sorter:false}}
-    });
-});
-
 // We can assume 'KOHA' exists, as we depend on KOHA.AJAX
 
 KOHA.Preferences = {
@@ -40,6 +33,15 @@ KOHA.Preferences = {
 };
 
 $( document ).ready( function () {
+
+    $("table.preferences").dataTable($.extend(true, {}, dataTablesDefaults, {
+        "sDom": 't',
+        "aoColumnDefs": [
+            { "aTargets": [ -1 ], "bSortable": false, "bSearchable": false }
+        ],
+        "bPaginate": false
+    }));
+
     function mark_modified() {
         $( this.form ).find( '.save-all' ).removeAttr( 'disabled' );
         $( this ).addClass( 'modified' );
@@ -58,6 +60,16 @@ $( document ).ready( function () {
         $('.preference-checkbox').addClass('modified');
         mark_modified.call(this);
     } );
+
+    $(".set_syspref").click(function() {
+        var s = $(this).attr('data-syspref');
+        var v = $(this).attr('data-value');
+        // populate the input with the value in data-value
+        $("#pref_"+s).val(v);
+        // pass the DOM element to trigger "modified" to enable submit button
+        mark_modified.call($("#pref_"+s)[0]);
+        return false;
+    });
 
     window.onbeforeunload = function () {
         if ( KOHA.Preferences.Modified ) {
@@ -86,11 +98,11 @@ $( document ).ready( function () {
     $(collapsible).toggle(
         function () {
             $(this).addClass("collapsed").removeClass("expanded").attr("title",MSG_CLICK_TO_EXPAND);
-            $(this).next("table").hide();
+            $(this).next("div").hide();
         },
         function () {
             $(this).addClass("expanded").removeClass("collapsed").attr("title",MSG_CLICK_TO_COLLAPSE);
-            $(this).next("table").show();
+            $(this).next("div").show();
         }
     );
 
@@ -98,7 +110,7 @@ $( document ).ready( function () {
         var words = to_highlight.split( ' ' );
         $( '.prefs-tab table' ).find( 'td, th' ).not( '.name-cell' ).each( function ( i, td ) {
             $.each( words, function ( i, word ) { $( td ).highlight( word ) } );
-        } ).find( 'option' ).removeHighlight();
+        } ).find( 'option, textarea' ).removeHighlight();
     }
 
     if ( search_jumped ) {

@@ -64,7 +64,7 @@ libdate-manip-perl			install
 libdatetime-perl			install
 libdatetime-event-ical-perl		install
 libdatetime-format-dateparse-perl			install
-libdatetime-format-ical-perl            install
+libdatetime-format-ical-perl		install
 libdatetime-format-mail-perl		install
 libdatetime-format-mysql-perl		install
 libdatetime-format-strptime-perl	install
@@ -123,6 +123,7 @@ libschedule-at-perl			install
 libsms-send-perl			install
 libstring-rewriteprefix-perl		install
 libtemplate-perl			install
+libtemplate-plugin-htmltotext-perl	install
 libtest-mockmodule-perl			install
 libtest-strict-perl			install
 libtext-charwidth-perl			install

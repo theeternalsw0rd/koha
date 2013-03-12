@@ -15,6 +15,11 @@
 
 <script type="text/javascript">
 //<![CDATA[
+$(document).ready(function() {
+    if ( $("#branches option:selected").length < 1 ) {
+        $("#branches option:first").attr("selected", "selected");
+    }
+} );
 
 function DoCancel(f) {
   f.op.value='';
@@ -186,6 +191,20 @@ function CheckAttributeTypeForm(f) {
                   to be chosen from the authorized value list.  However, an authorized value list is not 
                   enforced during batch patron import.</span>
         </li>
+        <li><label for="branches">Branches limitation: </label>
+            <select id="branches" name="branches" multiple size="10">
+                <option value="">All branches</option>
+                [% FOREACH branch IN branches_loop %]
+                  [% IF ( branch.selected ) %]
+                    <option selected="selected" value="[% branch.branchcode %]">[% branch.branchname %]</option>
+                  [% ELSE %]
+                    <option value="[% branch.branchcode %]">[% branch.branchname %]</option>
+                  [% END %]
+                [% END %]
+            </select>
+            <span>Select All if this attribute type must to be displayed all the time. Otherwise select librairies you want to associate with this value.
+            </span>
+        </li>
         <li>
             <label for="category">Category: </label>
             <select name="category_code" id="category">
@@ -242,21 +261,9 @@ function CheckAttributeTypeForm(f) {
 
 [% IF ( display_list ) %]
 
-<div id="toolbar">
-	<script type="text/javascript">
-	//<![CDATA[
-	// prepare DOM for YUI Toolbar
-	 $(document).ready(function() {
-	    yuiToolbar();
-	 });
-	// YUI Toolbar Functions
-	function yuiToolbar() {
-	    new YAHOO.widget.Button("newrule");
-	}	//]]>
-	</script>
-	<ul class="toolbar">
-    <li><a id="newrule" href="[% script_name %]?op=add_attribute_type">New patron attribute type</a></li>
-</ul></div>
+<div id="toolbar" class="btn-toolbar">
+    <a class="btn btn-small" id="newrule" href="[% script_name %]?op=add_attribute_type"><i class="icon-plus"></i> New patron attribute type</a>
+</div>
 
 <h2>Patron attribute types</h2>
 [% IF ( added_attribute_type ) %]
@@ -286,6 +293,7 @@ function CheckAttributeTypeForm(f) {
         <tr>
           <th>Code</th>
           <th>Description</th>
+          <th>Branches limitation</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -294,6 +302,23 @@ function CheckAttributeTypeForm(f) {
           <tr>
             <td>[% item.code |html %]</td>
             <td>[% item.description %]</td>
+            <td>
+                [% IF item.branches.size > 0 %]
+                    [% branches_str = "" %]
+                    [% FOREACH branch IN item.branches %]
+                        [% branches_str = branches_str _ " " _ branch.branchname _ "(" _ branch.branchcode _ ")" %]
+                    [% END %]
+                    <span title="[% branches_str %]">
+                        [% IF item.branches.size > 1 %]
+                            [% item.branches.size %] branches limitations
+                        [% ELSE %]
+                            [% item.branches.size %] branch limitation
+                        [% END %]
+                    </span>
+                [% ELSE %]
+                    No limitation
+                [% END %]
+            </td>
             <td>
               <a href="[% item.script_name %]?op=edit_attribute_type&amp;code=[% item.code |html %]">Edit</a>
               <a href="[% item.script_name %]?op=delete_attribute_type&amp;code=[% item.code |html %]">Delete</a>

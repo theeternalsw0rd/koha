@@ -107,8 +107,7 @@ sub generate_subfield_form {
   
   my $frameworkcode = &GetFrameworkCode($biblionumber);
         my %subfield_data;
-        my $dbh = C4::Context->dbh;        
-        my $authorised_values_sth = $dbh->prepare("SELECT authorised_value,lib FROM authorised_values WHERE category=? ORDER BY lib");
+        my $dbh = C4::Context->dbh;
         
         my $index_subfield = int(rand(1000000)); 
         if ($subfieldtag eq '@'){
@@ -203,11 +202,11 @@ sub generate_subfield_form {
                   #---- "true" authorised value
             }
             else {
-                  push @authorised_values, "" unless ( $subfieldlib->{mandatory} );
-                  $authorised_values_sth->execute( $subfieldlib->{authorised_value} );
-                  while ( my ( $value, $lib ) = $authorised_values_sth->fetchrow_array ) {
-                      push @authorised_values, $value;
-                      $authorised_lib{$value} = $lib;
+                  push @authorised_values, qq{} unless ( $subfieldlib->{mandatory} );
+                  my $av = GetAuthorisedValues( $subfieldlib->{authorised_value} );
+                  for my $r ( @$av ) {
+                      push @authorised_values, $r->{authorised_value};
+                      $authorised_lib{$r->{authorised_value}} = $r->{lib};
                   }
             }
 
@@ -247,7 +246,7 @@ sub generate_subfield_form {
 		    my $change = index($javascript, 'function Change') > -1 ?
 		        "return Change$function_name($subfield_data{random}, '$subfield_data{id}');" :
 		        'return 1;';
-                    $subfield_data{marc_value} = qq[<input $attributes
+                    $subfield_data{marc_value} = qq[<input type="text" $attributes
                         onfocus="Focus$function_name($subfield_data{random}, '$subfield_data{id}');"
 			onchange=" $change"
                          onblur=" Blur$function_name($subfield_data{random}, '$subfield_data{id}');" />
@@ -255,7 +254,7 @@ sub generate_subfield_form {
                         $javascript];
                 } else {
                     warn "Plugin Failed: $plugin";
-                    $subfield_data{marc_value} = "<input $attributes />"; # supply default input form
+                    $subfield_data{marc_value} = "<input type=\"text\" $attributes />"; # supply default input form
                 }
         }
         elsif ( $tag eq '' ) {       # it's an hidden field
@@ -274,7 +273,7 @@ sub generate_subfield_form {
             $subfield_data{marc_value} = "<textarea $attributes_no_value>$value</textarea>\n";
         } else {
            # it's a standard field
-           $subfield_data{marc_value} = "<input $attributes />";
+           $subfield_data{marc_value} = "<input type=\"text\" $attributes />";
         }
         
         return \%subfield_data;
@@ -315,6 +314,12 @@ my $itemnumber   = $input->param('itemnumber');
 my $op           = $input->param('op');
 my $hostitemnumber = $input->param('hostitemnumber');
 my $marcflavour  = C4::Context->preference("marcflavour");
+# fast cataloguing datas
+my $fa_circborrowernumber = $input->param('circborrowernumber');
+my $fa_barcode            = $input->param('barcode');
+my $fa_branch             = $input->param('branch');
+my $fa_stickyduedate      = $input->param('stickyduedate');
+my $fa_duedatespec        = $input->param('duedatespec');
 
 my $frameworkcode = &GetFrameworkCode($biblionumber);
 
@@ -419,6 +424,7 @@ if ($op eq "additem") {
                     -name => 'LastCreatedItem',
                     # We uri_escape the whole freezed structure so we're sure we won't have any encoding problems
                     -value   => uri_escape_utf8( freeze( $record ) ),
+                    -HttpOnly => 1,
                     -expires => ''
                 );
 
@@ -507,13 +513,15 @@ if ($op eq "additem") {
 	    undef($itemrecord);
 	}
     }	
-    if ($frameworkcode eq 'FA' && $input->param('borrowernumber')){
-	my $redirect_string = 'borrowernumber=' . uri_escape($input->param('borrowernumber')) .
-	  '&barcode=' . uri_escape($input->param('barcode'));
-	$redirect_string .= '&duedatespec=' . uri_escape($input->param('duedatespec')) . 
-	  '&stickyduedate=1';
-	print $input->redirect("/cgi-bin/koha/circ/circulation.pl?" . $redirect_string);
-	exit;
+    if ($frameworkcode eq 'FA' && $fa_circborrowernumber){
+        print $input->redirect(
+           '/cgi-bin/koha/circ/circulation.pl?'
+           .'borrowernumber='.$fa_circborrowernumber
+           .'&barcode='.uri_escape($fa_barcode)
+           .'&duedatespec='.$fa_duedatespec
+           .'&stickyduedate=1'
+        );
+        exit;
     }
 
 
@@ -815,11 +823,15 @@ $template->param(
 );
 
 if ($frameworkcode eq 'FA'){
-    $template->{VARS}->{'borrowernumber'}=$input->param('borrowernumber');
-    $template->{VARS}->{'barcode'}=$input->param('barcode');
-    $template->{VARS}->{'stickyduedate'}=$input->param('stickduedate');
-    $template->{VARS}->{'duedatespec'}=$input->param('duedatespec');
-}    
+    # fast cataloguing datas
+    $template->param(
+        'circborrowernumber' => $fa_circborrowernumber,
+        'barcode'            => $fa_barcode,
+        'branch'             => $fa_branch,
+        'stickyduedate'      => $fa_stickyduedate,
+        'duedatespec'        => $fa_duedatespec,
+    );
+}
 
 foreach my $error (@errors) {
     $template->param($error => 1);

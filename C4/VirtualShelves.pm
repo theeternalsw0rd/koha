@@ -50,8 +50,6 @@ BEGIN {
 }
 
 
-my $dbh = C4::Context->dbh;
-
 =head1 NAME
 
 C4::VirtualShelves - Functions for manipulating Koha virtual shelves
@@ -101,6 +99,7 @@ sub GetShelves {
     my ($category, $row_count, $offset, $owner) = @_;
     my @params;
     my $total = _shelf_count($owner, $category);
+    my $dbh = C4::Context->dbh;
     my $query = qq{
         SELECT vs.shelfnumber, vs.shelfname,vs.owner,
         bo.surname,bo.firstname,vs.category,vs.sortfield,
@@ -155,6 +154,7 @@ the submitted parameters.
 sub GetAllShelves {
     my ($category,$owner,$adding_allowed) = @_;
     my @params;
+    my $dbh = C4::Context->dbh;
     my $query = 'SELECT vs.* FROM virtualshelves vs ';
     if($category==1) {
         $query.= qq{
@@ -184,6 +184,7 @@ Returns shelf names and numbers for Add to combo of search results and Lists but
 sub GetSomeShelfNames {
     my ($owner, $purpose, $adding_allowed)= @_;
     my ($bar, $pub, @params);
+    my $dbh = C4::Context->dbh;
 
     my $bquery = 'SELECT vs.shelfnumber, vs.shelfname FROM virtualshelves vs ';
     my $limit= ShelvesMax($purpose);
@@ -223,6 +224,7 @@ Returns the above-mentioned fields for passed virtual shelf number.
 
 sub GetShelf {
     my ($shelfnumber) = @_;
+    my $dbh = C4::Context->dbh;
     my $query = qq(
         SELECT shelfnumber, shelfname, owner, category, sortfield,
             allow_add, allow_delete_own, allow_delete_other
@@ -264,11 +266,12 @@ sub GetShelfContents {
         ($sortfield) = $sth2->fetchrow_array;
     }
     my $query =
-       " SELECT vc.biblionumber, vc.shelfnumber, vc.dateadded, itemtypes.*,
+       " SELECT DISTINCT vc.biblionumber, vc.shelfnumber, vc.dateadded, itemtypes.*,
             biblio.*, biblioitems.itemtype, biblioitems.publicationyear as year, biblioitems.publishercode, biblioitems.place, biblioitems.size, biblioitems.pages
          FROM   virtualshelfcontents vc
-         LEFT JOIN biblio      ON      vc.biblionumber =      biblio.biblionumber
+         JOIN biblio      ON      vc.biblionumber =      biblio.biblionumber
          LEFT JOIN biblioitems ON  biblio.biblionumber = biblioitems.biblionumber
+         LEFT JOIN items ON items.biblionumber=vc.biblionumber
          LEFT JOIN itemtypes   ON biblioitems.itemtype = itemtypes.itemtype
          WHERE  vc.shelfnumber=? ";
     my @params = ($shelfnumber);
@@ -306,6 +309,7 @@ Returns a code to know what's happen.
 
 sub AddShelf {
     my ($hashref, $owner)= @_;
+    my $dbh = C4::Context->dbh;
 
     #initialize missing hash values to silence warnings
     foreach('shelfname','category', 'sortfield', 'allow_add', 'allow_delete_own', 'allow_delete_other' ) {
@@ -343,6 +347,7 @@ C<$shelfnumber>, unless that bib is already on that shelf.
 sub AddToShelf {
     my ($biblionumber, $shelfnumber, $borrowernumber) = @_;
     return unless $biblionumber;
+    my $dbh = C4::Context->dbh;
     my $query = qq(
         SELECT *
         FROM   virtualshelfcontents
@@ -382,6 +387,7 @@ Returns 1 if the action seemed to be successful.
 
 sub ModShelf {
     my ($shelfnumber,$hashref) = @_;
+    my $dbh = C4::Context->dbh;
 
     my $query= "SELECT * FROM virtualshelves WHERE shelfnumber=?";
     my $sth = $dbh->prepare($query);
@@ -453,8 +459,9 @@ sub ShelfPossibleAction {
 
     return 0 unless defined($shelfnumber);
 
+    my $dbh = C4::Context->dbh;
     my $query = qq/
-        SELECT IFNULL(owner,0) AS owner, category, allow_add, allow_delete_own, allow_delete_other, IFNULL(sh.borrowernumber,0) AS borrowernumber
+        SELECT COALESCE(owner,0) AS owner, category, allow_add, allow_delete_own, allow_delete_other, COALESCE(sh.borrowernumber,0) AS borrowernumber
         FROM virtualshelves vs
         LEFT JOIN virtualshelfshares sh ON sh.shelfnumber=vs.shelfnumber
         AND sh.borrowernumber=?
@@ -500,6 +507,7 @@ Returns 0 if no items have been deleted.
 
 sub DelFromShelf {
     my ($bibref, $shelfnumber, $user) = @_;
+    my $dbh = C4::Context->dbh;
     my $query = qq(SELECT allow_delete_own, allow_delete_other FROM virtualshelves WHERE shelfnumber=?);
     my $sth= $dbh->prepare($query);
     $sth->execute($shelfnumber);
@@ -544,6 +552,7 @@ ShelfPossibleAction with manage parameter.
 sub DelShelf {
     my ($shelfnumber)= @_;
     return unless $shelfnumber && $shelfnumber =~ /^\d+$/;
+    my $dbh = C4::Context->dbh;
     my $sth = $dbh->prepare("DELETE FROM virtualshelves WHERE shelfnumber=?");
     return $sth->execute($shelfnumber);
 }
@@ -629,6 +638,7 @@ sub _shelf_count {
     my @params;
     # Find out how many shelves total meet the submitted criteria...
 
+    my $dbh = C4::Context->dbh;
     my $query = "SELECT count(*) FROM virtualshelves vs ";
     if($category==1) {
         $query.= qq{
@@ -661,6 +671,7 @@ sub _biblionumber_sth { #only used in obsolete sub below
 sub _CheckShelfName {
     my ($name, $cat, $owner, $number)= @_;
 
+    my $dbh = C4::Context->dbh;
     my $query = qq(
         SELECT DISTINCT shelfnumber
         FROM   virtualshelves

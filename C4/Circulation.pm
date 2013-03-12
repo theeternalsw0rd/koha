@@ -83,6 +83,7 @@ BEGIN {
 		&GetBiblioIssues
 		&GetOpenIssue
 		&AnonymiseIssueHistory
+        &CheckIfIssuedToPatron
 	);
 
 	# subs to deal with returns
@@ -771,28 +772,31 @@ sub CanBookBeIssued {
     #
 
     # DEBTS
-    my ($amount) =
-      C4::Members::GetMemberAccountRecords( $borrower->{'borrowernumber'}, '' && $duedate->ymd() );
+    my ($balance, $non_issue_charges, $other_charges) =
+      C4::Members::GetMemberAccountBalance( $borrower->{'borrowernumber'} );
     my $amountlimit = C4::Context->preference("noissuescharge");
     my $allowfineoverride = C4::Context->preference("AllowFineOverride");
     my $allfinesneedoverride = C4::Context->preference("AllFinesNeedOverride");
     if ( C4::Context->preference("IssuingInProcess") ) {
-        if ( $amount > $amountlimit && !$inprocess && !$allowfineoverride) {
-            $issuingimpossible{DEBT} = sprintf( "%.2f", $amount );
-        } elsif ( $amount > $amountlimit && !$inprocess && $allowfineoverride) {
-            $needsconfirmation{DEBT} = sprintf( "%.2f", $amount );
-        } elsif ( $allfinesneedoverride && $amount > 0 && $amount <= $amountlimit && !$inprocess ) {
-            $needsconfirmation{DEBT} = sprintf( "%.2f", $amount );
+        if ( $non_issue_charges > $amountlimit && !$inprocess && !$allowfineoverride) {
+            $issuingimpossible{DEBT} = sprintf( "%.2f", $non_issue_charges );
+        } elsif ( $non_issue_charges > $amountlimit && !$inprocess && $allowfineoverride) {
+            $needsconfirmation{DEBT} = sprintf( "%.2f", $non_issue_charges );
+        } elsif ( $allfinesneedoverride && $non_issue_charges > 0 && $non_issue_charges <= $amountlimit && !$inprocess ) {
+            $needsconfirmation{DEBT} = sprintf( "%.2f", $non_issue_charges );
         }
     }
     else {
-        if ( $amount > $amountlimit && $allowfineoverride ) {
-            $needsconfirmation{DEBT} = sprintf( "%.2f", $amount );
-        } elsif ( $amount > $amountlimit && !$allowfineoverride) {
-            $issuingimpossible{DEBT} = sprintf( "%.2f", $amount );
-        } elsif ( $amount > 0 && $allfinesneedoverride ) {
-            $needsconfirmation{DEBT} = sprintf( "%.2f", $amount );
+        if ( $non_issue_charges > $amountlimit && $allowfineoverride ) {
+            $needsconfirmation{DEBT} = sprintf( "%.2f", $non_issue_charges );
+        } elsif ( $non_issue_charges > $amountlimit && !$allowfineoverride) {
+            $issuingimpossible{DEBT} = sprintf( "%.2f", $non_issue_charges );
+        } elsif ( $non_issue_charges > 0 && $allfinesneedoverride ) {
+            $needsconfirmation{DEBT} = sprintf( "%.2f", $non_issue_charges );
         }
+    }
+    if ($balance > 0 && $other_charges > 0) {
+        $alerts{OTHER_CHARGES} = sprintf( "%.2f", $other_charges );
     }
 
     my ($blocktype, $count) = C4::Members::IsMemberBlocked($borrower->{'borrowernumber'});
@@ -827,8 +831,7 @@ sub CanBookBeIssued {
     #
     # ITEM CHECKING
     #
-    if (   $item->{'notforloan'}
-        && $item->{'notforloan'} > 0 )
+    if ( $item->{'notforloan'} )
     {
         if(!C4::Context->preference("AllowNotForLoanOverride")){
             $issuingimpossible{NOT_FOR_LOAN} = 1;
@@ -836,7 +839,7 @@ sub CanBookBeIssued {
             $needsconfirmation{NOT_FOR_LOAN_FORCING} = 1;
         }
     }
-    elsif ( !$item->{'notforloan'} ){
+    else {
         # we have to check itemtypes.notforloan also
         if (C4::Context->preference('item-level_itypes')){
             # this should probably be a subroutine
@@ -1252,7 +1255,9 @@ sub AddIssue {
 
         ## If item was lost, it has now been found, reverse any list item charges if neccessary.
         if ( $item->{'itemlost'} ) {
-            _FixAccountForLostAndReturned( $item->{'itemnumber'}, undef, $item->{'barcode'} );
+            if ( C4::Context->preference('RefundLostItemFeeOnReturn' ) ) {
+                _FixAccountForLostAndReturned( $item->{'itemnumber'}, undef, $item->{'barcode'} );
+            }
         }
 
         ModItem({ issues           => $item->{'issues'},
@@ -1813,9 +1818,13 @@ sub AddReturn {
     }
 
     # fix up the accounts.....
-    if ($item->{'itemlost'}) {
-        _FixAccountForLostAndReturned($item->{'itemnumber'}, $borrowernumber, $barcode);    # can tolerate undef $borrowernumber
+    if ( $item->{'itemlost'} ) {
         $messages->{'WasLost'} = 1;
+
+        if ( C4::Context->preference('RefundLostItemFeeOnReturn' ) ) {
+            _FixAccountForLostAndReturned($item->{'itemnumber'}, $borrowernumber, $barcode);    # can tolerate undef $borrowernumber
+            $messages->{'LostItemFeeRefunded'} = 1;
+        }
     }
 
     # fix up the overdues in accounts...
@@ -1982,7 +1991,7 @@ sub _debar_user_on_return {
     # $deltadays is a DateTime::Duration object
     my $deltadays = $calendar->days_between( $dt_due, $dt_today );
 
-    my $circcontrol = C4::Context::preference('CircControl');
+    my $circcontrol = C4::Context->preference('CircControl');
     my $issuingrule =
       GetIssuingRule( $borrower->{categorycode}, $item->{itype}, $branchcode );
     my $finedays = $issuingrule->{finedays};
@@ -2575,6 +2584,27 @@ sub AddRenewal {
             "Renewal of Rental Item $item->{'title'} $item->{'barcode'}",
             'Rent', $charge, $itemnumber );
     }
+
+    # Send a renewal slip according to checkout alert preferencei
+    if ( C4::Context->preference('RenewalSendNotice') eq '1') {
+	my $borrower = C4::Members::GetMemberDetails( $borrowernumber, 0 );
+	my $circulation_alert = 'C4::ItemCirculationAlertPreference';
+	my %conditions = (
+		branchcode   => $branch,
+		categorycode => $borrower->{categorycode},
+		item_type    => $item->{itype},
+		notification => 'CHECKOUT',
+	);
+	if ($circulation_alert->is_enabled_for(\%conditions)) {
+		SendCirculationAlert({
+			type     => 'RENEWAL',
+			item     => $item,
+		borrower => $borrower,
+		branch   => $branch,
+		});
+	}
+    }
+
     # Log the renewal
     UpdateStats( $branch, 'renew', $charge, '', $itemnumber, $item->{itype}, $borrowernumber, undef, $item->{'ccode'});
 	return $datedue;
@@ -2896,12 +2926,13 @@ sub SendCirculationAlert {
     my %message_name = (
         CHECKIN  => 'Item_Check_in',
         CHECKOUT => 'Item_Checkout',
+	RENEWAL  => 'Item_Checkout',
     );
     my $borrower_preferences = C4::Members::Messaging::GetMessagingPreferences({
         borrowernumber => $borrower->{borrowernumber},
         message_name   => $message_name{$type},
     });
-    my $issues_table = ( $type eq 'CHECKOUT' ) ? 'issues' : 'old_issues';
+    my $issues_table = ( $type eq 'CHECKOUT' || $type eq 'RENEWAL' ) ? 'issues' : 'old_issues';
     my $letter =  C4::Letters::GetPreparedLetter (
         module => 'circulation',
         letter_code => $type,
@@ -3014,13 +3045,14 @@ sub CalcDateDue {
               ->truncate( to => 'minute' );
             if ( $loanlength->{lengthunit} eq 'hours' ) {
                 $dt->add( hours => $loanlength->{issuelength} );
-                return $dt;
             } else {    # days
                 $dt->add( days => $loanlength->{issuelength} );
                 $dt->set_hour(23);
                 $dt->set_minute(59);
-                return $dt;
             }
+            # break
+            return $dt;
+
         } else {
             my $dur;
             if ($loanlength->{lengthunit} eq 'hours') {
@@ -3063,6 +3095,7 @@ sub CalcDateDue {
     # if ReturnBeforeExpiry ON the datedue can't be after borrower expirydate
     if ( C4::Context->preference('ReturnBeforeExpiry') ) {
         my $expiry_dt = dt_from_string( $borrower->{dateexpiry}, 'iso' );
+        $expiry_dt->set( hour => 23, minute => 59);
         if ( DateTime->compare( $datedue, $expiry_dt ) == 1 ) {
             $datedue = $expiry_dt->clone;
         }
@@ -3413,6 +3446,26 @@ sub TransferSlip {
             'items'       => $item,
         },
     );
+}
+
+=head2 CheckIfIssuedToPatron
+
+  CheckIfIssuedToPatron($borrowernumber, $biblionumber)
+
+  Return 1 if any record item is issued to patron, otherwise return 0
+
+=cut
+
+sub CheckIfIssuedToPatron {
+    my ($borrowernumber, $biblionumber) = @_;
+
+    my $items = GetItemsByBiblioitemnumber($biblionumber);
+
+    foreach my $item (@{$items}) {
+        return 1 if ($item->{borrowernumber} && $item->{borrowernumber} eq $borrowernumber);
+    }
+
+    return;
 }
 
 

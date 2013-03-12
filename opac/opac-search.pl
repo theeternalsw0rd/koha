@@ -71,7 +71,7 @@ BEGIN {
 }
 
 my ($template,$borrowernumber,$cookie);
-
+my $lang = C4::Templates::getlanguage($cgi, 'opac');
 # decide which template to use
 my $template_name;
 my $template_type = 'basic';
@@ -178,7 +178,7 @@ $template->param(
 );
 
 # load the language limits (for search)
-my $languages_limit_loop = getAllLanguages();
+my $languages_limit_loop = getAllLanguages($lang);
 $template->param(search_languages_loop => $languages_limit_loop,);
 
 # load the Type stuff
@@ -293,6 +293,11 @@ if ( $template_type && $template_type eq 'advsearch' ) {
             $template->param( expanded_options => $cgi->param('expanded_options'));
         }
     }
+
+    if (C4::Context->preference('OPACNumbersPreferPhrase')) {
+        $template->param('numbersphr' => 1);
+    }
+
     output_html_with_http_headers $cgi, $cookie, $template->output;
     exit;
 }
@@ -418,7 +423,6 @@ my ($error,$query,$simple_query,$query_cgi,$query_desc,$limit,$limit_cgi,$limit_
 my @results;
 
 ## I. BUILD THE QUERY
-my $lang = C4::Templates::getlanguage($cgi, 'opac');
 ( $error,$query,$simple_query,$query_cgi,$query_desc,$limit,$limit_cgi,$limit_desc,$stopwords_removed,$query_type) = buildQuery(\@operators,\@operands,\@indexes,\@limits,\@sort_by, 0, $lang);
 
 sub _input_cgi_parse {
@@ -762,6 +766,16 @@ for (my $i=0;$i<@servers;$i++) {
         }
         # no hits
         else {
+            my $nohits = C4::Context->preference('OPACNoResultsFound');
+            if ($nohits and $nohits=~/{QUERY_KW}/){
+                # extracting keywords in case of relaunching search
+                (my $query_kw=$query_desc)=~s/ and|or / /g;
+                $query_kw = Encode::decode_utf8($query_kw);
+                my @query_kw=($query_kw=~ /([-\w]+\b)(?:[^,:]|$)/g);
+                $query_kw=join('+',@query_kw);
+                $nohits=~s/{QUERY_KW}/$query_kw/g;
+                $template->param('OPACNoResultsFound' =>$nohits);
+            }
             $template->param(
                 searchdesc => 1,
                 query_desc => $query_desc,
@@ -824,6 +838,9 @@ if (C4::Context->preference('GoogleIndicTransliteration')) {
 }
 
 $template->{VARS}->{DidYouMean} = C4::Context->preference('OPACdidyoumean') =~ m/enable/;
+$template->{VARS}->{IDreamBooksReviews} = C4::Context->preference('IDreamBooksReviews');
+$template->{VARS}->{IDreamBooksReadometer} = C4::Context->preference('IDreamBooksReadometer');
+$template->{VARS}->{IDreamBooksResults} = C4::Context->preference('IDreamBooksResults');
 
     $template->param( borrowernumber    => $borrowernumber);
 output_with_http_headers $cgi, $cookie, $template->output, $content_type;

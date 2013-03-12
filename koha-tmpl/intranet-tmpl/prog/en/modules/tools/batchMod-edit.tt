@@ -2,6 +2,7 @@
 <title>Koha &rsaquo; Tools &rsaquo; Batch item modification</title>
 [% INCLUDE 'doc-head-close.inc' %]
 <script type="text/javascript" src="[% themelang %]/js/background-job-progressbar.js"></script>
+<script type="text/javascript" src="[% themelang %]/js/cataloging.js"></script>
 <link rel="stylesheet" type="text/css" href="[% themelang %]/css/pages/batchMod.css" />
 <script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.tablesorter.min.js"></script>
 <script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.checkboxes.min.js"></script>
@@ -80,8 +81,10 @@ $(document).ready(function(){
         [% END %]
     </tbody>
       </table>
-      [% UNLESS ( too_many_items ) %]
-      <h4>The following barcodes were found: </h4>
+      [% IF ( item_loop ) %]
+          [% UNLESS ( too_many_items ) %]
+          <h4>The following barcodes were found: </h4>
+          [% END %]
       [% END %]
   [% END %] <!-- /notfoundbarcodes -->
 
@@ -142,6 +145,7 @@ $(document).ready(function(){
     [% END %]
 [% END %]<!-- /too_many_items -->
 
+[% IF ( item_loop ) %]
 <div id="cataloguing_additem_newitem">
         <h2>Edit Items</h2>
         <div class="hint">Checking the box right next the subfield label will disable the entry and delete the subfield on all selected items. Leave fields blank to make no change.</div>
@@ -163,7 +167,9 @@ $(document).ready(function(){
                 <input type="hidden" name="subfield"       value="[% ite.subfield %]" />
                 <input type="hidden" name="mandatory"       value="[% ite.mandatory %]" />
                 [% IF ( ite.repeatable ) %]
-                    <span class="buttonPlus" onclick="CloneSubfield('subfield[% ite.tag %][% ite.subfield %][% ite.random %]')">+</span>
+                    <a href="#" class="buttonPlus" onclick="CloneItemSubfield(this.parentNode); return false;">
+                        <img src="/intranet-tmpl/prog/img/clone-subfield.png" alt="Clone" title="Clone this subfield" />
+                    </a>
                 [% END %]
                 <span class="hint" id="hint[% ite.tag %][% ite.subfield %][% ite.random %]"></span>
             </div></li>
@@ -179,6 +185,9 @@ $(document).ready(function(){
          <a href="/cgi-bin/koha/tools/batchMod.pl" class="cancel" onclick="history.back();return false;">Cancel</a>
     </fieldset>
 </div>
+[% ELSE %]
+    <p><a href="/cgi-bin/koha/tools/batchMod.pl">Return to batch item modification</a></p>
+[% END %]
 [% ELSE %] <!-- // show -->
 <fieldset class="action">
 [% IF ( src == 'CATALOGUING') %]

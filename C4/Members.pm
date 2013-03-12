@@ -25,6 +25,7 @@ use strict;
 use C4::Context;
 use C4::Dates qw(format_date_in_iso format_date);
 use Digest::MD5 qw(md5_base64);
+use String::Random qw( random_string );
 use Date::Calc qw/Today Add_Delta_YM check_date Date_to_Days/;
 use C4::Log; # logaction
 use C4::Overdues;
@@ -88,7 +89,7 @@ BEGIN {
         GetBorrowerCategorycode
         &GetBorrowercategoryList
 
-        &GetBorrowersWhoHaveNotBorrowedSince
+        &GetBorrowersToExpunge
         &GetBorrowersWhoHaveNeverBorrowed
         &GetBorrowersWithIssuesHistoryOlderThan
 
@@ -118,6 +119,7 @@ BEGIN {
     #Insert data
     push @EXPORT, qw(
         &AddMember
+        &AddMember_Opac
         &add_member_orgs
         &MoveMemberToDeleted
         &ExtendMemberSubscriptionTo
@@ -430,21 +432,21 @@ sub patronflags {
     my %flags;
     my ( $patroninformation) = @_;
     my $dbh=C4::Context->dbh;
-    my ($amount) = GetMemberAccountRecords( $patroninformation->{'borrowernumber'});
-    if ( $amount > 0 ) {
+    my ($balance, $owing) = GetMemberAccountBalance( $patroninformation->{'borrowernumber'});
+    if ( $owing > 0 ) {
         my %flaginfo;
         my $noissuescharge = C4::Context->preference("noissuescharge") || 5;
-        $flaginfo{'message'} = sprintf "Patron owes \$%.02f", $amount;
-        $flaginfo{'amount'}  = sprintf "%.02f", $amount;
-        if ( $amount > $noissuescharge && !C4::Context->preference("AllowFineOverride") ) {
+        $flaginfo{'message'} = sprintf "Patron owes \$%.02f", $owing;
+        $flaginfo{'amount'}  = sprintf "%.02f", $owing;
+        if ( $owing > $noissuescharge && !C4::Context->preference("AllowFineOverride") ) {
             $flaginfo{'noissues'} = 1;
         }
         $flags{'CHARGES'} = \%flaginfo;
     }
-    elsif ( $amount < 0 ) {
+    elsif ( $balance < 0 ) {
         my %flaginfo;
-        $flaginfo{'message'} = sprintf "Patron has credit of \$%.02f", -$amount;
-        $flaginfo{'amount'}  = sprintf "%.02f", $amount;
+        $flaginfo{'message'} = sprintf "Patron has credit of \$%.02f", -$balance;
+        $flaginfo{'amount'}  = sprintf "%.02f", $balance;
         $flags{'CREDITS'} = \%flaginfo;
     }
     if (   $patroninformation->{'gonenoaddress'}
@@ -751,11 +753,25 @@ Returns as undef upon any db error without further processing
 sub AddMember {
     my (%data) = @_;
     my $dbh = C4::Context->dbh;
-	# generate a proper login if none provided
-	$data{'userid'} = Generate_Userid($data{'borrowernumber'}, $data{'firstname'}, $data{'surname'}) if $data{'userid'} eq '';
-	# create a disabled account if no password provided
-	$data{'password'} = ($data{'password'})? md5_base64($data{'password'}) : '!';
-	$data{'borrowernumber'}=InsertInTable("borrowers",\%data);	
+
+    # generate a proper login if none provided
+    $data{'userid'} = Generate_Userid($data{'borrowernumber'}, $data{'firstname'}, $data{'surname'}) if $data{'userid'} eq '';
+
+    # add expiration date if it isn't already there
+    unless ( $data{'dateexpiry'} ) {
+        $data{'dateexpiry'} = GetExpiryDate( $data{'categorycode'}, C4::Dates->new()->output("iso") );
+    }
+
+    # add enrollment date if it isn't already there
+    unless ( $data{'dateenrolled'} ) {
+        $data{'dateenrolled'} = C4::Dates->new()->output("iso");
+    }
+
+    # create a disabled account if no password provided
+    $data{'password'} = ($data{'password'})? md5_base64($data{'password'}) : '!';
+    $data{'borrowernumber'}=InsertInTable("borrowers",\%data);
+
+
     # mysql_insertid is probably bad.  not necessarily accurate and mysql-specific at best.
     logaction("MEMBERS", "CREATE", $data{'borrowernumber'}, "") if C4::Context->preference("BorrowersLog");
     
@@ -1112,9 +1128,8 @@ total amount outstanding for all of the account lines.
 
 =cut
 
-#'
 sub GetMemberAccountRecords {
-    my ($borrowernumber,$date) = @_;
+    my ($borrowernumber) = @_;
     my $dbh = C4::Context->dbh;
     my @acctlines;
     my $numlines = 0;
@@ -1122,14 +1137,10 @@ sub GetMemberAccountRecords {
                         SELECT * 
                         FROM accountlines 
                         WHERE borrowernumber=?);
-    my @bind = ($borrowernumber);
-    if ($date && $date ne ''){
-            $strsth.=" AND date < ? ";
-            push(@bind,$date);
-    }
     $strsth.=" ORDER BY date desc,timestamp DESC";
     my $sth= $dbh->prepare( $strsth );
-    $sth->execute( @bind );
+    $sth->execute( $borrowernumber );
+
     my $total = 0;
     while ( my $data = $sth->fetchrow_hashref ) {
         if ( $data->{itemnumber} ) {
@@ -1143,6 +1154,42 @@ sub GetMemberAccountRecords {
     }
     $total /= 1000;
     return ( $total, \@acctlines,$numlines);
+}
+
+=head2 GetMemberAccountBalance
+
+  ($total_balance, $non_issue_balance, $other_charges) = &GetMemberAccountBalance($borrowernumber);
+
+Calculates amount immediately owing by the patron - non-issue charges.
+Based on GetMemberAccountRecords.
+Charges exempt from non-issue are:
+* Res (reserves)
+* Rent (rental) if RentalsInNoissuesCharge syspref is set to false
+* Manual invoices if ManInvInNoissuesCharge syspref is set to false
+
+=cut
+
+sub GetMemberAccountBalance {
+    my ($borrowernumber) = @_;
+
+    my $ACCOUNT_TYPE_LENGTH = 5; # this is plain ridiculous...
+
+    my @not_fines = ('Res');
+    push @not_fines, 'Rent' unless C4::Context->preference('RentalsInNoissuesCharge');
+    unless ( C4::Context->preference('ManInvInNoissuesCharge') ) {
+        my $dbh = C4::Context->dbh;
+        my $man_inv_types = $dbh->selectcol_arrayref(qq{SELECT authorised_value FROM authorised_values WHERE category = 'MANUAL_INV'});
+        push @not_fines, map substr($_, 0, $ACCOUNT_TYPE_LENGTH), @$man_inv_types;
+    }
+    my %not_fine = map {$_ => 1} @not_fines;
+
+    my ($total, $acctlines) = GetMemberAccountRecords($borrowernumber);
+    my $other_charges = 0;
+    foreach (@$acctlines) {
+        $other_charges += $_->{amountoutstanding} if $not_fine{ substr($_->{accounttype}, 0, $ACCOUNT_TYPE_LENGTH) };
+    }
+
+    return ( $total, $total - $other_charges, $other_charges);
 }
 
 =head2 GetBorNotifyAcctRecord
@@ -1374,20 +1421,35 @@ to category descriptions.
 
 #'
 sub GetborCatFromCatType {
-    my ( $category_type, $action ) = @_;
-	# FIXME - This API  seems both limited and dangerous. 
+    my ( $category_type, $action, $no_branch_limit ) = @_;
+
+    my $branch_limit = $no_branch_limit
+        ? 0
+        : C4::Context->userenv ? C4::Context->userenv->{"branch"} : "";
+
+    # FIXME - This API  seems both limited and dangerous.
     my $dbh     = C4::Context->dbh;
-    my $request = qq|   SELECT categorycode,description 
-            FROM categories 
-            $action
-            ORDER BY categorycode|;
+
+    my $request = qq{
+        SELECT categories.categorycode, categories.description
+        FROM categories
+    };
+    $request .= qq{
+        LEFT JOIN categories_branches ON categories.categorycode = categories_branches.categorycode
+    } if $branch_limit;
+    if($action) {
+        $request .= " $action ";
+        $request .= " AND (branchcode = ? OR branchcode IS NULL) GROUP BY description" if $branch_limit;
+    } else {
+        $request .= " WHERE branchcode = ? OR branchcode IS NULL GROUP BY description" if $branch_limit;
+    }
+    $request .= " ORDER BY categorycode";
+
     my $sth = $dbh->prepare($request);
-	if ($action) {
-        $sth->execute($category_type);
-    }
-    else {
-        $sth->execute();
-    }
+    $sth->execute(
+        $action ? $category_type : (),
+        $branch_limit ? $branch_limit : ()
+    );
 
     my %labels;
     my @codes;
@@ -1396,6 +1458,7 @@ sub GetborCatFromCatType {
         push @codes, $data->{'categorycode'};
         $labels{ $data->{'categorycode'} } = $data->{'description'};
     }
+    $sth->finish;
     return ( \@codes, \%labels );
 }
 
@@ -1454,16 +1517,21 @@ If no category code provided, the function returns all the categories.
 =cut
 
 sub GetBorrowercategoryList {
+    my $no_branch_limit = @_ ? shift : 0;
+    my $branch_limit = $no_branch_limit
+        ? 0
+        : C4::Context->userenv ? C4::Context->userenv->{"branch"} : "";
     my $dbh       = C4::Context->dbh;
-    my $sth       =
-    $dbh->prepare(
-    "SELECT * 
-    FROM categories 
-    ORDER BY description"
-        );
-    $sth->execute;
-    my $data =
-    $sth->fetchall_arrayref({});
+    my $query = "SELECT categories.* FROM categories";
+    $query .= qq{
+        LEFT JOIN categories_branches ON categories.categorycode = categories_branches.categorycode
+        WHERE branchcode = ? OR branchcode IS NULL GROUP BY description
+    } if $branch_limit;
+    $query .= " ORDER BY description";
+    my $sth = $dbh->prepare( $query );
+    $sth->execute( $branch_limit ? $branch_limit : () );
+    my $data = $sth->fetchall_arrayref( {} );
+    $sth->finish;
     return $data;
 }    # sub getborrowercategory
 
@@ -1901,52 +1969,65 @@ WHERE roadtypeid=?|;
     return ($roadtype);
 }
 
-=head2 GetBorrowersWhoHaveNotBorrowedSince
+=head2 GetBorrowersToExpunge
 
-  &GetBorrowersWhoHaveNotBorrowedSince($date)
+  $borrowers = &GetBorrowersToExpunge(
+      not_borrowered_since => $not_borrowered_since,
+      expired_before       => $expired_before,
+      category_code        => $category_code,
+      branchcode           => $branchcode
+  );
 
-this function get all borrowers who haven't borrowed since the date given on input arg.
+  This function get all borrowers based on the given criteria.
 
 =cut
 
-sub GetBorrowersWhoHaveNotBorrowedSince {
-    my $filterdate = shift||POSIX::strftime("%Y-%m-%d",localtime());
-    my $filterexpiry = shift;
-    my $filterbranch = shift || 
+sub GetBorrowersToExpunge {
+    my $params = shift;
+
+    my $filterdate     = $params->{'not_borrowered_since'};
+    my $filterexpiry   = $params->{'expired_before'};
+    my $filtercategory = $params->{'category_code'};
+    my $filterbranch   = $params->{'branchcode'} ||
                         ((C4::Context->preference('IndependantBranches') 
                              && C4::Context->userenv 
                              && C4::Context->userenv->{flags} % 2 !=1 
                              && C4::Context->userenv->{branch})
                          ? C4::Context->userenv->{branch}
                          : "");  
+
     my $dbh   = C4::Context->dbh;
     my $query = "
         SELECT borrowers.borrowernumber,
-               max(old_issues.timestamp) as latestissue,
-               max(issues.timestamp) as currentissue
+               MAX(old_issues.timestamp) AS latestissue,
+               MAX(issues.timestamp) AS currentissue
         FROM   borrowers
         JOIN   categories USING (categorycode)
         LEFT JOIN old_issues USING (borrowernumber)
         LEFT JOIN issues USING (borrowernumber) 
         WHERE  category_type <> 'S'
-        AND borrowernumber NOT IN (SELECT guarantorid FROM borrowers WHERE guarantorid IS NOT NULL AND guarantorid <> 0) 
+        AND borrowernumber NOT IN (SELECT guarantorid FROM borrowers WHERE guarantorid IS NOT NULL AND guarantorid <> 0)
    ";
     my @query_params;
-    if ($filterbranch && $filterbranch ne ""){ 
-        $query.=" AND borrowers.branchcode= ?";
-        push @query_params,$filterbranch;
+    if ( $filterbranch && $filterbranch ne "" ) {
+        $query.= " AND borrowers.branchcode = ? ";
+        push( @query_params, $filterbranch );
     }
-    if($filterexpiry){
+    if ( $filterexpiry ) {
         $query .= " AND dateexpiry < ? ";
-        push @query_params,$filterdate;
+        push( @query_params, $filterexpiry );
     }
-    $query.=" GROUP BY borrowers.borrowernumber";
-    if ($filterdate){ 
-        $query.=" HAVING (latestissue < ? OR latestissue IS NULL) 
-                  AND currentissue IS NULL";
+    if ( $filtercategory ) {
+        $query .= " AND categorycode = ? ";
+        push( @query_params, $filtercategory );
+    }
+    $query.=" GROUP BY borrowers.borrowernumber HAVING currentissue IS NULL ";
+    if ( $filterdate ) {
+        $query.=" AND ( latestissue < ? OR latestissue IS NULL ) ";
         push @query_params,$filterdate;
     }
     warn $query if $debug;
+
     my $sth = $dbh->prepare($query);
     if (scalar(@query_params)>0){  
         $sth->execute(@query_params);
@@ -2275,7 +2356,7 @@ sub IssueSlip {
 
     my $issueslist = GetPendingIssues($borrowernumber);
     foreach my $it (@$issueslist){
-        if ((substr $it->{'issuedate'}, 0, 10) eq $now) {
+        if ((substr $it->{'issuedate'}, 0, 10) eq $now || (substr $it->{'lastreneweddate'}, 0, 10) eq $now) {
             $it->{'now'} = 1;
         }
         elsif ((substr $it->{'date_due'}, 0, 10) le $now) {
@@ -2358,6 +2439,22 @@ sub GetBorrowersWithEmail {
     return @result;
 }
 
+sub AddMember_Opac {
+    my ( %borrower ) = @_;
+
+    $borrower{'categorycode'} = C4::Context->preference('PatronSelfRegistrationDefaultCategory');
+
+    my $sr = new String::Random;
+    $sr->{'A'} = [ 'A'..'Z', 'a'..'z' ];
+    my $password = $sr->randpattern("AAAAAAAAAA");
+    $borrower{'password'} = $password;
+
+    $borrower{'cardnumber'} = fixup_cardnumber();
+
+    my $borrowernumber = AddMember(%borrower);
+
+    return ( $borrowernumber, $password );
+}
 
 END { }    # module clean-up code here (global destructor)
 

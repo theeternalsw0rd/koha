@@ -39,6 +39,7 @@ use C4::Charset;
 use Date::Calc qw(Today);
 use MARC::File::USMARC;
 use MARC::File::XML;
+use URI::Escape;
 
 if ( C4::Context->preference('marcflavour') eq 'UNIMARC' ) {
     MARC::File::XML->default_record_format('UNIMARC');
@@ -93,9 +94,10 @@ sub MARCfindbreeding {
             return -1;
         }
         else {
-            # normalize author : probably UNIMARC specific...
+            # normalize author : UNIMARC specific...
             if (    C4::Context->preference("z3950NormalizeAuthor")
-                and C4::Context->preference("z3950AuthorAuthFields") )
+                and C4::Context->preference("z3950AuthorAuthFields")
+                and C4::Context->preference("marcflavour") eq 'UNIMARC' )
             {
                 my ( $tag, $subfield ) = GetMarcFromKohaField("biblio.author", '');
 
@@ -219,8 +221,11 @@ sub build_authorized_values_list {
         $value = $default_source unless $value;
     }
     else {
+        my $branch_limit = C4::Context->userenv ? C4::Context->userenv->{"branch"} : "";
         $authorised_values_sth->execute(
-            $tagslib->{$tag}->{$subfield}->{authorised_value} );
+            $tagslib->{$tag}->{$subfield}->{authorised_value},
+            $branch_limit ? $branch_limit : (),
+        );
 
         push @authorised_values, ""
           unless ( $tagslib->{$tag}->{$subfield}->{mandatory} );
@@ -230,6 +235,7 @@ sub build_authorized_values_list {
             $authorised_lib{$value} = $lib;
         }
     }
+    $authorised_values_sth->finish;
     return CGI::scrolling_list(
         -name     => "tag_".$tag."_subfield_".$subfield."_".$index_tag."_".$index_subfield,
         -values   => \@authorised_values,
@@ -372,7 +378,8 @@ sub create_input {
     # it's a thesaurus / authority field
     }
     elsif ( $tagslib->{$tag}->{$subfield}->{authtypecode} ) {
-     if (C4::Context->preference("BiblioAddsAuthorities")) {
+        # when authorities auto-creation is allowed, do not set readonly
+        my $is_readonly = !C4::Context->preference("BiblioAddsAuthorities");
         $subfield_data{marc_value} =
             "<input type=\"text\"
                     id=\"".$subfield_data{id}."\"
@@ -381,26 +388,12 @@ sub create_input {
                     class=\"input_marceditor readonly\"
                     tabindex=\"1\"
                     size=\"67\"
-                    maxlength=\"".$subfield_data{maxlength}."\"
-                    \/>
+                    maxlength=\"".$subfield_data{maxlength}."\"".
+                    ($is_readonly ? "readonly=\"readonly\"" : "").
+                    "\/>
                     <span class=\"subfield_controls\"><a href=\"#\" class=\"buttonDot\"
-                       onclick=\"openAuth(this.parentNode.parentNode.getElementsByTagName('input')[1].id,'".$tagslib->{$tag}->{$subfield}->{authtypecode}."'); return false;\" tabindex=\"1\" title=\"Tag Editor\"><img src=\"/intranet-tmpl/prog/img/edit-tag.png\" alt=\"Tag Editor\" /></a></span>
+                       onclick=\"openAuth(this.parentNode.parentNode.getElementsByTagName('input')[1].id,'".$tagslib->{$tag}->{$subfield}->{authtypecode}."','biblio'); return false;\" tabindex=\"1\" title=\"Tag Editor\"><img src=\"/intranet-tmpl/prog/img/edit-tag.png\" alt=\"Tag Editor\" /></a></span>
             ";
-      } else {
-        $subfield_data{marc_value} =
-            "<input type=\"text\"
-                    id=\"".$subfield_data{id}."\"
-                    name=\"".$subfield_data{id}."\"
-                    value=\"$value\"
-                    class=\"input_marceditor readonly\"
-                    tabindex=\"1\"
-                    size=\"67\"
-                    maxlength=\"".$subfield_data{maxlength}."\"
-                    readonly=\"readonly\"
-                    \/><span class=\"subfield_controls\"><a href=\"#\" class=\"buttonDot\"
-                        onclick=\"openAuth(this.parentNode.parentNode.getElementsByTagName('input')[1].id,'".$tagslib->{$tag}->{$subfield}->{authtypecode}."'); return false;\" tabindex=\"1\" title=\"Tag Editor\"><img src=\"/intranet-tmpl/prog/img/edit-tag.png\" alt=\"Tag Editor\" /></a></span>
-            ";
-      }
     # it's a plugin field
     }
     elsif ( $tagslib->{$tag}->{$subfield}->{'value_builder'} ) {
@@ -521,12 +514,15 @@ sub build_tabs {
     my @loop_data = ();
     my $tag;
 
-    my $authorised_values_sth = $dbh->prepare(
-        "select authorised_value,lib
-        from authorised_values
-        where category=? order by lib"
-    );
-    
+    my $branch_limit = C4::Context->userenv ? C4::Context->userenv->{"branch"} : "";
+    my $query = "SELECT authorised_value, lib
+                FROM authorised_values";
+    $query .= qq{ LEFT JOIN authorised_values_branches ON ( id = av_id )} if $branch_limit;
+    $query .= " WHERE category = ?";
+    $query .= " AND ( branchcode = ? OR branchcode IS NULL )" if $branch_limit;
+    $query .= " GROUP BY lib ORDER BY lib, lib_opac";
+    my $authorised_values_sth = $dbh->prepare( $query );
+
     # in this array, we will push all the 10 tabs
     # to avoid having 10 tabs in the template : they will all be in the same BIG_LOOP
     my @BIG_LOOP;
@@ -711,6 +707,7 @@ sub build_tabs {
             };
         }
     }
+    $authorised_values_sth->finish;
     $template->param( BIG_LOOP => \@BIG_LOOP );
 }
 
@@ -730,8 +727,13 @@ my $redirect      = $input->param('redirect');
 my $dbh           = C4::Context->dbh;
 my $hostbiblionumber = $input->param('hostbiblionumber');
 my $hostitemnumber = $input->param('hostitemnumber');
+# fast cataloguing datas in transit
+my $fa_circborrowernumber = $input->param('circborrowernumber');
+my $fa_barcode            = $input->param('barcode');
+my $fa_branch             = $input->param('branch');
+my $fa_stickyduedate      = $input->param('stickyduedate');
+my $fa_duedatespec        = $input->param('duedatespec');
 
-    
 my $userflags = 'edit_catalogue';
 if ($frameworkcode eq 'FA'){
     $userflags = 'fast_cataloging';
@@ -753,11 +755,13 @@ my ( $template, $loggedinuser, $cookie ) = get_template_and_user(
 
 if ($frameworkcode eq 'FA'){
     # We need to grab and set some variables in the template for use on the additems screen
-    $template->{VARS}->{'circborrowernumber'} = $input->param('borrowernumber');
-    $template->{VARS}->{'barcode'} = $input->param('barcode');
-    $template->{VARS}->{'branch'} = $input->param('branch');
-    $template->{VARS}->{'stickyduedate'} = $input->param('stickyduedate');
-    $template->{VARS}->{'duedatespec'} = $input->param('duedatespec');
+    $template->param(
+        'circborrowernumber' => $fa_circborrowernumber,
+        'barcode'            => $fa_barcode,
+        'branch'             => $fa_branch,
+        'stickyduedate'      => $fa_stickyduedate,
+        'duedatespec'        => $fa_duedatespec,
+    );
 }
 
 # Getting the list of all frameworks
@@ -870,13 +874,15 @@ if ( $op eq "addbiblio" ) {
         }
         if ($redirect eq "items" || ($mode ne "popup" && !$is_a_modif && $redirect ne "view")){
 	    if ($frameworkcode eq 'FA'){
-		my $borrowernumber = $input->param('circborrowernumber');
-		my $barcode = $input->param('barcode');
-		my $branch = $input->param('branch');
-		my $stickyduedate = $input->param('stickyduedate');
-		my $duedatespec = $input->param('duedatespec');
 		print $input->redirect(
-                "/cgi-bin/koha/cataloguing/additem.pl?biblionumber=$biblionumber&frameworkcode=$frameworkcode&borrowernumber=$borrowernumber&branch=$branch&barcode=$barcode&stickyduedate=$stickyduedate&duedatespec=$duedatespec"
+            '/cgi-bin/koha/cataloguing/additem.pl?'
+            .'biblionumber='.$biblionumber
+            .'&frameworkcode='.$frameworkcode
+            .'&circborrowernumber='.$fa_circborrowernumber
+            .'&branch='.$fa_branch
+            .'&barcode='.uri_escape($fa_barcode)
+            .'&stickyduedate='.$fa_stickyduedate
+            .'&duedatespec='.$fa_duedatespec
 		);
 		exit;
 	    }

@@ -292,9 +292,9 @@ sub SearchAuthorities {
         } elsif ($sortby eq 'HeadingDsc') {
             $orderstring = '@attr 7=2 @attr 1=Heading 0';
         } elsif ($sortby eq 'AuthidAsc') {
-            $orderstring = '@attr 7=1 @attr 1=Local-Number 0';
+            $orderstring = '@attr 7=1 @attr 4=109 @attr 1=Local-Number 0';
         } elsif ($sortby eq 'AuthidDsc') {
-            $orderstring = '@attr 7=2 @attr 1=Local-Number 0';
+            $orderstring = '@attr 7=2 @attr 4=109 @attr 1=Local-Number 0';
         }
         $query=($query?$query:"\@attr 1=_ALLRECORDS \@attr 2=103 ''");
         $query="\@or $orderstring $query" if $orderstring;
@@ -359,9 +359,11 @@ sub SearchAuthorities {
                     }
                 }
                 my $thisauthtype = GetAuthType(GetAuthTypeCode($authid));
-                $newline{authtype}     = defined ($thisauthtype) ?
-                                            $thisauthtype->{'authtypetext'} :
-                                            (GetAuthType($authtypecode) ? $_->{'authtypetext'} : '');
+                unless (defined $thisauthtype) {
+                    $thisauthtype = GetAuthType($authtypecode) if $authtypecode;
+                }
+                $newline{authtype}     = defined($thisauthtype) ?
+                                            $thisauthtype->{'authtypetext'} : '';
                 $newline{summary}      = $summary;
                 $newline{even}         = $counter % 2;
                 $newline{reported_tag} = $reported_tag;
@@ -704,17 +706,18 @@ sub AddAuthority {
 
   if ($format eq "UNIMARCAUTH") {
         $record->leader("     nx  j22             ") unless ($record->leader());
-        my $date=POSIX::strftime("%Y%m%d",localtime);    
+        my $date=POSIX::strftime("%Y%m%d",localtime);
+	my $defaultfield100 = C4::Context->preference('UNIMARCAuthorityField100');
     if (my $string=$record->subfield('100',"a")){
       	$string=~s/fre50/frey50/;
       	$record->field('100')->update('a'=>$string);
     }
     elsif ($record->field('100')){
-          $record->field('100')->update('a'=>$date."afrey50      ba0");
+          $record->field('100')->update('a'=>$date.$defaultfield100);
     } else {      
         $record->append_fields(
         MARC::Field->new('100',' ',' '
-            ,'a'=>$date."afrey50      ba0")
+            ,'a'=>$date.$defaultfield100)
         );
     }      
   }
@@ -856,6 +859,7 @@ Returns MARC::Record of the authority passed in parameter.
 sub GetAuthority {
     my ($authid)=@_;
     my $authority = Koha::Authority->get_from_authid($authid);
+    return unless $authority;
     return ($authority->record);
 }
 
@@ -959,6 +963,11 @@ sub BuildSummary {
         'i' => 'subfi',
         't' => 'parent'
     );
+    my %unimarc_relation_from_code = (
+        g => 'broader',
+        h => 'narrower',
+        a => 'seealso',
+    );
     my %thesaurus;
     $thesaurus{'1'}="Peuples";
     $thesaurus{'2'}="Anthroponymes";
@@ -1023,39 +1032,28 @@ sub BuildSummary {
             my $thesaurus = $field->subfield('2') ? "thes. : ".$thesaurus{"$field->subfield('2')"}." : " : '';
             push @seefrom, { heading => $thesaurus . $field->as_string('abcdefghijlmnopqrstuvwxyz'), type => 'seefrom', field => $field->tag() };
         }
-# see :
-        foreach my $field ($record->field('5..')) {
-            if (($field->subfield('5')) && ($field->subfield('a')) && ($field->subfield('5') eq 'g')) {
-                push @seealso, {
-                    heading => $field->as_string('abcdefgjxyz'),
-                    type => 'broader',
-                    field => $field->tag(),
-                    search => $field->as_string('abcdefgjxyz'),
-                    authid => $field->subfield('9')
-                };
-            } elsif (($field->subfield('5')) && ($field->as_string) && ($field->subfield('5') eq 'h')){
-                push @seealso, {
-                    heading => $field->as_string('abcdefgjxyz'),
-                    type => 'narrower',
-                    field => $field->tag(),
-                    search => $field->as_string('abcdefgjxyz'),
-                    authid => $field->subfield('9')
-                };
-            } elsif ($field->subfield('a')) {
-                push @seealso, {
-                    heading => $field->as_string('abcdefgxyz'),
-                    type => 'seealso',
-                    field => $field->tag(),
-                    search => $field->as_string('abcdefgjxyz'),
-                    authid => $field->subfield('9')
-                };
+
+        # see :
+        @seealso = map {
+            my $type = $unimarc_relation_from_code{$_->subfield('5') || 'a'};
+            my $heading = $_->as_string('abcdefgjxyz');
+            {
+                field   => $_->tag,
+                type    => $type,
+                heading => $heading,
+                search  => $heading,
+                authid  => $_->subfield('9'),
             }
-        }
-# // form
-        foreach my $field ($record->field('7..')) {
-            my $lang = substr($field->subfield('8'),3,3);
-            push @otherscript, { lang => $lang, term => $field->subfield('a'), direction => 'ltr', field => $field->tag() };
-        }
+        } $record->field('5..');
+
+        # Other forms
+        @otherscript = map { {
+            lang      => $_->subfield('8') || '',
+            term      => $_->subfield('a'),
+            direction => 'ltr',
+            field     => $_->tag,
+        } } $record->field('7..');
+
     } else {
 # construct MARC21 summary
 # FIXME - looping over 1XX is questionable

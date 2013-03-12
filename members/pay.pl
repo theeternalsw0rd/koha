@@ -42,8 +42,6 @@ use C4::Branch;
 use C4::Members::Attributes qw(GetBorrowerAttributes);
 
 our $input = CGI->new;
-our $writeoff_sth;
-our $add_writeoff_sth;
 
 our ( $template, $loggedinuser, $cookie ) = get_template_and_user(
     {   template_name   => 'members/pay.tmpl',
@@ -89,7 +87,7 @@ if ($writeoff_all) {
     my $itemno       = $input->param('itemnumber');
     my $account_type = $input->param('accounttype');
     my $amount       = $input->param('amountoutstanding');
-    WriteOffFee( $borrowernumber, $accountlines_id, $itemno, $account_type, $amount, $branch );
+    WriteOffFee( $borrowernumber, $accountlines_id, $itemno, $account_type, $amount );
 }
 
 for (@names) {
@@ -107,24 +105,6 @@ $template->param( activeBorrowerRelationship => (C4::Context->preference('borrow
 add_accounts_to_template();
 
 output_html_with_http_headers $input, $cookie, $template->output;
-
-sub writeoff {
-    my ( $accountlines_id, $itemnum, $accounttype, $amount ) = @_;
-    my $manager_id = 0;
-    $manager_id = C4::Context->userenv->{'number'} if C4::Context->userenv;
-
-    # if no item is attached to fine, make sure to store it as a NULL
-    $itemnum ||= undef;
-    get_writeoff_sth();
-    $writeoff_sth->execute( $accountlines_id );
-
-    my $acct = getnextacctno($borrowernumber);
-    $add_writeoff_sth->execute( $borrowernumber, $acct, $itemnum, $amount, $manager_id );
-
-    UpdateStats( $branch, 'writeoff', $amount, q{}, q{}, q{}, $borrowernumber );
-
-    return;
-}
 
 sub add_accounts_to_template {
 
@@ -205,7 +185,7 @@ sub writeoff_all {
             my $amount    = $input->param("amountoutstanding$value");
             my $accountno = $input->param("accountno$value");
             my $accountlines_id = $input->param("accountlines_id$value");
-            WriteOffFee( $borrowernumber, $accountlines_id, $itemno, $accounttype, $amount, $branch );
+            WriteOffFee( $borrowernumber, $accountlines_id, $itemno, $accounttype, $amount );
         }
     }
 
@@ -269,25 +249,5 @@ sub payselected {
       . $sel;
 
     print $input->redirect($redirect);
-    return;
-}
-
-sub get_writeoff_sth {
-
-    # lets prepare these statement handles only once
-    if ($writeoff_sth) {
-        return;
-    } else {
-        my $dbh = C4::Context->dbh;
-
-        # Do we need to validate accounttype
-        my $sql = 'Update accountlines set amountoutstanding=0 '
-          . 'WHERE accountlines_id=?';
-        $writeoff_sth = $dbh->prepare($sql);
-        my $insert =
-q{insert into accountlines (borrowernumber,accountno,itemnumber,date,amount,description,accounttype,manager_id)}
-          . q{values (?,?,?,now(),?,'Writeoff','W',?)};
-        $add_writeoff_sth = $dbh->prepare($insert);
-    }
     return;
 }

@@ -27,10 +27,10 @@ definition file (probably something like {biblio,authority}-koha-indexdefs.xml) 
     </xslo:if>
   </xslo:template>
   <xslo:template match="marc:record">
-    <xslo:variable name="controlField001" select="normalize-space(marc:controlfield[@tag='001'])"/>
+    <xslo:variable name="idfield" select="normalize-space(marc:controlfield[@tag='001'])"/>
     <z:record type="update">
       <xslo:attribute name="z:id">
-        <xslo:value-of select="$controlField001"/>
+        <xslo:value-of select="$idfield"/>
       </xslo:attribute>
       <xslo:apply-templates/>
       <xslo:apply-templates mode="index_subfields"/>
@@ -50,7 +50,7 @@ definition file (probably something like {biblio,authority}-koha-indexdefs.xml) 
     </z:index>
   </xslo:template>
   <xslo:template match="marc:controlfield[@tag='001']">
-    <z:index name="Local-Number:w Local-Number:s">
+    <z:index name="Local-Number:w Local-Number:n Local-Number:s">
       <xslo:value-of select="."/>
     </z:index>
   </xslo:template>

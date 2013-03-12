@@ -6,13 +6,14 @@
     <script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/jquery.dataTables.min.js"></script>
     <script type="text/javascript" src="[% themelang %]/lib/jquery/plugins/dataTables.fnReloadAjax.js"></script>
     [% INCLUDE 'datatables-strings.inc' %]
-    </script>
     <script type="text/javascript" src="[% themelang %]/js/datatables.js"></script>
     <script type="text/javascript" src="[% themelang %]/js/jquery.jeditable.mini.js"></script>
     <script type="text/javascript">
     //<![CDATA[
+    var MSG_ID_HELP = _("Click on the quote's id to select or deselect the quote. Multiple quotes may be selected.");
+
     var oTable; /* oTable needs to be global */
-    var sEmptyTable = _('No quotes available. Please use the "Add quote" button to add a quote.'); /* override the default message in datatables-strings.inc */
+    var sEmptyTable = _("No quotes available. Please use the \"Add quote\" button to add a quote."); /* override the default message in datatables-strings.inc */
     $(document).ready(function() {
         /* NOTE: This is an ajax-source datatable and *not* a server-side sourced datatable. */
         /* See the datatable docs if you don't understand this difference. */
@@ -29,7 +30,21 @@
                                             { "sWidth": "11%" },
                                           ],
                    "oLanguage"          : {
-                                            "sEmptyTable": sEmptyTable,
+                                            "oPaginate": {
+                                                           "sFirst": MSG_DT_FIRST,
+                                                           "sLast": MSG_DT_LAST,
+                                                           "sNext": MSG_DT_NEXT,
+                                                           "sPrevious": MSG_DT_PREVIOUS,
+                                                         },
+                                            "sEmptyTable": MSG_DT_EMPTY_TABLE,
+                                            "sInfo": MSG_DT_INFO,
+                                            "sInfoEmpty": MSG_DT_INFO_EMPTY,
+                                            "sInfoFiltered": MSG_DT_INFO_FILTERED,
+                                            "sLengthMenu": MSG_DT_LENGTH_MENU,
+                                            "sLoadingRecords": MSG_DT_LOADING_RECORDS,
+                                            "sProcessing": MSG_DT_PROCESSING,
+                                            "sSearch": MSG_DT_SEARCH,
+                                            "sZeroRecords": MSG_DT_ZERO_RECORDS,
                                           },
                    "fnPreDrawCallback": function(oSettings) {
                         return true;
@@ -68,6 +83,14 @@
                         });
                    },
         });
+        $("#add_quote").click(function(){
+            fnClickAddRow();
+            return false;
+        });
+        $("#delete_quote").click(function(){
+            fnClickDeleteRow();
+            return false;
+        });
     });
 
         function fnClickAddQuote(e, node) {
@@ -103,11 +126,11 @@
                     });
                 }
                 else {
-                    alert(_('Please supply both the text and source of the quote before saving.'));
+                    alert(_("Please supply both the text and source of the quote before saving."));
                 }
             }
             else if (e.keyCode == 27) {
-                if (confirm(_('Are you sure you want to cancel adding this quote?'))) {
+                if (confirm(_("Are you sure you want to cancel adding this quote?"))) {
                     oTable.fnDeleteRow(node);
                 }
                 else {
@@ -136,9 +159,9 @@
                   return this.id;
             }).get().join(', ');
             if (!idsToDelete) {
-                alert(_('Please select a quote(s) by clicking the quote id(s) you desire to delete.'));
+                alert(_("Please select a quote(s) by clicking the quote id(s) you desire to delete."));
             }
-            else if (confirm(_('Are you sure you wish to delete quote(s) ')+idsToDelete+'?')) {
+            else if (confirm(_("Are you sure you wish to delete quote(s) ")+idsToDelete+"?")) {
                 oTable.$('.selected').each(function(){
                         var quoteID = $(this).attr('id');
                             $.ajax({
@@ -191,7 +214,7 @@
                 <table id="quotes_editor">
                 <thead>
                     <tr>
-                        <th><span style="cursor: help" onclick="event.stopPropagation();alert(_('Click on the quote\'s id to select or deselect the quote. Multiple quotes may be selected.'));">ID</span></th>
+                        <th><span style="cursor: help" onclick="event.stopPropagation();alert(MSG_ID_HELP);">ID</span></th>
                         <th>Source</th>
                         <th>Text</th>
                         <th>Last displayed</th>

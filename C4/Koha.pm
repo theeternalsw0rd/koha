@@ -425,20 +425,22 @@ sub getframeworkinfo {
 
 =head2 getitemtypeinfo
 
-  $itemtype = &getitemtype($itemtype);
+  $itemtype = &getitemtypeinfo($itemtype, [$interface]);
 
-Returns information about an itemtype.
+Returns information about an itemtype. The optional $interface argument
+sets which interface ('opac' or 'intranet') to return the imageurl for.
+Defaults to intranet.
 
 =cut
 
 sub getitemtypeinfo {
-    my ($itemtype) = @_;
+    my ($itemtype, $interface) = @_;
     my $dbh        = C4::Context->dbh;
     my $sth        = $dbh->prepare("select * from itemtypes where itemtype=?");
     $sth->execute($itemtype);
     my $res = $sth->fetchrow_hashref;
 
-    $res->{imageurl} = getitemtypeimagelocation( 'intranet', $res->{imageurl} );
+    $res->{imageurl} = getitemtypeimagelocation( ( ( defined $interface && $interface eq 'opac' ) ? 'opac' : 'intranet' ), $res->{imageurl} );
 
     return $res;
 }
@@ -687,19 +689,19 @@ sub getFacets {
             {
                 idx   => 'su-to',
                 label => 'Topics',
-                tags  => [ qw/ 600a 601a 602a 603a 604a 605a 606ax 610a/ ],
+                tags  => [ qw/ 600ab 601ab 602a 604at 605a 606ax 610a / ],
                 sep   => ' - ',
             },
             {
                 idx   => 'su-geo',
                 label => 'Places',
-                tags  => [ qw/ 651a / ],
+                tags  => [ qw/ 607a / ],
                 sep   => ' - ',
             },
             {
                 idx   => 'su-ut',
                 label => 'Titles',
-                tags  => [ qw/ 500a 501a 502a 503a 504a / ],
+                tags  => [ qw/ 500a 501a 503a / ],
                 sep   => ', ',
             },
             {
@@ -909,13 +911,13 @@ like:
 
     {
       'checked'    => 'checked',
-      'encoding'   => 'MARC-8'
+      'encoding'   => 'utf8',
       'icon'       => undef,
       'id'         => 'LIBRARY OF CONGRESS',
       'label'      => '',
       'name'       => 'server',
       'opensearch' => '',
-      'value'      => 'z3950.loc.gov:7090/',
+      'value'      => 'lx2.loc.gov:210/',
       'zed'        => 1,
     },
 
@@ -1036,28 +1038,50 @@ C<$opac> If set to a true value, displays OPAC descriptions rather than normal o
 =cut
 
 sub GetAuthorisedValues {
-    my ($category,$selected,$opac) = @_;
+    my ( $category, $selected, $opac ) = @_;
+    my $branch_limit = C4::Context->userenv ? C4::Context->userenv->{"branch"} : "";
     my @results;
     my $dbh      = C4::Context->dbh;
-    my $query    = "SELECT * FROM authorised_values";
-    $query .= " WHERE category = '" . $category . "'" if $category;
-    $query .= " ORDER BY category, lib, lib_opac";
+    my $query = qq{
+        SELECT *
+        FROM authorised_values
+    };
+    $query .= qq{
+          LEFT JOIN authorised_values_branches ON ( id = av_id )
+    } if $branch_limit;
+    my @where_strings;
+    my @where_args;
+    if($category) {
+        push @where_strings, "category = ?";
+        push @where_args, $category;
+    }
+    if($branch_limit) {
+        push @where_strings, "( branchcode = ? OR branchcode IS NULL )";
+        push @where_args, $branch_limit;
+    }
+    if(@where_strings > 0) {
+        $query .= " WHERE " . join(" AND ", @where_strings);
+    }
+    $query .= " GROUP BY lib ORDER BY category, lib, lib_opac";
+
     my $sth = $dbh->prepare($query);
-    $sth->execute;
+
+    $sth->execute( @where_args );
     while (my $data=$sth->fetchrow_hashref) {
-        if ( (defined($selected)) && ($selected eq $data->{'authorised_value'}) ) {
-            $data->{'selected'} = 1;
+        if ( defined $selected and $selected eq $data->{authorised_value} ) {
+            $data->{selected} = 1;
         }
         else {
-            $data->{'selected'} = 0;
+            $data->{selected} = 0;
         }
-        if ($opac && $data->{'lib_opac'}) {
-            $data->{'lib'} = $data->{'lib_opac'};
+
+        if ($opac && $data->{lib_opac}) {
+            $data->{lib} = $data->{lib_opac};
         }
         push @results, $data;
     }
-    #my $data = $sth->fetchall_arrayref({});
-    return \@results; #$data;
+    $sth->finish;
+    return \@results;
 }
 
 =head2 GetAuthorisedValueCategories

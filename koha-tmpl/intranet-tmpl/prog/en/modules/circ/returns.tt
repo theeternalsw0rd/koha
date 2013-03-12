@@ -317,6 +317,7 @@ $(document).ready(function () {
 
 [% IF ( errmsgloop ) %]
     <div class="dialog alert">
+        <h5>Cannot check in</h5>
         [% FOREACH errmsgloo IN errmsgloop %]
                     [% IF ( errmsgloo.badbarcode ) %]
                         <p class="problem">No item with barcode: [% errmsgloo.msg %]</p>
@@ -332,10 +333,14 @@ $(document).ready(function () {
                     [% END %]
                     [% IF ( errmsgloo.waslost ) %]
                         <p class="problem">Item was lost, now found.</p>
+                        [% IF ( LostItemFeeRefunded ) %]
+                            <p class="problem">A refund has been applied to the borrowing patron's account.</p>
+                        [% ELSE %]
+                            <p class="problem">Any lost item fees for this item will remain on the patron's account</p>
+                        [% END %]
                     [% END %]
                     [% IF ( errmsgloo.withdrawn ) %]
                         [% IF BlockReturnOfWithdrawnItems %]
-                           <h3>Cannot Check In</h3>
                            <p class="problem">Item is withdrawn. <strong>NOT CHECKED IN</strong></p>
                         [% ELSE %]
                            <p class="problem">Item is withdrawn.</p>
@@ -412,28 +417,10 @@ $(document).ready(function () {
     </form>
 </div>
 
-[% IF ( returned ) %]
-<div class="yui-g">    <table>
-        <tr><th>Item information</th><th>Patron information</th></tr>
-        <tr>
-            <td>[% title |html %]</td>
-            <td>
-
-                <a href="/cgi-bin/koha/members/moremember.pl?borrowernumber=[% riborrowernumber %]">[% riborsurname %], [% ribortitle %] [% riborfirstname %]</a> ([% riborcnum %])
-                [% IF ( flagset ) %]
-                ([% FOREACH flagloo IN flagloop %]
-                [% flagloo.flag %]
-		[% IF ( flagloo.charges ) %] of [% flagloo.chargeamount %] [% END %]
-		,
-                [% END %])[% END %]
-            </td>
-        </tr>
-    </table>
-[% END %]
 [% IF ( riloop ) %]
     <h2>Checked-in items</h2>
     <table>
-    <tr><th>Due date</th><th>Title</th>	<th>Author</th>	<th>Barcode</th><th>Home branch</th><th>Holding branch</th><th>Shelving location</th><th>Call number</th><th>Type</th>	<th>Patron</th><th>Note</th></tr>
+    <tr><th>Due date</th><th>Title</th>	<th>Author</th>	<th>Barcode</th><th>Home library</th><th>Holding library</th><th>Shelving location</th><th>Call number</th><th>Type</th>	<th>Patron</th><th>Note</th></tr>
 
         [% FOREACH riloo IN riloop %]
             <tr>

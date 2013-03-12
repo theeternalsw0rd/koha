@@ -101,13 +101,19 @@ my @searchfields = $searchfields ? split( ',', $searchfields ) : ( "firstname", 
 $member =~ s/,//g;   #remove any commas from search string
 $member =~ s/\*/%/g;
 
+my $searchtype = $input->param('searchtype');
+my %searchtype_ok = ( 'contain' => 1 );
+if ( !defined($searchtype_ok{$searchtype}) ) {
+    undef $searchtype;
+}
+
 my $from = ( $startfrom - 1 ) * $resultsperpage;
 my $to   = $from + $resultsperpage;
 
 my ($count,$results);
 if ($member || keys %$patron) {
     #($results)=Search($member || $patron,{surname=>1,firstname=>1},[$from,$to],undef,["firstname","surname","email","othernames"]  );
-    my $search_scope = ( $quicksearch ? "field_start_with" : "start_with" );
+    my $search_scope = $searchtype || ( $quicksearch ? "field_start_with" : "start_with" );
     ($results) = Search( $member || $patron, \@orderby, undef, undef, \@searchfields, $search_scope );
 }
 
@@ -135,8 +141,8 @@ foreach my $borrower(@$results[$from..$to-1]){
 
   my %row = (
     count => $index++,
-	%$borrower,
-	%{$categories_dislay{$$borrower{categorycode}}},
+    %$borrower,
+    (defined $categories_dislay{ $borrower->{categorycode} }?   %{ $categories_dislay{ $borrower->{categorycode} } }:()),
     overdues => $od,
     issues => $issue,
     odissue => "$od/$issue",

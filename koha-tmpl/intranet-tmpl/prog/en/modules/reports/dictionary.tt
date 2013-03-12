@@ -14,7 +14,7 @@
 [% ELSIF ( step_3 ) %] &rsaquo; <a href="/cgi-bin/koha/reports/dictionary.pl">Dictionary</a> &rsaquo; <strong>Step 3: Choose columns </strong> 
 [% ELSIF ( step_4 ) %] &rsaquo; <a href="/cgi-bin/koha/reports/dictionary.pl">Dictionary</a> &rsaquo; <strong>Step 4: Specify a value </strong> 
 [% ELSIF ( step_5 ) %] &rsaquo; <a href="/cgi-bin/koha/reports/dictionary.pl">Dictionary</a> &rsaquo; <strong>Step 5: Confirm definition</strong> 
-[% ELSE %]<strong> Dictionary </strong>[% END %]</div>
+[% ELSE %] &rsaquo; <strong> Dictionary </strong>[% END %]</div>
 
 <div id="doc3" class="yui-t2">
 
@@ -22,7 +22,11 @@
 <div id="yui-main">
 <div class="yui-b">
 [% IF ( start_dictionary ) %]
-[% INCLUDE 'dictionary-toolbar.inc' %]
+    <div id="toolbar">
+        <ul class="toolbar">
+            <li><a id="newdictionary" class="btn btn-small" href="/cgi-bin/koha/reports/dictionary.pl?phase=Add%20New%20Definition"><i class="icon-plus"></i> New definition</a></li>
+        </ul>
+    </div>
 [% END %]
 <h1>Dictionary</h1>
 [% IF ( start_dictionary ) %]

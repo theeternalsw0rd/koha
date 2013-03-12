@@ -47,7 +47,10 @@ overdue_notices.pl - prepare messages to be sent to patrons for overdue items
 
 =head1 SYNOPSIS
 
-overdue_notices.pl [ -n ] [ -library <branchcode> ] [ -library <branchcode>...] [ -max <number of days> ] [ -csv [ <filename> ] ] [ -itemscontent <field list> ]
+overdue_notices.pl
+  [ -n ][ -library <branchcode> ][ -library <branchcode> ... ]
+  [ -max <number of days> ][ -csv [<filename>] ][ -itemscontent <field list> ]
+  [ -email <email_type> ... ]
 
  Options:
    -help                          brief help message
@@ -60,6 +63,7 @@ overdue_notices.pl [ -n ] [ -library <branchcode> ] [ -library <branchcode>...] 
    -itemscontent <list of fields> item information in templates
    -borcat       <categorycode>   category code that must be included
    -borcatout    <categorycode>   category code that must be excluded
+   -email        <email_type>     type of email that will be used. Can be 'email', 'emailpro' or 'B_email'. Repeatable.
 
 =head1 OPTIONS
 
@@ -146,6 +150,10 @@ Choose list-all to include all overdue items in the list (limited by B<-max> set
 =item B<-date>
 
 use it in order to send overdues on a specific date and not Now.
+
+=item B<-email>
+
+Allows to specify which type of email will be used. Can be email, emailpro or B_email. Repeatable.
 
 =back
 
@@ -256,6 +264,8 @@ my $verbose = 0;
 my $nomail  = 0;
 my $MAX     = 90;
 my @branchcodes; # Branch(es) passed as parameter
+my @emails_to_use;    # Emails to use for messaging
+my @emails;           # Emails given in command-line parameters
 my $csvfilename;
 my $htmlfilename;
 my $triggered = 0;
@@ -280,6 +290,7 @@ GetOptions(
     'date'           => \$date,
     'borcat=s'       => \@myborcat,
     'borcatout=s'    => \@myborcatout,
+    'email=s'        => \@emails,
 ) or pod2usage(2);
 pod2usage(1) if $help;
 pod2usage( -verbose => 2 ) if $man;
@@ -432,17 +443,11 @@ END_SQL
                 next PERIOD;
             }
 
-            my $letter_template = C4::Letters::GetLetter (
-                module => 'circulation',
-                letter_code => $overdue_rules->{"letter$i"},
-                branchcode => $branchcode
-            );
-
             # $letter->{'content'} is the text of the mail that is sent.
             # this text contains fields that are replaced by their value. Those fields must be written between brackets
             # The following fields are available :
 	    # itemcount is interpreted here as the number of items in the overdue range defined by the current notice or all overdues < max if(-list-all).
-            # <date> <itemcount> <firstname> <lastname> <address1> <address2> <address3> <city> <postcode>
+            # <date> <itemcount> <firstname> <lastname> <address1> <address2> <address3> <city> <postcode> <country>
 
             my $borrower_sql = <<'END_SQL';
 SELECT distinct(issues.borrowernumber), firstname, surname, address, address2, city, zipcode, country, email
@@ -478,6 +483,31 @@ END_SQL
                     ) = $sth->fetchrow )
             {
                 $verbose and warn "borrower $firstname, $lastname ($borrowernumber) has items triggering level $i.";
+                @emails_to_use = ();
+                if ( !$nomail) {
+                    if ( @emails ) {
+                        my $memberinfos = C4::Members::GetMember(borrowernumber => $borrowernumber);
+                        foreach (@emails) {
+                            push @emails_to_use, $memberinfos->{$_}
+                              if ($memberinfos->{$_} ne '');
+                        }
+                    }
+                    else {
+                        $email =
+                          C4::Members::GetFirstValidEmailAddress($borrowernumber);
+                        push @emails_to_use, $email if ($email ne '');
+                    }
+                }
+
+                my $letter = C4::Letters::getletter( 'circulation', $overdue_rules->{"letter$i"}, $branchcode );
+
+                unless ($letter) {
+                    $verbose and warn "Message '$overdue_rules->{letter$i}' content not found";
+
+                    # might as well skip while PERIOD, no other borrowers are going to work.
+                    # FIXME : Does this mean a letter must be defined in order to trigger a debar ?
+                    next PERIOD;
+                }
     
                 if ( $overdue_rules->{"debarred$i"} ) {
     
@@ -495,7 +525,7 @@ END_SQL
                 my $j = 0;
                 my $exceededPrintNoticesMaxLines = 0;
                 while ( my $item_info = $sth2->fetchrow_hashref() ) {
-                    if ( ( !$email || $nomail ) && $PrintNoticesMaxLines && $j >= $PrintNoticesMaxLines ) {
+                    if ( ( scalar(@emails_to_use) == 0 || $nomail ) && $PrintNoticesMaxLines && $j >= $PrintNoticesMaxLines ) {
                       $exceededPrintNoticesMaxLines = 1;
                       last;
                     }
@@ -507,9 +537,8 @@ END_SQL
                 }
                 $sth2->finish;
 
-                my $letter = parse_letter(
+                $letter = parse_letter(
                     {   letter_code     => $overdue_rules->{"letter$i"},
-                        letter          => $letter_template,
                         borrowernumber  => $borrowernumber,
                         branchcode      => $branchcode,
                         items           => \@items,
@@ -551,6 +580,7 @@ END_SQL
                             address2       => $address2,
                             city           => $city,
                             postcode       => $postcode,
+                            country        => $country,
                             email          => $email,
                             itemcount      => $itemcount,
                             titles         => $titles,
@@ -558,12 +588,13 @@ END_SQL
                         }
                       );
                 } else {
-                    if ($email) {
+                    if (scalar(@emails_to_use) > 0 ) {
                         C4::Letters::EnqueueLetter(
                             {   letter                 => $letter,
                                 borrowernumber         => $borrowernumber,
                                 message_transport_type => 'email',
                                 from_address           => $admin_email_address,
+                                to_address             => join(',', @emails_to_use),
                             }
                         );
                     } else {
@@ -579,6 +610,7 @@ END_SQL
                                 address2       => $address2,
                                 city           => $city,
                                 postcode       => $postcode,
+                                country        => $country,
                                 email          => $email,
                                 itemcount      => $itemcount,
                                 titles         => $titles,
@@ -604,17 +636,16 @@ END_SQL
                 print @output_chunks;
         }
         # Generate the content of the csv with headers
-        my $content = join(";", qw(title name surname address1 address2 zipcode city email itemcount itemsinfo due_date issue_date)) . "\n";
+        my $content = join(";", qw(title name surname address1 address2 zipcode city country email itemcount itemsinfo due_date issue_date)) . "\n";
         $content .= join( "\n", @output_chunks );
             
         my $attachment = {
             filename => defined $csvfilename ? 'attachment.csv' : 'attachment.txt',
-            type => 'text/plain; charset="utf-8"',
+            type => 'text/plain',
             content => $content, 
         };
 
         my $letter = {
-            'content-type' => 'text/plain; charset="utf-8"',
             title   => 'Overdue Notices',
             content => 'These messages were not sent directly to the patrons.',
         };
@@ -677,9 +708,11 @@ sub parse_letter {
     }
 
     my $currency_format;
-    if ($params->{'letter'}->{'content'} =~ m/<fine>(.*)<\/fine>/o) { # process any fine tags...
+    if ( defined $params->{'letter'}->{'content'}
+        and $params->{'letter'}->{'content'} =~ m/<fine>(.*)<\/fine>/o )
+    {    # process any fine tags...
         $currency_format = $1;
-        $params->{'letter'}->{'content'} =~ s/<fine>.*<\/fine>/<<items.fine>>/o;
+        $params->{'letter'}->{'content'} =~ s/<fine>.*<\/fine>/<<item.fine>>/o;
     }
 
     my @item_tables;
@@ -687,7 +720,7 @@ sub parse_letter {
         my $item_format = '';
         foreach my $item (@$i) {
             my $fine = GetFine($item->{'itemnumber'}, $params->{'borrowernumber'});
-            if (!$item_format) {
+            if ( !$item_format and defined $params->{'letter'}->{'content'} ) {
                 $params->{'letter'}->{'content'} =~ m/(<item>.*<\/item>)/;
                 $item_format = $1;
             }
@@ -704,14 +737,13 @@ sub parse_letter {
         }
     }
 
-    return C4::Letters::GetProcessedLetter (
+    return C4::Letters::GetPreparedLetter (
         module => 'circulation',
         letter_code => $params->{'letter_code'},
-        letter => $params->{'letter'},
         branchcode => $params->{'branchcode'},
         tables => \%tables,
         substitute => $substitute,
-        repeat => { item => \@item_tables }
+        repeat => { item => \@item_tables },
     );
 }
 
@@ -744,7 +776,7 @@ sub prepare_letter_for_printing {
     if ( exists $params->{'outputformat'} && $params->{'outputformat'} eq 'csv' ) {
         if ($csv->combine(
                 $params->{'firstname'}, $params->{'lastname'}, $params->{'address1'},  $params->{'address2'}, $params->{'postcode'},
-                $params->{'city'},      $params->{'email'},    $params->{'itemcount'}, $params->{'titles'}
+                $params->{'city'}, $params->{'country'}, $params->{'email'}, $params->{'itemcount'}, $params->{'titles'}
             )
           ) {
             return $csv->string, "\n";

@@ -16,7 +16,14 @@
    <div id="bd" role="main">
     <div id="yui-main">
     <div class="yui-b"><div class="yui-g">
+    [% IF adminWarning %]
+        <div id="adminwarning" class="dialog alert">
+            <p><strong>Warning:</strong> You're logged in with the database administrator account. This a bad idea, and you are likely to encounter problems.</p>
+            <p>You should <a href="/cgi-bin/koha/members/memberentry.pl?op=add">create a patron</a> to use when administering Koha and give it superlibrarian permissions.</p>
+        </div>
+    [% END %]
     <div class="yui-u first">
+
             <div id="area-list-left">
                 <ul class="biglinks-list">
                     [% IF ( CAN_user_circulate ) %]
@@ -100,6 +107,7 @@
 <div class="yui-g">
             [% IF ( ( CAN_user_tools_moderate_comments  && pendingcomments ) 
                     || ( CAN_user_tools_moderate_tags && pendingtags )
+                    || ( CAN_user_borrowers && pending_borrower_modifications )
                     || ( CAN_user_acquisition && pendingsuggestions ) ) %]
                 <div id="area-pending">
                     [% IF ( CAN_user_acquisition && pendingsuggestions ) %]
@@ -123,9 +131,18 @@
                         <span class="pending-number-link">[% pendingtags %]</span>
                     </div>
                     [% END %]
-                </div>
-            [% END %]
 
+
+                    [% IF ( CAN_user_borrowers && pending_borrower_modifications ) %]
+                    <div class="pending-info" id="patron_updates_pending">
+                        <a href="/cgi-bin/koha/members/members-update.pl">Patrons requesting modifications</a>:
+                        <span class="pending-number-link">[% pending_borrower_modifications %]</span>
+                    </div>
+                    [% END %]
+
+                </div>
+
+            [% END %]
 
 </div>
             [% IF ( IntranetmainUserblock ) %]

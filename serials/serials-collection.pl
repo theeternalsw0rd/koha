@@ -101,8 +101,10 @@ my $subscriptioncount;
 my ($location, $callnumber);
 if (@subscriptionid){
    my @subscriptioninformation=();
+   my $closed = 0;
    foreach my $subscriptionid (@subscriptionid){
     my $subs= GetSubscription($subscriptionid);
+    $closed = 1 if $subs->{closed};
     $subs->{opacnote}     =~ s/\n/\<br\/\>/g;
     $subs->{missinglist}  =~ s/\n/\<br\/\>/g;
     $subs->{recievedlist} =~ s/\n/\<br\/\>/g;
@@ -127,6 +129,7 @@ if (@subscriptionid){
     my $tmpsubscription= GetFullSubscription($subscriptionid);
     @subscriptioninformation=(@$tmpsubscription,@subscriptioninformation);
   }
+  $template->param(closed => $closed);
   $subscriptions=PrepareSerialsData(\@subscriptioninformation);
   $subscriptioncount = CountSubscriptionFromBiblionumber($subscriptiondescs->[0]{'biblionumber'});
 } else {
@@ -169,6 +172,7 @@ $template->param(
           callnumber	       => $callnumber,
           uc(C4::Context->preference("marcflavour")) => 1,
           serialsadditems   => $subscriptiondescs->[0]{'serialsadditems'},
+          dateformatmetric   => C4::Context->preference("dateformat") eq "metric" ? 1 : 0,
           );
 
 output_html_with_http_headers $query, $cookie, $template->output;

@@ -764,6 +764,7 @@ CREATE TABLE `deleteditems` (
   `itemlost` tinyint(1) NOT NULL default 0, -- authorized value defining this item as lost (MARC21 952$1)
   `wthdrawn` tinyint(1) NOT NULL default 0, -- authorized value defining this item as withdrawn (MARC21 952$0)
   `itemcallnumber` varchar(255) default NULL, -- call number for this item (MARC21 952$o)
+  `coded_location_qualifier` varchar(10) default NULL, -- coded location qualifier(MARC21 952$f)
   `issues` smallint(6) default NULL, -- number of times this item has been checked out
   `renewals` smallint(6) default NULL, -- number of times this item has been renewed
   `reserves` smallint(6) default NULL, -- number of times this item has been placed on hold/reserved
@@ -897,7 +898,8 @@ CREATE TABLE `import_records` (
   CONSTRAINT `import_records_ifbk_1` FOREIGN KEY (`import_batch_id`)
              REFERENCES `import_batches` (`import_batch_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   KEY `branchcode` (`branchcode`),
-  KEY `batch_sequence` (`import_batch_id`, `record_sequence`)
+  KEY `batch_sequence` (`import_batch_id`, `record_sequence`),
+  KEY `batch_id_record_type` (`import_batch_id`,`record_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 --
@@ -1049,6 +1051,7 @@ CREATE TABLE `items` ( -- holdings/item information
   `itemlost` tinyint(1) NOT NULL default 0, -- authorized value defining this item as lost (MARC21 952$1)
   `wthdrawn` tinyint(1) NOT NULL default 0, -- authorized value defining this item as withdrawn (MARC21 952$0)
   `itemcallnumber` varchar(255) default NULL, -- call number for this item (MARC21 952$o)
+  `coded_location_qualifier` varchar(10) default NULL, -- coded location qualifier(MARC21 952$f)
   `issues` smallint(6) default NULL, -- number of times this item has been checked out/issued
   `renewals` smallint(6) default NULL, -- number of times this item has been renewed
   `reserves` smallint(6) default NULL, -- number of times this item has been placed on hold/reserved
@@ -1850,6 +1853,7 @@ CREATE TABLE `statistics` ( -- information related to transactions (circulation 
   `itemtype` varchar(10) default NULL, -- foreign key from the itemtypes table, links transaction to a specific item type
   `borrowernumber` int(11) default NULL, -- foreign key from the borrowers table, links transaction to a specific borrower
   `associatedborrower` int(11) default NULL,
+  `ccode` varchar(10) default NULL, -- foreign key from the items table, links transaction to a specific collection code
   KEY `timeidx` (`datetime`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
@@ -1919,6 +1923,7 @@ CREATE TABLE `subscription` (
   `opacdisplaycount` VARCHAR(10) NULL,
   `graceperiod` int(11) NOT NULL default '0',
   `enddate` date default NULL,
+  `closed` INT(1) NOT NULL DEFAULT 0,
   PRIMARY KEY  (`subscriptionid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
@@ -2823,7 +2828,8 @@ CREATE TABLE `aqorders_items` ( -- information on items entered in the acquisiti
   `itemnumber` int(11) NOT NULL, -- the item number for this item (items.itemnumber)
   `timestamp` timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP, -- the date and time this order item was last touched
   PRIMARY KEY  (`itemnumber`),
-  KEY `ordernumber` (`ordernumber`)
+  KEY `ordernumber` (`ordernumber`),
+  CONSTRAINT aqorders_items_ibfk_1 FOREIGN KEY (ordernumber) REFERENCES aqorders (ordernumber) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 
@@ -2935,6 +2941,142 @@ CREATE TABLE `quotes` (
   `text` mediumtext NOT NULL,
   `timestamp` datetime NOT NULL,
   PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+--
+-- Table structure for table categories_branches
+--
+
+DROP TABLE IF EXISTS categories_branches;
+CREATE TABLE categories_branches( -- association table between categories and branches
+    categorycode VARCHAR(10),
+    branchcode VARCHAR(10),
+    FOREIGN KEY (categorycode) REFERENCES categories(categorycode) ON DELETE CASCADE,
+    FOREIGN KEY (branchcode) REFERENCES branches(branchcode) ON DELETE CASCADE
+) ENGINE=INNODB DEFAULT CHARSET=utf8;
+
+--
+-- Table structure for table authorised_values_branches
+--
+
+DROP TABLE IF EXISTS authorised_values_branches;
+CREATE TABLE authorised_values_branches( -- association table between authorised_values and branches
+    av_id INTEGER,
+    branchcode VARCHAR(10),
+    FOREIGN KEY (av_id) REFERENCES authorised_values(id) ON DELETE CASCADE,
+    FOREIGN KEY (branchcode) REFERENCES branches(branchcode) ON DELETE CASCADE
+) ENGINE=INNODB DEFAULT CHARSET=utf8;
+
+
+--
+-- Table structure for table borrower_attribute_types_branches
+--
+
+DROP TABLE IF EXISTS borrower_attribute_types_branches;
+CREATE TABLE borrower_attribute_types_branches( -- association table between borrower_attribute_types and branches
+    bat_code VARCHAR(10),
+    b_branchcode VARCHAR(10),
+    FOREIGN KEY (bat_code) REFERENCES borrower_attribute_types(code) ON DELETE CASCADE,
+    FOREIGN KEY (b_branchcode) REFERENCES branches(branchcode) ON DELETE CASCADE
+) ENGINE=INNODB DEFAULT CHARSET=utf8;
+
+--
+-- Table structure for table `borrower_modifications`
+--
+
+CREATE TABLE IF NOT EXISTS `borrower_modifications` (
+  `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `verification_token` varchar(255) NOT NULL DEFAULT '',
+  `borrowernumber` int(11) NOT NULL DEFAULT '0',
+  `cardnumber` varchar(16) DEFAULT NULL,
+  `surname` mediumtext,
+  `firstname` text,
+  `title` mediumtext,
+  `othernames` mediumtext,
+  `initials` text,
+  `streetnumber` varchar(10) DEFAULT NULL,
+  `streettype` varchar(50) DEFAULT NULL,
+  `address` mediumtext,
+  `address2` text,
+  `city` mediumtext,
+  `state` text,
+  `zipcode` varchar(25) DEFAULT NULL,
+  `country` text,
+  `email` mediumtext,
+  `phone` text,
+  `mobile` varchar(50) DEFAULT NULL,
+  `fax` mediumtext,
+  `emailpro` text,
+  `phonepro` text,
+  `B_streetnumber` varchar(10) DEFAULT NULL,
+  `B_streettype` varchar(50) DEFAULT NULL,
+  `B_address` varchar(100) DEFAULT NULL,
+  `B_address2` text,
+  `B_city` mediumtext,
+  `B_state` text,
+  `B_zipcode` varchar(25) DEFAULT NULL,
+  `B_country` text,
+  `B_email` text,
+  `B_phone` mediumtext,
+  `dateofbirth` date DEFAULT NULL,
+  `branchcode` varchar(10) DEFAULT NULL,
+  `categorycode` varchar(10) DEFAULT NULL,
+  `dateenrolled` date DEFAULT NULL,
+  `dateexpiry` date DEFAULT NULL,
+  `gonenoaddress` tinyint(1) DEFAULT NULL,
+  `lost` tinyint(1) DEFAULT NULL,
+  `debarred` date DEFAULT NULL,
+  `debarredcomment` varchar(255) DEFAULT NULL,
+  `contactname` mediumtext,
+  `contactfirstname` text,
+  `contacttitle` text,
+  `guarantorid` int(11) DEFAULT NULL,
+  `borrowernotes` mediumtext,
+  `relationship` varchar(100) DEFAULT NULL,
+  `ethnicity` varchar(50) DEFAULT NULL,
+  `ethnotes` varchar(255) DEFAULT NULL,
+  `sex` varchar(1) DEFAULT NULL,
+  `password` varchar(30) DEFAULT NULL,
+  `flags` int(11) DEFAULT NULL,
+  `userid` varchar(75) DEFAULT NULL,
+  `opacnote` mediumtext,
+  `contactnote` varchar(255) DEFAULT NULL,
+  `sort1` varchar(80) DEFAULT NULL,
+  `sort2` varchar(80) DEFAULT NULL,
+  `altcontactfirstname` varchar(255) DEFAULT NULL,
+  `altcontactsurname` varchar(255) DEFAULT NULL,
+  `altcontactaddress1` varchar(255) DEFAULT NULL,
+  `altcontactaddress2` varchar(255) DEFAULT NULL,
+  `altcontactaddress3` varchar(255) DEFAULT NULL,
+  `altcontactstate` text,
+  `altcontactzipcode` varchar(50) DEFAULT NULL,
+  `altcontactcountry` text,
+  `altcontactphone` varchar(50) DEFAULT NULL,
+  `smsalertnumber` varchar(50) DEFAULT NULL,
+  `privacy` int(11) DEFAULT NULL,
+  PRIMARY KEY (`verification_token`,`borrowernumber`),
+  KEY `verification_token` (`verification_token`),
+  KEY `borrowernumber` (`borrowernumber`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+--
+-- Table structure for table linktracker
+-- This stores clicks to external links
+--
+
+DROP TABLE IF EXISTS linktracker;
+CREATE TABLE linktracker (
+   id int(11) NOT NULL AUTO_INCREMENT, -- primary key identifier
+   biblionumber int(11) DEFAULT NULL, -- biblionumber of the record the link is from
+   itemnumber int(11) DEFAULT NULL, -- itemnumber if applicable that the link was from
+   borrowernumber int(11) DEFAULT NULL, -- borrowernumber who clicked the link
+   url text, -- the link itself
+   timeclicked datetime DEFAULT NULL, -- the date and time the link was clicked
+   PRIMARY KEY (id),
+   KEY bibidx (biblionumber),
+   KEY itemidx (itemnumber),
+   KEY borridx (borrowernumber),
+   KEY dateidx (timeclicked)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
