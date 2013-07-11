@@ -6,11 +6,9 @@ body {
 
 /* Line break after each field */
 .field {
-    -moz-transform: rotate(90deg);
-    -moz-transform-origin: 4% 40%;
     display: block;
-    margin-left: 15mm;
-    margin-top: 27mm;
+    margin-left: 0.6in;
+    margin-top: 0.1in;
     padding: 10px;
     font-size: 12pt;
 }
